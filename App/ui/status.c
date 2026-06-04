@@ -19,6 +19,7 @@
 #include "app/chFrScanner.h"
 #ifdef ENABLE_MESSENGER
     #include "app/messenger.h"
+    #include "app/messenger_rf.h"
 #endif
 #ifdef ENABLE_FMRADIO
     #include "app/fm.h"
@@ -189,6 +190,13 @@ void UI_DisplayStatus()
 {
                             uint8_t xb = (gEeprom.CROSS_BAND_RX_TX != CROSS_BAND_OFF);
 
+#ifdef ENABLE_MESSENGER
+                            if (MSG_RF_RxChannelLockActive()) {
+                                src = gFontHold;
+                                sOff = 3;
+                                sSize = sizeof(gFontHold);
+                            } else
+#endif
                             if (gEeprom.DUAL_WATCH != DUAL_WATCH_OFF) {
                                 if (gDualWatchActive) { // DWR - dual watch + respond
                                     src = gFontDWR;

@@ -215,6 +215,46 @@ ul16 NoaaChannel_B;
 ul16 fmfreq[48];
 
 // --------------------
+// GGFW FM broadcast channel names
+// GGFW FM names are physically stored by firmware at PY25Q16 0x013000.
+// CHIRP accesses them through EEPROM compatibility alias 0x00D000..0x00DFFF.
+// This requires the matching firmware eeprom_compat mapping.
+
+#seekto 0x00D000;
+ul32 ggfw_fmnames_magic;
+u8 ggfw_fmnames_version;
+u8 ggfw_fmnames_count;
+u8 ggfw_fmnames_reserved[10];
+struct {
+    char name[16];
+} ggfw_fmname[48];
+
+// --------------------
+// GGFW Messenger and call-tone config
+// Physically stored by firmware at PY25Q16 0x012000.
+// CHIRP accesses it through EEPROM compatibility alias 0x00E000..0x00EFFF.
+
+#seekto 0x00E000;
+u8 ggfw_msg_magic;
+u8 ggfw_msg_version;
+u8 ggfw_msg_rx;
+u8 ggfw_msg_callsign_tx;
+u8 ggfw_msg_ack;
+u8 ggfw_msg_hop;
+u8 ggfw_msg_beep;
+u8 ggfw_msg_led;
+u8 ggfw_msg_debug;
+u8 ggfw_msg_pad0;
+ul16 ggfw_msg_next_msg_id;
+char ggfw_msg_callsign[9];
+struct {
+    char text[37];
+} ggfw_msg_draft[8];
+u8 ggfw_call_tone;
+u8 ggfw_call_vol;
+u8 ggfw_rng_rsp;
+
+// --------------------
 
 #seekto 0x00A0A8;
 u8 keyM_longpress_action:7,
@@ -658,11 +698,30 @@ RTE_LIST = ["OFF", "100ms", "200ms", "300ms", "400ms",
             "500ms", "600ms", "700ms", "800ms", "900ms", "1000ms"]
 VOX_LIST = ["OFF", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
 
-MEM_SIZE =      0x00B190    # size of all memory
+MEM_SIZE =      0x00F000    # size of downloaded memory; includes GGFW FM-name alias at 0x00D000 and GGFW settings alias at 0x00E000
 PROG_SIZE =     0x00A171    # size of the memory that we will write (LAST ADDRESS + 1 !!!)
 MEM_BLOCK =     0x80        # largest block of memory that we can reliably write
 CAL_START =     0x00B000    # calibration memory start address
 F4HWN_START =   0x00A158    # calibration F4HWN memory start address
+GGFW_FM_NAMES_START = 0x00D000
+GGFW_FM_NAMES_SIZE  = 0x1000
+GGFW_FM_NAMES_MAGIC = 0x4747464D  # "GGFM"
+GGFW_FM_NAMES_VERSION = 1
+GGFW_FM_NAMES_COUNT = 48
+GGFW_FM_NAME_LEN = 16
+GGFW_FM_NAME_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -_./+"
+GGFW_MSG_START = 0x00E000
+GGFW_MSG_SIZE = 0x1000
+GGFW_MSG_MAGIC = 0x47
+GGFW_MSG_VERSION = 7
+GGFW_CALL_TONE_LIST = ["TONE1", "TONE2", "TONE3", "TONE4", "TONE5"]
+GGFW_CALL_VOL_LIST = ["LOW", "HIGH"]
+GGFW_MSG_OFF_ON_LIST = ["OFF", "ON"]
+GGFW_MSG_HOP_LIST = ["OFF", "1", "2", "3", "4", "5"]
+GGFW_MSG_LED_LIST = ["OFF", "ON", "UNREAD"]
+GGFW_CALLSIGN_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_"
+GGFW_DRAFT_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,!?-_/+:;()[]\'\""
+CAL_END =        0x00B190    # original end of calibration area
 
 # fm radio supported frequencies
 FMMIN = 76.0
@@ -967,10 +1026,32 @@ def do_upload(radio):
             status.msg = "Uploading to radio"
             radio.status_fn(status)
 
-        elif step == 1 and radio.upload_calibration:
-            # Then write calibration area (separate region)
+        elif step == 1:
+            # GGFW FM broadcast channel names live in a separate private sector.
+            # Upload only this sector; do not expand the normal config write range.
+            start_addr = GGFW_FM_NAMES_START
+            stop_addr  = GGFW_FM_NAMES_START + GGFW_FM_NAMES_SIZE
+            status.max = stop_addr - start_addr
+            status.cur = 0
+            status.msg = "Uploading FM radio names"
+            radio.status_fn(status)
+
+        elif step == 2:
+            # GGFW Messenger/call settings live in a separate private sector.
+            # Upload only this alias sector; do not expand the normal config write range.
+            start_addr = GGFW_MSG_START
+            stop_addr  = GGFW_MSG_START + GGFW_MSG_SIZE
+            status.max = stop_addr - start_addr
+            status.cur = 0
+            status.msg = "Uploading GGFW settings"
+            radio.status_fn(status)
+
+        elif step == 3 and radio.upload_calibration:
+            # Then write calibration area (separate region).
+            # Important: keep the original calibration end, not MEM_SIZE,
+            # because MEM_SIZE is extended only for GGFW CHIRP-visible alias sectors.
             start_addr = CAL_START
-            stop_addr  = MEM_SIZE
+            stop_addr  = CAL_END
             status.max = stop_addr - start_addr
             status.cur = 0
             status.msg = "Uploading calibration"
@@ -1025,6 +1106,98 @@ def list_def(value, lst, default):
     if value < 0 or value >= len(lst):
         return default
     return value    
+
+def _ggfw_fmname_clean(value):
+    """Sanitize a GGFW FM broadcast name for radio storage."""
+    value = str(value or "").strip("\x00\xff ")
+    out = ""
+    for ch in value:
+        if ch in GGFW_FM_NAME_CHARS:
+            out += ch
+        elif ch.lower() in "ğüşıöç":
+            trans = {"ğ": "g", "ü": "u", "ş": "s", "ı": "i", "ö": "o", "ç": "c"}
+            out += trans.get(ch.lower(), "")
+    return out[:GGFW_FM_NAME_LEN - 1]
+
+
+def _ggfw_fmname_to_slot(value):
+    """Return exactly 16 bytes worth of text for a firmware name slot."""
+    value = _ggfw_fmname_clean(value)
+    if not value:
+        return "\xff" * GGFW_FM_NAME_LEN
+    raw = value + "\x00"
+    return (raw + ("\xff" * GGFW_FM_NAME_LEN))[:GGFW_FM_NAME_LEN]
+
+
+def _ggfw_fmname_from_slot(slot):
+    """Read a firmware name slot as display text."""
+    text = str(slot)
+    return text.split("\x00")[0].split("\xff")[0].strip()
+
+
+def _ggfw_fmnames_header_init(_mem):
+    _mem.ggfw_fmnames_magic = GGFW_FM_NAMES_MAGIC
+    _mem.ggfw_fmnames_version = GGFW_FM_NAMES_VERSION
+    _mem.ggfw_fmnames_count = GGFW_FM_NAMES_COUNT
+    for i in range(0, 10):
+        _mem.ggfw_fmnames_reserved[i] = 0xff
+
+def _ggfw_clean_text(value, maxlen, charset):
+    value = str(value or "").strip("\x00\xff ")
+    out = ""
+    trans = {"ğ": "g", "ü": "u", "ş": "s", "ı": "i", "ö": "o", "ç": "c"}
+    for ch in value:
+        if ch in charset:
+            out += ch
+        elif ch.lower() in trans and trans[ch.lower()] in charset:
+            out += trans[ch.lower()]
+    return out[:maxlen]
+
+def _ggfw_char_from_slot(slot):
+    return str(slot).split("\x00")[0].split("\xff")[0].strip()
+
+def _ggfw_char_to_slot(value, size, charset):
+    value = _ggfw_clean_text(value, size - 1, charset)
+    if not value:
+        return "\xff" * size
+    raw = value + "\x00"
+    return (raw + ("\xff" * size))[:size]
+
+def _ggfw_msg_config_init(_mem):
+    _mem.ggfw_msg_magic = GGFW_MSG_MAGIC
+    _mem.ggfw_msg_version = GGFW_MSG_VERSION
+    _mem.ggfw_msg_rx = 1
+    _mem.ggfw_msg_callsign_tx = 1
+    _mem.ggfw_msg_ack = 0
+    _mem.ggfw_msg_hop = 0
+    _mem.ggfw_msg_beep = 1
+    _mem.ggfw_msg_led = 1
+    _mem.ggfw_msg_debug = 0
+    _mem.ggfw_msg_pad0 = 0xff
+    _mem.ggfw_msg_next_msg_id = 1
+    _mem.ggfw_msg_callsign = _ggfw_char_to_slot("UVK1", 9, GGFW_CALLSIGN_CHARS)
+    defaults = ["OK", "NEED HELP", "WHERE ARE YOU?", "ON THE WAY",
+                "ARRIVED SAFE", "CALL ME", "NEGATIVE", "BATTERY LOW"]
+    for i in range(0, 8):
+        _mem.ggfw_msg_draft[i].text = _ggfw_char_to_slot(defaults[i], 37, GGFW_DRAFT_CHARS)
+    _mem.ggfw_call_tone = 0
+    _mem.ggfw_call_vol = 1
+    _mem.ggfw_rng_rsp = 1
+
+def _ggfw_msg_config_ensure(_mem):
+    if (_mem.ggfw_msg_magic != GGFW_MSG_MAGIC or
+            _mem.ggfw_msg_version != GGFW_MSG_VERSION):
+        _ggfw_msg_config_init(_mem)
+    if int(_mem.ggfw_msg_rx) > 1: _mem.ggfw_msg_rx = 1
+    if int(_mem.ggfw_msg_callsign_tx) > 1: _mem.ggfw_msg_callsign_tx = 1
+    if int(_mem.ggfw_msg_ack) > 1: _mem.ggfw_msg_ack = 0
+    if int(_mem.ggfw_msg_hop) > 5: _mem.ggfw_msg_hop = 0
+    if int(_mem.ggfw_msg_beep) > 1: _mem.ggfw_msg_beep = 1
+    if int(_mem.ggfw_msg_led) > 2: _mem.ggfw_msg_led = 1
+    if int(_mem.ggfw_msg_debug) > 1: _mem.ggfw_msg_debug = 0
+    if int(_mem.ggfw_call_tone) > 4: _mem.ggfw_call_tone = 0
+    if int(_mem.ggfw_call_vol) > 1: _mem.ggfw_call_vol = 1
+    if int(_mem.ggfw_rng_rsp) > 1: _mem.ggfw_rng_rsp = 1
 
 @directory.register
 class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
@@ -1285,6 +1458,36 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         chirp_common.split_tone_decode(mem, (tx_tmode, tx_tone, tx_pol),
                                        (rx_tmode, rx_tone, rx_pol))
 
+    def _is_valid_memory_record(self, _mem):
+        """Reject stale/custom bytes that CHIRP might otherwise parse as channels.
+        Older GGFW experiments briefly used EEPROM address 0x1E80, which maps
+        into the MR frequency table around channels 489-507.  Treat impossible
+        records as empty rather than showing random frequencies.
+        """
+        try:
+            rawfreq = int(_mem.freq)
+            freq_hz = rawfreq * 10
+            if rawfreq in (0, 0xffffffff) or freq_hz <= 0:
+                return False
+            ok_band = False
+            for lo, hi in self._get_bands().values():
+                if int(lo * 1000000) <= freq_hz <= int(hi * 1000000):
+                    ok_band = True
+                    break
+            if not ok_band:
+                return False
+            if int(_mem.modulation) > 2:
+                return False
+            if int(_mem.bandwidth) > 1:
+                return False
+            if int(_mem.step) >= len(STEPS):
+                return False
+            if int(_mem.offsetDir) > 2:
+                return False
+        except Exception:
+            return False
+        return True
+
     # Extract a high-level memory object from the low-level memory map
     # This is called to populate a memory in the UI
     def get_memory(self, number):
@@ -1309,7 +1512,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
             _mem = self._memobj.vfo_channel[vfo_index]
 
         is_empty = False
-        # We'll consider any blank (i.e. 0MHz frequency) to be empty
+        # We'll consider any blank (i.e. 0MHz frequency) record empty.
         if (_mem.freq == 0xffffffff) or (_mem.freq == 0):
             is_empty = True
 
@@ -1798,6 +2001,44 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
 #                                "in the range %.1f - %.1f" % (FMMIN , FMMAX))
                     _mem.fmfreq[i-1] = val2
 
+                fmnamename = "FMNAME_" + str(i)
+                if elname == fmnamename and i <= GGFW_FM_NAMES_COUNT:
+                    _ggfw_fmnames_header_init(_mem)
+                    _mem.ggfw_fmname[i-1].name = _ggfw_fmname_to_slot(element.value)
+
+            # GGFW Messenger / Call settings
+            if elname.startswith("ggfw_"):
+                _ggfw_msg_config_ensure(_mem)
+                if elname == "ggfw_msg_rx":
+                    _mem.ggfw_msg_rx = int(element.value)
+                elif elname == "ggfw_msg_callsign_tx":
+                    _mem.ggfw_msg_callsign_tx = int(element.value)
+                elif elname == "ggfw_msg_ack":
+                    _mem.ggfw_msg_ack = int(element.value)
+                elif elname == "ggfw_msg_hop":
+                    _mem.ggfw_msg_hop = int(element.value)
+                elif elname == "ggfw_msg_beep":
+                    _mem.ggfw_msg_beep = int(element.value)
+                elif elname == "ggfw_msg_led":
+                    _mem.ggfw_msg_led = int(element.value)
+                elif elname == "ggfw_msg_debug":
+                    _mem.ggfw_msg_debug = int(element.value)
+                elif elname == "ggfw_call_tone":
+                    _mem.ggfw_call_tone = int(element.value)
+                elif elname == "ggfw_call_vol":
+                    _mem.ggfw_call_vol = int(element.value)
+                elif elname == "ggfw_rng_rsp":
+                    _mem.ggfw_rng_rsp = int(element.value)
+                elif elname == "ggfw_msg_callsign":
+                    _mem.ggfw_msg_callsign = _ggfw_char_to_slot(element.value, 9, GGFW_CALLSIGN_CHARS)
+                elif elname.startswith("ggfw_msg_draft_"):
+                    try:
+                        idx = int(elname.split("_")[-1])
+                    except Exception:
+                        idx = -1
+                    if 0 <= idx < 8:
+                        _mem.ggfw_msg_draft[idx].text = _ggfw_char_to_slot(element.value, 37, GGFW_DRAFT_CHARS)
+
             # dtmf settings
             if elname == "dtmf_side_tone":
                 _mem.dtmf.side_tone = int(element.value)
@@ -1955,6 +2196,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         scanl = RadioSettingGroup("scn", "Scan Lists")
         unlock = RadioSettingGroup("unlock", "Unlock Settings")
         fmradio = RadioSettingGroup("fmradio", "FM Broadcast Receiver")
+        ggfw = RadioSettingGroup("ggfw", "GGFW Messenger / Call")
         calibration = RadioSettingGroup("calibration", "Calibration")
         help_user = RadioSettingGroup("help_user", "Help For User")
         
@@ -1971,6 +2213,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         top.append(unlock)
         if _mem.BUILD_OPTIONS.ENABLE_FMRADIO:
             top.append(fmradio)
+        top.append(ggfw)
         top.append(roinfo)
         top.append(calibration)
         top.append(help_user)
@@ -2719,19 +2962,83 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
 
         # ----------------- FM radio
 
-        append_label(fmradio, "Channel Memory Radio (MR)", "Frequency (MHz)")
+        append_label(fmradio, "Channel Memory Radio (MR)", "Frequency (MHz) / Name")
+
+        # If the GGFW FM-name sector is blank or from an older image, initialize
+        # the header in the CHIRP image so upload writes a valid empty name store.
+        if (_mem.ggfw_fmnames_magic != GGFW_FM_NAMES_MAGIC or
+                _mem.ggfw_fmnames_version != GGFW_FM_NAMES_VERSION or
+                _mem.ggfw_fmnames_count != GGFW_FM_NAMES_COUNT):
+            _ggfw_fmnames_header_init(_mem)
+            for j in range(0, GGFW_FM_NAMES_COUNT):
+                _mem.ggfw_fmname[j].name = "\xff" * GGFW_FM_NAME_LEN
 
         for i in range(1, FM_CHANNELS_MAX + 1):
             fmfreq = _mem.fmfreq[i-1]/10.0
             freq_name = str(fmfreq)
             if fmfreq < FMMIN or fmfreq > FMMAX:
                 freq_name = ""
-            rs = RadioSetting("FM_" + str(i), "Ch " + str(i),
+            rs = RadioSetting("FM_" + str(i), "Ch " + str(i) + " Frequency",
                               RadioSettingValueString(0, 5, freq_name))
             rs.set_doc('FM Broadcast frequency: Enter the frequency in MHz, example: 96.9\n' + \
                        'To listen the FM Broadcast band, Long press the 5 key, then if you want to scan for\n' + \
                        'stations around, press *. Scan result will erase the existing FM broadcast list.')
             fmradio.append(rs)
+
+            if i <= GGFW_FM_NAMES_COUNT:
+                current_name = _ggfw_fmname_from_slot(_mem.ggfw_fmname[i-1].name)
+                val = RadioSettingValueString(0, GGFW_FM_NAME_LEN - 1, current_name)
+                val.set_charset(GGFW_FM_NAME_CHARS)
+                ns = RadioSetting("FMNAME_" + str(i), "Ch " + str(i) + " Name", val)
+                ns.set_doc('GGFW FM broadcast memory name. This is stored in the radio FM-name flash sector through the CHIRP alias.\n' + \
+                           'Maximum 15 characters. Leave empty to use the radio default name.')
+                fmradio.append(ns)
+
+        # ----------------- GGFW Messenger / Call settings
+
+        _ggfw_msg_config_ensure(_mem)
+        append_label(ggfw, "GGFW custom settings", "Messenger and call-tone settings stored in the GGFW 0x012000 flash sector.")
+
+        val = RadioSettingValueList(GGFW_MSG_OFF_ON_LIST, GGFW_MSG_OFF_ON_LIST[int(_mem.ggfw_msg_rx)])
+        ggfw.append(RadioSetting("ggfw_msg_rx", "MsgRx", val))
+
+        val = RadioSettingValueList(GGFW_MSG_OFF_ON_LIST, GGFW_MSG_OFF_ON_LIST[int(_mem.ggfw_msg_callsign_tx)])
+        ggfw.append(RadioSetting("ggfw_msg_callsign_tx", "CllSgnTx", val))
+
+        val = RadioSettingValueList(GGFW_MSG_OFF_ON_LIST, GGFW_MSG_OFF_ON_LIST[int(_mem.ggfw_msg_ack)])
+        ggfw.append(RadioSetting("ggfw_msg_ack", "MsgAck", val))
+
+        val = RadioSettingValueList(GGFW_MSG_HOP_LIST, GGFW_MSG_HOP_LIST[int(_mem.ggfw_msg_hop)])
+        ggfw.append(RadioSetting("ggfw_msg_hop", "MsgHop", val))
+
+        val = RadioSettingValueList(GGFW_MSG_OFF_ON_LIST, GGFW_MSG_OFF_ON_LIST[int(_mem.ggfw_msg_beep)])
+        ggfw.append(RadioSetting("ggfw_msg_beep", "MsgBeep", val))
+
+        val = RadioSettingValueList(GGFW_MSG_LED_LIST, GGFW_MSG_LED_LIST[int(_mem.ggfw_msg_led)])
+        ggfw.append(RadioSetting("ggfw_msg_led", "MsgLed", val))
+
+        val = RadioSettingValueList(GGFW_MSG_OFF_ON_LIST, GGFW_MSG_OFF_ON_LIST[int(_mem.ggfw_msg_debug)])
+        ggfw.append(RadioSetting("ggfw_msg_debug", "MsgDbg", val))
+
+        val = RadioSettingValueList(GGFW_CALL_TONE_LIST, GGFW_CALL_TONE_LIST[int(_mem.ggfw_call_tone)])
+        ggfw.append(RadioSetting("ggfw_call_tone", "CllTon", val))
+
+        val = RadioSettingValueList(GGFW_CALL_VOL_LIST, GGFW_CALL_VOL_LIST[int(_mem.ggfw_call_vol)])
+        ggfw.append(RadioSetting("ggfw_call_vol", "CllVol", val))
+
+        val = RadioSettingValueList(GGFW_MSG_OFF_ON_LIST, GGFW_MSG_OFF_ON_LIST[int(_mem.ggfw_rng_rsp)])
+        ggfw.append(RadioSetting("ggfw_rng_rsp", "RngRsp", val))
+
+        current_callsign = _ggfw_char_from_slot(_mem.ggfw_msg_callsign)
+        val = RadioSettingValueString(0, 6, current_callsign)
+        val.set_charset(GGFW_CALLSIGN_CHARS)
+        ggfw.append(RadioSetting("ggfw_msg_callsign", "Callsign", val))
+
+        for j in range(0, 8):
+            current_draft = _ggfw_char_from_slot(_mem.ggfw_msg_draft[j].text)
+            val = RadioSettingValueString(0, 36, current_draft)
+            val.set_charset(GGFW_DRAFT_CHARS)
+            ggfw.append(RadioSetting("ggfw_msg_draft_" + str(j), "Draft " + str(j + 1), val))
 
         # ----------------- Unlock settings
 

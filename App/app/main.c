@@ -27,6 +27,8 @@
 #include "app/main.h"
 #ifdef ENABLE_MESSENGER
     #include "app/messenger.h"
+    #include "app/messenger_rf.h"
+    #include "app/messenger_store.h"
 #endif
 #include "app/scanner.h"
 
@@ -41,6 +43,7 @@
 #include "audio.h"
 #include "board.h"
 #include "driver/bk4819.h"
+#include "driver/system.h"
 #include "dtmf.h"
 #include "frequencies.h"
 #include "misc.h"
@@ -50,6 +53,10 @@
 #include "ui/main.h"
 #include "ui/ui.h"
 #include <stdlib.h>
+
+bool gCallToneTxActive = false;
+bool gCallTonePreviewScreen = false;
+uint8_t gCallTonePreviewTone = 0;
 
 // Full VFO backup for restore on EXIT
 static VFO_Info_t gVfoBackup;
@@ -113,6 +120,348 @@ static void toggle_chan_scanlist(void)
 
     gVfoConfigureMode = VFO_CONFIGURE;
     gFlagResetVfos    = true;
+}
+
+
+
+typedef struct {
+    uint16_t hz;
+    uint8_t  on_10ms;
+    uint8_t  off_10ms;
+} CallToneNote_t;
+
+// Five clearly different PMR-style melodies.  Total length is ~3.3-3.8 seconds.
+static const CallToneNote_t gCallToneMelodies[5][16] = {
+    // TONE1: classic dili-dili repeated
+    { {1180,7,2},{1580,7,3},{1180,7,2},{1580,7,5}, {1180,7,2},{1580,7,3},{1180,7,2},{1580,7,5}, {1180,7,2},{1580,7,3},{1180,7,2},{1580,7,5}, {0,0,0},{0,0,0},{0,0,0},{0,0,0} },
+    // TONE2: fast double-beep chirp pattern
+    { {1800,4,1},{1800,4,4},{1350,4,1},{1350,4,7}, {1800,4,1},{1800,4,4},{1350,4,1},{1350,4,7}, {1800,4,1},{1800,4,4},{1350,4,1},{1350,4,7}, {1800,4,1},{1800,4,4},{1350,4,1},{1350,4,7} },
+    // TONE3: rising three/four-note melody
+    { {820,8,2},{1080,8,2},{1380,8,2},{1760,12,6}, {820,8,2},{1080,8,2},{1380,8,2},{1760,12,6}, {820,8,2},{1080,8,2},{1380,8,2},{1760,12,6}, {0,0,0},{0,0,0},{0,0,0},{0,0,0} },
+    // TONE4: falling-answer melody
+    { {1850,9,2},{1450,7,2},{1050,9,5},{1450,7,2}, {1850,9,2},{1450,7,2},{1050,9,5},{1450,7,2}, {1850,9,2},{1450,7,2},{1050,9,5},{1450,7,2}, {0,0,0},{0,0,0},{0,0,0},{0,0,0} },
+    // TONE5: urgent long-short-long pattern
+    { {980,16,3},{1650,5,2},{1650,5,8}, {980,16,3},{1650,5,2},{1650,5,8}, {980,16,3},{1650,5,2},{1650,5,8}, {980,16,3},{1650,5,2},{1650,5,8}, {0,0,0},{0,0,0},{0,0,0},{0,0,0} },
+};
+
+static uint16_t MAIN_ScaleToneFreq(uint16_t freq)
+{
+    return (uint16_t)((((uint32_t)freq * 1353245u) + (1u << 16)) >> 17);
+}
+
+static uint8_t MAIN_GetCallToneTxGain(void)
+{
+    /* Keep tone-generator gain fixed. CllVol must not affect local sidetone;
+     * RF volume is tested only through a small temporary REG_40 deviation trim. */
+    return 96;
+}
+
+static uint16_t MAIN_CallToneApplyDeviationForVolume(void)
+{
+    uint16_t saved = BK4819_ReadRegister(0x40);
+    uint8_t vol = 1;
+#ifdef ENABLE_MESSENGER
+    vol = gMessengerConfig.call_vol;
+#endif
+    if (vol > 1u) vol = 1u;
+
+    /* BK4829 REG_40 deviation trim only. Keep PA bias/RF power untouched.
+     * LOW  = slightly below stock tone deviation for nearby/quiet use
+     * HIGH = previous successful MID test level
+     * Always restore immediately after CALLTX. */
+    uint16_t tuning = saved & 0x0FFFu;
+    if (vol == 0u) {
+        tuning = (tuning > 0x0080u) ? (uint16_t)(tuning - 0x0080u) : 0u;
+    } else {
+        tuning = (uint16_t)((tuning + 0x0080u > 0x0FFFu) ? 0x0FFFu : tuning + 0x0080u);
+    }
+
+    const uint16_t patched = (uint16_t)((saved & 0xE000u) | 0x1000u | tuning);
+    BK4819_WriteRegister(0x40, patched);
+    return saved;
+}
+
+static void MAIN_CallToneRestoreDeviation(uint16_t saved)
+{
+    BK4819_WriteRegister(0x40, saved);
+}
+
+static uint8_t MAIN_GetCallTonePreviewGain(void)
+{
+    /* Local preview/sidetone must stay quiet. */
+    return 18;
+}
+
+static void MAIN_SetQuietLocalMonitor(void)
+{
+    /* Lower only the local AF/speaker path.  REG_70 tone gain still controls
+     * the generated tone level used by the transmitter. */
+    BK4819_WriteRegister(BK4819_REG_48,
+        (11u << 12) |      /* existing high field used by F4HWN */
+        ( 0u << 10) |      /* AF Rx Gain-1 */
+        ( 4u << 4)  |      /* AF Rx Gain-2: quiet local monitor */
+        ( 1u << 0));       /* AF DAC gain */
+}
+
+static volatile bool     s_call_preview_active;
+static volatile uint8_t  s_call_preview_tone;
+static uint8_t           s_call_preview_note;
+static uint8_t           s_call_preview_phase_ticks;
+static uint16_t          s_call_preview_elapsed_ticks;
+static bool              s_call_preview_on_phase;
+
+static void MAIN_CallToneStopPreview(void)
+{
+    if (!s_call_preview_active) {
+        return;
+    }
+    s_call_preview_active = false;
+
+    AUDIO_AudioPathOff();
+    gEnableSpeaker = false;
+    BK4819_EnterTxMute();
+    BK4819_WriteRegister(BK4819_REG_70, 0x0000);
+    BK4819_TurnsOffTones_TurnsOnRX();
+    BK4819_SetRxAudioGain();
+}
+
+void MAIN_PlayCallTonePreview(uint8_t tone)
+{
+    if (tone > 4u) tone = 0;
+    if (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx())
+        return;
+
+    /* Non-blocking preview: about 2 seconds, cancellable by MENU/EXIT or by
+     * selecting another tone.  Do not use SYSTEM_DelayMs here; that freezes
+     * the menu and delays the value shown on screen. */
+    MAIN_CallToneStopPreview();
+
+    s_call_preview_active = true;
+    s_call_preview_tone = tone;
+    s_call_preview_note = 0;
+    s_call_preview_phase_ticks = 0;
+    s_call_preview_elapsed_ticks = 0;
+    s_call_preview_on_phase = false;
+
+    BK4819_EnterTxMute();
+    BK4819_SetAF(BK4819_AF_BEEP);
+    MAIN_SetQuietLocalMonitor();
+    BK4819_WriteRegister(BK4819_REG_30, 0);
+    BK4819_WriteRegister(BK4819_REG_30,
+        BK4819_REG_30_ENABLE_AF_DAC |
+        BK4819_REG_30_ENABLE_DISC_MODE |
+        BK4819_REG_30_ENABLE_TX_DSP);
+    AUDIO_AudioPathOn();
+    gEnableSpeaker = true;
+}
+
+void MAIN_CancelCallTonePreview(void)
+{
+    MAIN_CallToneStopPreview();
+}
+
+void MAIN_CallToneTick10ms(void)
+{
+    if (!s_call_preview_active)
+        return;
+
+    if (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx()) {
+        MAIN_CallToneStopPreview();
+        return;
+    }
+
+    if (++s_call_preview_elapsed_ticks >= 200u) { // ~2 seconds
+        MAIN_CallToneStopPreview();
+        return;
+    }
+
+    if (s_call_preview_phase_ticks > 0) {
+        s_call_preview_phase_ticks--;
+        return;
+    }
+
+    const CallToneNote_t *n = &gCallToneMelodies[s_call_preview_tone][s_call_preview_note];
+    if (s_call_preview_note >= 16u || n->hz == 0) {
+        MAIN_CallToneStopPreview();
+        return;
+    }
+
+    if (!s_call_preview_on_phase) {
+        BK4819_SetAF(BK4819_AF_BEEP);
+        MAIN_SetQuietLocalMonitor();
+        BK4819_WriteRegister(BK4819_REG_70,
+            BK4819_REG_70_ENABLE_TONE1 | ((uint16_t)MAIN_GetCallTonePreviewGain() << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
+        BK4819_WriteRegister(BK4819_REG_30,
+            BK4819_REG_30_ENABLE_AF_DAC |
+            BK4819_REG_30_ENABLE_DISC_MODE |
+            BK4819_REG_30_ENABLE_TX_DSP);
+        AUDIO_AudioPathOn();
+        gEnableSpeaker = true;
+        BK4819_WriteRegister(BK4819_REG_71, MAIN_ScaleToneFreq(n->hz));
+        BK4819_ExitTxMute();
+        s_call_preview_on_phase = true;
+        s_call_preview_phase_ticks = n->on_10ms;
+    } else {
+        BK4819_EnterTxMute();
+        s_call_preview_on_phase = false;
+        s_call_preview_phase_ticks = n->off_10ms;
+        s_call_preview_note++;
+    }
+}
+
+
+static void MAIN_PlayLocalCallToneNote(uint16_t hz, uint8_t on_10ms, uint8_t off_10ms)
+{
+    if (hz == 0 || on_10ms == 0) return;
+
+    BK4819_WriteRegister(BK4819_REG_71, MAIN_ScaleToneFreq(hz));
+    BK4819_WriteRegister(BK4819_REG_70,
+        BK4819_REG_70_ENABLE_TONE1 | ((uint16_t)MAIN_GetCallTonePreviewGain() << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
+    BK4819_ExitTxMute();
+    SYSTEM_DelayMs((unsigned)on_10ms * 10u);
+    BK4819_EnterTxMute();
+    if (off_10ms) SYSTEM_DelayMs((unsigned)off_10ms * 10u);
+}
+
+void MAIN_PlayCallTonePreviewBlocking(uint8_t tone)
+{
+    if (tone > 4u) tone = 0;
+    if (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx())
+        return;
+
+    MAIN_CallToneStopPreview();
+
+#ifdef ENABLE_MESSENGER
+    MSG_RF_HardRestoreVoicePath();
+#endif
+
+    /* Dedicated preview screen path: intentionally simple/blocking for clean
+     * sound. It is NOT used while moving through the menu list; the user first
+     * enters the PREVIEW screen, then hears one clean 2s local preview. */
+    BK4819_EnterTxMute();
+    BK4819_SetAF(BK4819_AF_BEEP);
+    MAIN_SetQuietLocalMonitor();
+    BK4819_WriteRegister(BK4819_REG_30, 0);
+    BK4819_WriteRegister(BK4819_REG_30,
+        BK4819_REG_30_ENABLE_AF_DAC |
+        BK4819_REG_30_ENABLE_DISC_MODE |
+        BK4819_REG_30_ENABLE_TX_DSP);
+    AUDIO_AudioPathOn();
+    gEnableSpeaker = true;
+    BK4819_WriteRegister(BK4819_REG_70, 0x0000);
+    SYSTEM_DelayMs(40);
+
+    uint16_t elapsed = 0;
+    for (uint8_t pass = 0; pass < 3u && elapsed < 2000u; ++pass) {
+        for (uint8_t i = 0; i < 16u && elapsed < 2000u; ++i) {
+            const CallToneNote_t *n = &gCallToneMelodies[tone][i];
+            if (n->hz == 0) break;
+            MAIN_PlayLocalCallToneNote(n->hz, n->on_10ms, n->off_10ms);
+            elapsed += (uint16_t)((uint16_t)n->on_10ms + (uint16_t)n->off_10ms) * 10u;
+        }
+    }
+
+    BK4819_EnterTxMute();
+    BK4819_WriteRegister(BK4819_REG_70, 0x0000);
+
+    AUDIO_AudioPathOff();
+    gEnableSpeaker = false;
+    BK4819_TurnsOffTones_TurnsOnRX();
+    BK4819_SetRxAudioGain();
+}
+
+static void MAIN_SendCallToneNote(uint16_t hz, uint8_t on_10ms, uint8_t off_10ms)
+{
+    if (hz == 0 || on_10ms == 0) return;
+
+    const uint8_t gain = MAIN_GetCallToneTxGain();
+    BK4819_WriteRegister(BK4819_REG_71, MAIN_ScaleToneFreq(hz));
+    BK4819_WriteRegister(BK4819_REG_70,
+        BK4819_REG_70_ENABLE_TONE1 | ((uint16_t)(gain & 0x7fu) << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
+    BK4819_ExitTxMute();
+    SYSTEM_DelayMs((uint16_t)on_10ms * 10u);
+    BK4819_EnterTxMute();
+    if (off_10ms) {
+        SYSTEM_DelayMs((uint16_t)off_10ms * 10u);
+    }
+}
+
+static void MAIN_SendPmrCallTone(void)
+{
+    // F+9 PMR-style RF call tone. Long-press 9 keeps the original 1-CALL channel shortcut.
+    if (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx()) {
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        return;
+    }
+
+    uint8_t tone = 0;
+#ifdef ENABLE_MESSENGER
+    MSG_STORE_Init();
+    tone = gMessengerConfig.call_tone;
+#endif
+    if (tone > 4u) tone = 0;
+
+    MAIN_CallToneStopPreview();
+
+#ifdef ENABLE_MESSENGER
+    MSG_RF_HardRestoreVoicePath();
+#endif
+
+    gCallToneTxActive = true;
+    RADIO_PrepareTX();
+    if (gCurrentFunction != FUNCTION_TRANSMIT) {
+        gCallToneTxActive = false;
+        return;
+    }
+
+    gUpdateStatus = true;
+    gUpdateDisplay = true;
+    GUI_DisplayScreen();
+
+    BK4819_DisableScramble();
+    BK4819_EnterTxMute();
+
+    /* Clean single-tone TX path with quiet local monitor. */
+    BK4819_SetAF(BK4819_AF_BEEP);
+    MAIN_SetQuietLocalMonitor();
+    AUDIO_AudioPathOn();
+    gEnableSpeaker = true;
+    BK4819_WriteRegister(BK4819_REG_70, 0x0000);
+    BK4819_EnableTXLink();
+    SYSTEM_DelayMs(80); // let TX/tone path settle before first tone
+
+    const uint16_t saved_reg40 = MAIN_CallToneApplyDeviationForVolume();
+
+    /* Send for a full ~3 seconds. A single melody pass can be only around
+     * 1.5-2.0s depending on the selected tone, so repeat the melody until the
+     * requested call-tone duration is reached. */
+    uint16_t elapsed = 0;
+    while (elapsed < 3000u) {
+        bool played_any = false;
+        for (uint8_t i = 0; i < 16u && elapsed < 3000u; ++i) {
+            const CallToneNote_t *n = &gCallToneMelodies[tone][i];
+            if (n->hz == 0) break;
+            MAIN_SendCallToneNote(n->hz, n->on_10ms, n->off_10ms);
+            elapsed += (uint16_t)((uint16_t)n->on_10ms + (uint16_t)n->off_10ms) * 10u;
+            played_any = true;
+        }
+        if (!played_any) break;
+    }
+
+    MAIN_CallToneRestoreDeviation(saved_reg40);
+
+    AUDIO_AudioPathOff();
+    gEnableSpeaker = false;
+    BK4819_EnterTxMute();
+    BK4819_WriteRegister(BK4819_REG_70, 0x0000);
+    BK4819_SetRxAudioGain();
+    APP_HandleEndTransmission();
+    gCallToneTxActive = false;
+
+    RADIO_SetVfoState(VFO_STATE_NORMAL);
+    gRequestDisplayScreen = DISPLAY_MAIN;
+    gUpdateStatus = true;
+    gUpdateDisplay = true;
 }
 
 static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
@@ -265,19 +614,16 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
             break;
 
         case KEY_7:
-#ifdef ENABLE_FEAT_F4HWN_GAME
+#ifdef ENABLE_MESSENGER
             if (!beep) {
-                APP_RunBreakout();
-            } else {
+                MSG_RangeOpen();
+            } else
 #endif
+            {
 #ifdef ENABLE_VOX
                 ACTION_Vox();
-//#else
-//              toggle_chan_scanlist();
 #endif
-#ifdef ENABLE_FEAT_F4HWN_GAME
             }
-#endif
 
             break;
 
@@ -294,7 +640,7 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
 
         case KEY_9:
             if (!beep) {
-                ACTION_BackLight();
+                MAIN_SendPmrCallTone();
             }
             else {
                 if (RADIO_CheckValidChannel(gEeprom.CHAN_1_CALL, false, 0)) {

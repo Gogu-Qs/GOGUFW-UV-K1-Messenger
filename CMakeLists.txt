@@ -20,7 +20,7 @@ message("Build type: " ${CMAKE_BUILD_TYPE})
 enable_language(C ASM)
 
 find_package(Git QUIET)
-set(BUILD_COMMIT "unknown")
+set(BUILD_COMMIT "source-zip")
 if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
     execute_process(
         COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
@@ -30,7 +30,7 @@ if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
         ERROR_QUIET
     )
     if(NOT BUILD_COMMIT)
-        set(BUILD_COMMIT "unknown")
+        set(BUILD_COMMIT "source-zip")
     endif()
 endif()
 
@@ -45,7 +45,7 @@ if(ENABLE_FEAT_F4HWN)
         set(VERSION_STRING_1 "v0.22")
     endif()
     if(NOT VERSION_STRING_2)
-        set(VERSION_STRING_2 "0.3.12")
+        set(VERSION_STRING_2 "0.5.18")
     endif()
     if(NOT EDITION_STRING)
         set(EDITION_STRING "GGFW")

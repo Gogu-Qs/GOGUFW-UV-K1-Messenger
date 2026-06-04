@@ -1,0 +1,9 @@
+GOGUFW 0.5.12 Range Check UI hotfix 2
+
+- Top separator moved to y=9 to sit closer under the RANGE CHECK title.
+- Initial PRESS MENU / TO CHECK prompt remains centered between separators.
+- After PING, if no PONG has arrived yet, the center panel now shows WAITING / FOR PONG instead of an empty FOUND list.
+- On timeout with zero results, the center panel shows NOT FOUND.
+- On first PONG, the screen switches to FOUND list immediately while WAIT remains active until the 10 s window ends.
+- FOUND list keeps 3 rows/page, page indicator, RSSI text, and signal bars.
+- List first row moved 1 px upward so the third row no longer touches the lower separator.

@@ -1,0 +1,82 @@
+GGFW Messenger clean rebuild for F4HWN 5.5.0 - Stage 1-5 package
+
+Base:
+- Clean F4HWN 5.5.0 source supplied by user.
+- No RF/FSK/NUNU receive code is included in this package yet.
+- Old experimental fix27/fix33 RF approaches were intentionally NOT copied.
+
+Implemented in this package:
+1) Modular Messenger architecture
+   - App/app/messenger.c/.h
+   - App/app/messenger_store.c/.h
+   - App/app/messenger_t9.c/.h
+   - App/app/messenger_ui.c/.h
+
+2) F+MENU entry hook
+   - From main screen, F+MENU opens Messenger.
+
+3) Temporary development Settings/debug screen
+   - Included inside Messenger for Stage 2 development.
+   - Intended to be hidden/removed in final stages.
+
+4) Messenger UI skeleton using existing F4HWN style
+   - Home: Inbox / Compose / Sent / Drafts / Settings
+   - Inbox list
+   - Sent/Outbox list
+   - Drafts list
+   - Compose screen
+   - Read screen
+
+5) Storage model
+   - Inbox capacity: 20 messages
+   - Outbox/Sent capacity: 10 messages
+   - Draft templates: 8 slots
+   - Newest-first insertion
+   - Oldest auto-removed when full
+   - Unread flag support
+
+6) Continuous list scrolling
+   - Visible list remains 4 rows.
+   - UP/DOWN currently moves selection and scrolls the visible window.
+   - This matches the requested “scrolling list” behavior rather than page switching.
+
+7) Shared T9 editor scaffold
+   - Used by Compose now.
+   - Intended future uses: callsign edit, draft edit, FM radio memory rename.
+   - Current first implementation maps each digit to the first letter group only; multi-tap refinement is planned later.
+
+8) Main radio menu Messenger entries
+   - MsgRx
+   - MsgCtx (Callsign TX)
+   - MsgAck
+   - MsgHop
+   - MsgBep
+   - MsgLed
+   - MsgDbg
+   - These write to Messenger config storage.
+
+9) EEPROM-backed Messenger config scaffold
+   - Uses a dedicated config struct and chunked EEPROM read/write.
+   - NOTE: address currently selected for development is 0x1E80; review before final EEPROM map freeze.
+
+Not implemented yet:
+- RF TX/RX
+- NUNU 44-byte parser integration
+- silent background FSK monitor
+- real ACK/retry/hop
+- notification beep/icon/LED blink
+- FM broadcast memory rename
+- full multi-tap T9 behavior
+- porting guide
+
+Validation done here:
+- Docker/ARM build could not be run in this environment because Docker is unavailable.
+- Syntax checks were run locally with GCC against the new/modified C files and passed, ignoring host-size embedded pointer warnings.
+
+Recommended user test:
+1) Build with: bash compile-with-docker.sh Fusion
+2) Flash only if build succeeds.
+3) Test normal radio RX/TX first.
+4) Test F+MENU opens Messenger.
+5) Test Inbox/Sent/Drafts/Compose navigation.
+6) Test main menu Msg* entries appear and can change.

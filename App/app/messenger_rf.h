@@ -9,7 +9,9 @@ void MSG_RF_Close(void);
 void MSG_RF_Tick10ms(void);
 void MSG_RF_OnRadioInterrupt(uint16_t status);
 bool MSG_RF_SendText(const char *text);
+bool MSG_RF_SendRangePing(void);
 void MSG_RF_HardRestoreVoicePath(void);
+bool MSG_RF_RxChannelLockActive(void);
 
 uint16_t MSG_RF_GetAckDbgPendingId(void);
 uint16_t MSG_RF_GetAckDbgSentId(void);

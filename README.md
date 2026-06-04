@@ -1,187 +1,60 @@
-# Stats
+# GOGUFW 0.5.18
 
-![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=for-the-badge)
-![GitHub forks](https://img.shields.io/github/forks/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=for-the-badge)
-![GitHub release](https://img.shields.io/github/v/release/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=for-the-badge)
-![GitHub downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=for-the-badge)
+GOGUFW is a messaging-focused F4HWN Fusion-based firmware fork for Quansheng UV-K1 / BK4829 radios.
 
----
+This package updates the public GitHub source from the older 0.3.x line to the current 0.5.18 development line.
 
-# GOGUFW - UV-K1 Messenger Firmware
+## Main features
 
-Custom experimental messenger firmware for the Quansheng UV-K1 / K5V3 platform.
+- UV-K1 Messenger with Inbox, Compose, Sent, Drafts, Reply, Delete and Resend flows
+- Boot-time RF message receive without opening Messenger first
+- ACK/retry messaging with text ACK fallback and VFO-aware ACK return
+- Persistent Messenger settings, drafts and callsign storage using the GOGUFW private flash sector
+- Shared T9 editor with multi-tap timeout and letter-only ABC/abc cycling
+- Global message beep, unread icon and unread notification behavior
+- Range Check for UV-K1 to UV-K1 testing using the Messenger FSK infrastructure
+- F+9 CALLTX call-tone feature with selectable tone preview screen
+- FM broadcast radio UI refinements and memory-channel naming groundwork
+- VS Code and Docker build support
 
-Based on:
-- F4HWN Fusion
-- EGZUMER
-- UV-K5 / UV-K1 open firmware ecosystem
+## 0.5.18 highlights
 
-GOGUFW focuses on adding a lightweight off-grid FSK messaging system while preserving normal radio usability and voice performance.
+- Range PONG timing refined to avoid early overlap with repeated PING bursts.
+- Range PING repeat, PONG repeat and Messenger ACK repeat behavior preserved from the previous stability line.
+- F+8 backlight shortcut changed to a 3-step cycle:
+  1. Backlight Always ON
+  2. Backlight Always OFF
+  3. Return to normal BackLt strategy
+- F+9 remains assigned to CALLTX.
+- SysInfo build commit fallback changed from `unknown` to `source-zip` when the source tree is not a git checkout.
 
----
+## Important storage note
 
-FOR MESSENGER PRESS F + MENU
+GOGUFW Messenger configuration uses the private flash sector at `0x012000`.
 
-# Features
+The older 0.3.3 storage location at EEPROM compatibility address `0x1E80` was intentionally abandoned because it overlaps the channel-memory compatibility area. No automatic migration is performed from that legacy address for safety.
 
-## Messenger System
+## Build
 
-- FSK text messaging
-- ACK / Retry delivery system
-- Random ACK delay collision reduction
-- Retry timeout protection
-- Background RF receive
-- Boot-time RF initialization
-- Draft message storage
-- Sent / Inbox / Drafts UI
-- Message resend
-- Reply support
-- Unread message notification
-- Status bar envelope icon
-- Persistent settings
-- T9 compose keyboard
-- Broadcast messaging
-- Hop-aware packet structure
-
----
-
-# Messenger UI Features
-
-## Messenger Home Screen
-
-- Pixel-art menu icons
-- Envelope icon for Inbox
-- Pencil icon for Compose
-- Upload arrow icon for Sent
-- Floppy disk icon for Drafts
-- Compact LCD-style UI layout
-- Small-font metadata rendering
-- Dashed separators
-- Optimized screen spacing
-
----
-
-# Compose Screen
-
-- T9 text input
-- B / b / 2 mode indicator
-- Long-press numeric input
-- Character counter
-- Draft save support
-- 36 character optimized payload length
-
----
-
-# Inbox / Sent Features
-
-- Compact metadata header
-- Hop display support
-- Delivery state indicators
-- Resend support
-- Delete support
-- Reply support
-
----
-
-# RF Features
-
-## ACK / Retry System
-
-- ACK timeout protection
-- Randomized ACK delay
-- Retry collision reduction
-- Delayed retry scheduler
-- Improved reliability in multi-radio environments
-
-# Screenshots
-
-## Messenger Home
-
-![Messenger Home](uv-k5-screenshot17.png)
-
-## Compose Screen
-
-![Compose](uv-k5-screenshot19.png)
-
-## Inbox
-
-![Inbox](uv-k5-screenshot18.png)
-
-## Sent
-
-![Inbox](uv-k5-screenshot20.png)
-
----
-
-# Planned Features
-
-- Automatic range check system
-- Midland-compatible ping/pong experiments
-- Auto range monitoring
-- FM radio memory naming
-- CHIRP integration updates
-- Relay / mesh improvements
-- Hop routing improvements
-- Additional message tools
-
----
-
-# Build
-
-Build firmware using Docker:
+Docker Desktop must be installed and running.
 
 ```bash
-
-chmod +x compile-with-docker.sh
-
-./compile-with-docker.sh Fusion
-
+chmod +x ./compile-with-docker.sh
+./compile-with-docker.sh
 ```
 
-The build output will appear under:
+The internal CMake preset is still named `Fusion` because GOGUFW uses the F4HWN Fusion feature set. The visible firmware branding/version is `GOGUFW 0.5.18 / GGFW`.
 
-```text
+## VS Code build
 
-build/Fusion/
+See `BUILD_WITH_VSCODE.md`.
 
-```
+## Changelog / release notes
 
-VS Code build support is included.
+- Current release notes: `GOGUFW_0.5.18_RELEASE_NOTES.md`
+- Range timing notes: `GOGUFW_0.5.18_RANGE_PONG_TIMING_NOTES.md`
+- Previous hotfix notes are kept in the repository for development history.
 
-## Credits
+## Attribution
 
-Huge respect to:
-
-* F4HWN
-* EGZUMER
-* UV-K5 open firmware contributors
-* The Quansheng modding community
-* and others I forget
-
-Warning
-
-This firmware is experimental.
-
-Messenger and RF features are still under active development and may contain bugs or unfinished functionality.
-
-Use at your own risk.
-
-## License
-
-Copyright (c) 2023 DualTachyon
-Copyright (c) 2024-2025 EGZUMER / F4HWN contributors
-
-Additional modifications and Messenger system:
-Copyright (c) 2026 GOGUFW / Gogu-Qs
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+Based on the F4HWN / UV-K5 custom firmware project. Original license and attribution are preserved in this repository.

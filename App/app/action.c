@@ -630,25 +630,33 @@ void ACTION_BackLight(void)
 
 void ACTION_BackLightOnDemand(void)
 {
-    if(gBackLight == false)
+    /* GOGUFW 0.5.18 hotfix:
+     * Keep F+9 available for CALLTX and make F+8 a complete 3-step
+     * backlight cycle by moving the original F+9 "return to BackLt
+     * strategy" behavior into the third F+8 press.
+     *
+     *   F+8 #1: Always ON   (BACKLIGHT_TIME = 61, manual mode)
+     *   F+8 #2: Always OFF  (BACKLIGHT_TIME = 0,  manual mode)
+     *   F+8 #3: Normal BackLt strategy (restore saved BACKLIGHT_TIME)
+     */
+    if (gBackLight == false)
     {
         gBacklightTimeOriginal = gEeprom.BACKLIGHT_TIME;
         gEeprom.BACKLIGHT_TIME = 61;
         gBackLight = true;
+        BACKLIGHT_TurnOn();
+    }
+    else if (gEeprom.BACKLIGHT_TIME == 61)
+    {
+        gEeprom.BACKLIGHT_TIME = 0;
+        BACKLIGHT_TurnOff();
     }
     else
     {
-        if(gBacklightBrightnessOld == gEeprom.BACKLIGHT_MAX)
-        {
-            gEeprom.BACKLIGHT_TIME = 0;
-        }
-        else
-        {
-            gEeprom.BACKLIGHT_TIME = 61;
-        }
+        gEeprom.BACKLIGHT_TIME = gBacklightTimeOriginal;
+        gBackLight = false;
+        BACKLIGHT_TurnOn();
     }
-    
-    BACKLIGHT_TurnOn();
 }
 
 void ACTION_Mute(void)

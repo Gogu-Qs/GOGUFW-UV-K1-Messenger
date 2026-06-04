@@ -16,6 +16,7 @@ typedef enum {
     MSG_SCREEN_READ,
     MSG_SCREEN_SETTINGS,
     MSG_SCREEN_CALLSIGN,
+    MSG_SCREEN_RANGE,
 } MSG_Screen_t;
 
 MSG_Screen_t gMsgScreen = MSG_SCREEN_HOME;
@@ -29,6 +30,25 @@ char gMsgCallsignBuf[MSG_CALLSIGN_EDIT_LEN + 1];
 uint8_t gMsgReadIndex;
 uint8_t gMsgReadSource;
 uint8_t gMsgSettingsCursor;
+
+typedef struct {
+    bool used;
+    char callsign[MSG_CALLSIGN_EDIT_LEN + 1];
+    int8_t rssi;
+    uint16_t battery_cv;
+    uint16_t age;
+} MSG_RangeFound_t;
+
+#define MSG_RANGE_MAX_FOUND 10u
+#define MSG_RANGE_PAGE_SIZE 3u
+#define MSG_RANGE_WAIT_TICKS 1000u
+
+MSG_RangeFound_t gMsgRangeFound[MSG_RANGE_MAX_FOUND];
+uint8_t gMsgRangeCount;
+uint8_t gMsgRangeScroll;
+uint8_t gMsgRangeStatus; /* 0 idle, 1 wait, 2 ok */
+static uint16_t s_msgRangeWaitTicks;
+
 static bool gMsgComposeIsDraftEdit;
 static uint8_t gMsgComposeDraftIndex;
 
@@ -51,7 +71,99 @@ void MSG_Tick(void)
 {
     if (gMsgScreen == MSG_SCREEN_COMPOSE) MSG_T9_Tick(&gMsgEditor);
     else if (gMsgScreen == MSG_SCREEN_CALLSIGN) MSG_T9_Tick(&gMsgCallsignEditor);
+    else if (gMsgScreen == MSG_SCREEN_RANGE && gMsgRangeStatus == 1u) {
+        if (s_msgRangeWaitTicks > 0u) --s_msgRangeWaitTicks;
+        if (s_msgRangeWaitTicks == 0u) {
+            gMsgRangeStatus = 2u;
+            MSG_RF_HardRestoreVoicePath();
+            gUpdateDisplay = true;
+        }
+    }
 }
+
+void MSG_RangeOpen(void)
+{
+    MSG_Init();
+    gMsgScreen = MSG_SCREEN_RANGE;
+    gMsgRangeCount = 0;
+    gMsgRangeScroll = 0;
+    gMsgRangeStatus = 0;
+    s_msgRangeWaitTicks = 0;
+    memset(gMsgRangeFound, 0, sizeof(gMsgRangeFound));
+    gRequestDisplayScreen = DISPLAY_MESSENGER;
+}
+
+bool MSG_RangeIsOpen(void)
+{
+    return gMsgScreen == MSG_SCREEN_RANGE;
+}
+
+void MSG_RangeOnPong(const char *callsign, int8_t rssi_dbm, uint16_t battery_cv)
+{
+    if (!callsign || !callsign[0]) return;
+    uint8_t pos = 0xFFu;
+    for (uint8_t i = 0; i < gMsgRangeCount; i++) {
+        if (strncmp(gMsgRangeFound[i].callsign, callsign, MSG_CALLSIGN_EDIT_LEN) == 0) { pos = i; break; }
+    }
+    if (pos == 0xFFu) {
+        if (gMsgRangeCount < MSG_RANGE_MAX_FOUND) pos = gMsgRangeCount++;
+        else pos = MSG_RANGE_MAX_FOUND - 1u;
+    }
+    memset(&gMsgRangeFound[pos], 0, sizeof(gMsgRangeFound[pos]));
+    gMsgRangeFound[pos].used = true;
+    strncpy(gMsgRangeFound[pos].callsign, callsign, MSG_CALLSIGN_EDIT_LEN);
+    gMsgRangeFound[pos].callsign[MSG_CALLSIGN_EDIT_LEN] = 0;
+    gMsgRangeFound[pos].rssi = rssi_dbm;
+    gMsgRangeFound[pos].battery_cv = battery_cv;
+
+    /* Keep strongest signals at the top. */
+    for (uint8_t i = 0; i + 1 < gMsgRangeCount; i++) {
+        for (uint8_t j = i + 1; j < gMsgRangeCount; j++) {
+            if (gMsgRangeFound[j].rssi > gMsgRangeFound[i].rssi) {
+                MSG_RangeFound_t t = gMsgRangeFound[i];
+                gMsgRangeFound[i] = gMsgRangeFound[j];
+                gMsgRangeFound[j] = t;
+            }
+        }
+    }
+    if (gMsgRangeCount == 0u) gMsgRangeScroll = 0u;
+    else {
+        uint8_t pages = (uint8_t)((gMsgRangeCount + MSG_RANGE_PAGE_SIZE - 1u) / MSG_RANGE_PAGE_SIZE);
+        if (gMsgRangeScroll >= pages) gMsgRangeScroll = (uint8_t)(pages - 1u);
+    }
+    gUpdateDisplay = true;
+}
+
+static void MSG_RangeFillTest(void)
+{
+    static const char ids[10][MSG_CALLSIGN_EDIT_LEN + 1] = {
+        "TA1ABC", "GGFW01", "NODE01", "NODE02", "MOB001",
+        "CAR001", "TEST01", "TEST02", "TEST03", "TEST04"
+    };
+    static const int8_t rssi[10] = { -68, -72, -75, -80, -84, -87, -90, -94, -97, -101 };
+    memset(gMsgRangeFound, 0, sizeof(gMsgRangeFound));
+    gMsgRangeCount = MSG_RANGE_MAX_FOUND;
+    gMsgRangeScroll = 0;
+    gMsgRangeStatus = 2u;
+    s_msgRangeWaitTicks = 0;
+    for (uint8_t i = 0; i < MSG_RANGE_MAX_FOUND; i++) {
+        gMsgRangeFound[i].used = true;
+        strncpy(gMsgRangeFound[i].callsign, ids[i], MSG_CALLSIGN_EDIT_LEN);
+        gMsgRangeFound[i].callsign[MSG_CALLSIGN_EDIT_LEN] = 0;
+        gMsgRangeFound[i].rssi = rssi[i];
+        gMsgRangeFound[i].battery_cv = (uint16_t)(740u + i * 5u);
+    }
+}
+
+static void MSG_RangeClearTest(void)
+{
+    memset(gMsgRangeFound, 0, sizeof(gMsgRangeFound));
+    gMsgRangeCount = 0;
+    gMsgRangeScroll = 0;
+    gMsgRangeStatus = 0u;
+    s_msgRangeWaitTicks = 0;
+}
+
 bool MSG_HasUnread(void) { return MSG_STORE_HasUnread(); }
 
 static uint8_t current_count(void)
@@ -238,6 +350,34 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             }
             else if (Key == KEY_EXIT) { MSG_T9_Commit(&gMsgEditor); go_home(); }
             else MSG_T9_HandleKey(&gMsgEditor, Key);
+            break;
+
+        case MSG_SCREEN_RANGE:
+            if (Key == KEY_EXIT) {
+                MSG_RF_HardRestoreVoicePath();
+                gRequestDisplayScreen = DISPLAY_MAIN;
+            } else if (Key == KEY_MENU) {
+                if (gMsgRangeStatus != 1u) {
+                    memset(gMsgRangeFound, 0, sizeof(gMsgRangeFound));
+                    gMsgRangeCount = 0;
+                    gMsgRangeScroll = 0;
+                    if (MSG_RF_SendRangePing()) {
+                        gMsgRangeStatus = 1u;
+                        s_msgRangeWaitTicks = MSG_RANGE_WAIT_TICKS;
+                    }
+                }
+            } else if (Key == KEY_1) {
+                MSG_RangeFillTest();
+            } else if (Key == KEY_2) {
+                MSG_RangeClearTest();
+            } else if (Key == KEY_UP) {
+                if (gMsgRangeCount > 0u && gMsgRangeScroll > 0u) --gMsgRangeScroll;
+            } else if (Key == KEY_DOWN) {
+                if (gMsgRangeCount > 0u) {
+                    uint8_t pages = (uint8_t)((gMsgRangeCount + MSG_RANGE_PAGE_SIZE - 1u) / MSG_RANGE_PAGE_SIZE);
+                    if (gMsgRangeScroll + 1u < pages) ++gMsgRangeScroll;
+                }
+            }
             break;
 
         case MSG_SCREEN_CALLSIGN:

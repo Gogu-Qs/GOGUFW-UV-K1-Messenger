@@ -22,6 +22,7 @@
 #include "app/dtmf.h"
 #include "app/generic.h"
 #include "app/menu.h"
+#include "app/main.h"
 #ifdef ENABLE_MESSENGER
     #include "app/messenger_store.h"
 #endif
@@ -474,7 +475,14 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
         case MENU_MSG_CALLTX:
         case MENU_MSG_ACK:
         case MENU_MSG_BEEP:
+        case MENU_RNG_RSP:
         case MENU_MSG_DEBUG:
+            *pMax = 1;
+            break;
+        case MENU_CALL_TONE:
+            *pMax = 4;
+            break;
+        case MENU_CALL_VOL:
             *pMax = 1;
             break;
         case MENU_MSG_HOP:
@@ -561,8 +569,14 @@ void MENU_AcceptSetting(void)
             gMessengerConfig.msg_hop = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
         case MENU_MSG_BEEP:
             gMessengerConfig.msg_beep = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
+        case MENU_CALL_TONE:
+            gMessengerConfig.call_tone = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
+        case MENU_CALL_VOL:
+            gMessengerConfig.call_vol = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
         case MENU_MSG_LED:
             gMessengerConfig.msg_led = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
+        case MENU_RNG_RSP:
+            gMessengerConfig.rng_rsp = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
         case MENU_MSG_DEBUG:
             gMessengerConfig.msg_debug = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
 #endif
@@ -1129,8 +1143,14 @@ void MENU_ShowCurrentSetting(void)
             MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.msg_hop; break;
         case MENU_MSG_BEEP:
             MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.msg_beep; break;
+        case MENU_CALL_TONE:
+            MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.call_tone; break;
+        case MENU_CALL_VOL:
+            MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.call_vol; break;
         case MENU_MSG_LED:
             MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.msg_led; break;
+        case MENU_RNG_RSP:
+            MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.rng_rsp; break;
         case MENU_MSG_DEBUG:
             MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.msg_debug; break;
 #endif
@@ -1827,6 +1847,9 @@ static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
 static void MENU_Key_EXIT(bool bKeyPressed, bool bKeyHeld)
 {
+#ifdef ENABLE_MESSENGER
+    if (bKeyPressed && !bKeyHeld) MAIN_CancelCallTonePreview();
+#endif
     if (MENU_IsEditingName())
     {
         if (!bKeyPressed)
@@ -1927,6 +1950,9 @@ Skip:
 
 static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
 {
+#ifdef ENABLE_MESSENGER
+    if (bKeyPressed && !bKeyHeld) MAIN_CancelCallTonePreview();
+#endif
     if (!bKeyPressed || (bKeyHeld && (!MENU_IsEditingName() || gAskForConfirmation)))
         return;
     
@@ -2033,6 +2059,21 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
     if (gIsInSubMenu)
     {
         const int m = UI_MENU_GetCurrentMenuId();
+
+#ifdef ENABLE_MESSENGER
+        if (m == MENU_CALL_TONE)
+        {
+            if (gSubMenuSelection < 0) gSubMenuSelection = 0;
+            if (gSubMenuSelection > 4) gSubMenuSelection = 4;
+            gCallTonePreviewTone = (uint8_t)gSubMenuSelection;
+            gCallTonePreviewScreen = true;
+            gBeepToPlay = 0;
+            gRequestDisplayScreen = DISPLAY_MENU;
+            UI_DisplayMenu();
+            MAIN_PlayCallTonePreviewBlocking(gCallTonePreviewTone);
+            return;
+        }
+#endif
 
         if (m == MENU_RESET  ||
             m == MENU_MEM_CH ||
@@ -2149,7 +2190,13 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
 
     if (!bKeyHeld) {
         gInputBoxIndex = 0;
-        gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
+#ifdef ENABLE_MESSENGER
+        /* CllTon has its own 3-4 second preview.  The normal menu key-beep
+         * was racing the preview tone generator and caused random single/short
+         * beeps or no preview at all. */
+        if (!(gIsInSubMenu && UI_MENU_GetCurrentMenuId() == MENU_CALL_TONE))
+#endif
+            gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
     }
 
     if (!gEeprom.SET_NAV && gIsInSubMenu) {
@@ -2185,6 +2232,9 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
 
     if (!gIsInSubMenu)
     {
+#ifdef ENABLE_MESSENGER
+        MAIN_CancelCallTonePreview();
+#endif
         gMenuCursor = NUMBER_AddWithWraparound(gMenuCursor, -Direction, 0, gMenuListCount - 1);
 
         gFlagRefreshSetting = true;
@@ -2236,6 +2286,13 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
 
         default:
             MENU_ClampSelection(Direction);
+#ifdef ENABLE_MESSENGER
+            if (m == MENU_CALL_TONE) {
+                /* CllTon list is selection-only. Preview is opened with MENU
+                 * on a dedicated screen so normal browsing never starts audio. */
+                MAIN_CancelCallTonePreview();
+            }
+#endif
             gRequestDisplayScreen = DISPLAY_MENU;
             return;
     }
@@ -2288,6 +2345,43 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
 
 void MENU_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
+#ifdef ENABLE_MESSENGER
+    if (gCallTonePreviewScreen)
+    {
+        if (!bKeyPressed || bKeyHeld)
+            return;
+
+        if (Key == KEY_MENU)
+        {
+            MSG_STORE_Init();
+            if (gCallTonePreviewTone > 4u) gCallTonePreviewTone = 0;
+            gMessengerConfig.call_tone = gCallTonePreviewTone;
+            MSG_STORE_SaveConfig();
+            gSubMenuSelection = gCallTonePreviewTone;
+            gCallTonePreviewScreen = false;
+            gIsInSubMenu = false;
+            gInputBoxIndex = 0;
+            gFlagRefreshSetting = true;
+            gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
+            gRequestDisplayScreen = DISPLAY_MENU;
+            return;
+        }
+
+        if (Key == KEY_EXIT)
+        {
+            gCallTonePreviewScreen = false;
+            gIsInSubMenu = true;
+            gSubMenuSelection = gCallTonePreviewTone;
+            gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
+            gRequestDisplayScreen = DISPLAY_MENU;
+            return;
+        }
+
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        return;
+    }
+#endif
+
     switch (Key)
     {
         case KEY_0...KEY_9:

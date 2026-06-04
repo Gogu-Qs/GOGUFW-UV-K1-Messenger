@@ -171,7 +171,10 @@ enum
     MENU_MSG_ACK,
     MENU_MSG_HOP,
     MENU_MSG_BEEP,
+    MENU_CALL_TONE,
+    MENU_CALL_VOL,
     MENU_MSG_LED,
+    MENU_RNG_RSP,
     MENU_MSG_DEBUG
 #endif
 };

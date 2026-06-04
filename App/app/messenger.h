@@ -5,8 +5,11 @@
 
 void MSG_Init(void);
 void MSG_Open(void);
+void MSG_RangeOpen(void);
 void MSG_Tick(void);
 void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
 bool MSG_HasUnread(void);
+void MSG_RangeOnPong(const char *callsign, int8_t rssi_dbm, uint16_t battery_cv);
+bool MSG_RangeIsOpen(void);
 
 #endif

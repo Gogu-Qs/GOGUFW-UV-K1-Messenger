@@ -90,6 +90,49 @@ uint8_t MSG_PACKET_BuildAck(uint8_t *out, uint8_t out_len, uint16_t id, const ch
     return MSG_PKT_WIRE_LEN;
 }
 
+static uint8_t build_control(uint8_t *out, uint8_t out_len, uint8_t type, uint16_t id, const char *from, const char *to)
+{
+    if (!out || out_len < MSG_PKT_WIRE_LEN) return 0;
+    memset(out, 0, MSG_PKT_WIRE_LEN);
+    out[0] = MSG_PKT_MAGIC0;
+    out[1] = MSG_PKT_MAGIC1;
+    out[2] = MSG_PKT_MAGIC2;
+    out[3] = MSG_PKT_MAGIC3;
+    out[4] = MSG_PKT_VERSION;
+    out[5] = type;
+    out[6] = 0;
+    put_u16_le(&out[7], id);
+    out[9] = 1;
+    out[10] = 1;
+    copy_field(&out[11], MSG_CALLSIGN_LEN, from && from[0] ? from : "UVK1");
+    copy_field(&out[19], MSG_CALLSIGN_LEN, to && to[0] ? to : MSG_PKT_TO_ALL);
+    out[27] = 0;
+    uint16_t crc = MSG_PACKET_Crc16(out, MSG_PKT_WIRE_LEN - 2u);
+    put_u16_le(&out[MSG_PKT_WIRE_LEN - 2u], crc);
+    return MSG_PKT_WIRE_LEN;
+}
+
+uint8_t MSG_PACKET_BuildPing(uint8_t *out, uint8_t out_len, uint16_t id, const char *from)
+{
+    return build_control(out, out_len, MSG_PKT_TYPE_PING, id, from, MSG_PKT_TO_ALL);
+}
+
+uint8_t MSG_PACKET_BuildPong(uint8_t *out, uint8_t out_len, uint16_t id, const char *from, const char *to, uint16_t battery_cv)
+{
+    uint8_t n = build_control(out, out_len, MSG_PKT_TYPE_PONG, id, from, to && to[0] ? to : MSG_PKT_TO_ALL);
+    if (n == MSG_PKT_WIRE_LEN) {
+        /* Range Check 0.5.13: carry remote battery voltage in centivolts.
+         * Old packets have payload_len=0, so receivers can show --.- safely.
+         */
+        out[27] = 2;
+        out[28] = (uint8_t)(battery_cv & 0xFFu);
+        out[29] = (uint8_t)(battery_cv >> 8);
+        uint16_t crc = MSG_PACKET_Crc16(out, MSG_PKT_WIRE_LEN - 2u);
+        put_u16_le(&out[MSG_PKT_WIRE_LEN - 2u], crc);
+    }
+    return n;
+}
+
 static void copy_cstr(char *dst, uint8_t dst_len, const uint8_t *src, uint8_t src_len)
 {
     uint8_t n = src_len;

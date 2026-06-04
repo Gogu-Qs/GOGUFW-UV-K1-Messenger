@@ -1,0 +1,55 @@
+GGFW Clean 5.5.0 - Stage 6/7 Native Packet Layer
+==================================================
+
+Goal
+----
+NUNU compatibility is intentionally disabled for now.  This stage adds the
+native GGFW UV-K1 <-> UV-K1 packet format and parser without touching BK4829
+RF/FSK code yet.
+
+What changed
+------------
+1) Added App/app/messenger_packet.c/.h
+   - Fixed native GGFW frame length: 78 bytes.
+   - Magic: "GGM1".
+   - Version: 1.
+   - Type: TEXT/ACK/PING/PONG reserved.
+   - Fields: msg_id, ttl_init, ttl_remain, FROM, TO=ALL, payload, CRC16.
+   - Parser scans for magic inside a larger buffer so later RF capture can pass
+     an offset/aligned buffer safely.
+   - Includes a packet self-test function for future PC-side logic tests.
+
+2) Store integration
+   - Added MSG_STORE_AddInboxMessage / AddOutboxMessage.
+   - Added persistent next_msg_id in Messenger config.
+   - Demo/test message now encodes a native GGFW packet, parses it, then enqueues
+     it into Inbox.  This validates Stage 6/7 without RF.
+
+3) UI integration
+   - Read screen now shows ID and hop info as ID:<id> H:<used>/<init>.
+   - List item text remains clipped to safe width.
+
+How to test
+-----------
+1) Build Fusion.
+2) Open Messenger with F+MENU.
+3) Press 1 on Messenger home to inject a native packet.
+   Expected:
+   - envelope icon appears,
+   - MSG BEEP plays if enabled,
+   - Inbox receives a message from NODE2,
+   - opening it clears unread and shows ID/HOPS.
+4) Compose a short message and press MENU.
+   Expected:
+   - message appears in Sent with FROM=current callsign, TO=ALL.
+
+Not included yet
+----------------
+- No BK4829 RF TX/RX.
+- No NUNU parser.
+- No ACK/retry/hop forwarding runtime yet.
+- No Range Ping/Pong runtime yet, only packet type values are reserved.
+
+Build with VS Code
+------------------
+Use Cmd+Shift+B -> GGFW: Build Fusion (Docker).

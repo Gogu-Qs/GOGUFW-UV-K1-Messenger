@@ -72,6 +72,12 @@ static const AddrMapping_t ADDR_MAPPINGS[] = {
                                                 // [0x00..0x07] 8-byte header (reserved)
                                                 // [0x08..0x407] 128x64 monochrome bitmap, 1024 Bytes
                                                 // ST7565-native: 8 pages * 128 columns, column-major LSB-top
+
+    _MK_MAPPING(0x013000, 0x00D000, 0x00E000),  // GGFW FM radio names sector (4 KB):
+                                                // CHIRP-visible alias only. Actual storage remains 0x013000.
+
+    _MK_MAPPING(0x012000, 0x00E000, 0x00F000),  // GGFW Messenger/call settings sector (4 KB):
+                                                // CHIRP-visible alias only. Actual storage remains 0x012000.
 };
 
 static void AddrTranslate(uint16_t EEPROM_Addr, uint16_t Size, uint32_t *PY25Q16_Addr_out, uint16_t *Size_out, bool *End_out);

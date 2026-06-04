@@ -19,6 +19,7 @@
 
 #include "app/chFrScanner.h"
 #include "app/dtmf.h"
+#include "app/main.h"
 
 #ifdef ENABLE_FEAT_F4HWN_BEAM
     #include "app/beam.h"
@@ -1361,8 +1362,7 @@ void UI_DisplayMain(void)
                 {   // show the TX symbol
                     mode = VFO_MODE_TX;
                     //UI_PrintStringSmallBold("TX", 8, 0, line);
-                    GUI_DisplaySmallest("TX", 10, line == 0 ? 1 : 33, false, true);
-
+                    GUI_DisplaySmallest(gCallToneTxActive ? "CALLTX" : "TX", 10, line == 0 ? 1 : 33, false, true);
                 }
             }
         }
