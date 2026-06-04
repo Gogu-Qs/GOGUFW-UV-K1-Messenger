@@ -1,0 +1,30 @@
+GGFW clean 5.5.0 Stage 1-5 Hotfix 3
+
+Scope: UI/key handling only. No RF/FSK/audio/storage logic changes.
+
+Changes:
+1) Sent read-screen delete behavior fixed
+   - When reading a Sent/Outbox message, F:DEL now deletes that Sent message
+     and returns to Sent list.
+   - Previously it always deleted/returned to Inbox because read-screen source
+     was not tracked.
+
+2) Right-side counters made safer
+   - Header counters such as 0/0, 1/2 now use conservative right alignment
+     with margin to avoid drawing past LCD right edge.
+
+3) Compose/read long text wrapping fixed
+   - Compose text is rendered in safe 18-character chunks before drawing.
+   - Prevents 19th uppercase character from being partly drawn at right edge
+     and spilling to the next line.
+   - Read screen message text uses the same safe wrapping.
+
+Build with VS Code:
+- Cmd+Shift+B -> GGFW: Build Fusion (Docker)
+- If needed first run: GGFW: Make build script executable
+
+Test focus:
+- Sent: open a sent message, press F, verify it deletes from Sent and returns to Sent.
+- Inbox: open an inbox message, press F, verify it deletes from Inbox.
+- Header counters should stay fully visible.
+- Compose long uppercase/lowercase messages should wrap cleanly.

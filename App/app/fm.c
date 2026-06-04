@@ -21,7 +21,9 @@
 #include "app/action.h"
 #include "app/fm.h"
 #include "app/generic.h"
+#include "app/messenger_t9.h"
 #include "audio.h"
+#include "external/printf/printf.h"
 #include "driver/bk1080.h"
 #include "driver/bk4819.h"
 #include "driver/py25q16.h"
@@ -42,7 +44,35 @@ uint8_t           gFM_ChannelPosition;
 bool              gFM_FoundFrequency;
 uint16_t          gFM_RestoreCountdown_10ms;
 
+#define FM_NAMES_FLASH_ADDR 0x013000u
+#define FM_NAMES_MAGIC      0x4747464Du  /* "GGFM" */
+#define FM_NAME_LEN         16u
+#define FM_NAMES_VERSION    1u
 
+typedef struct {
+    uint32_t magic;
+    uint8_t version;
+    uint8_t count;
+    uint8_t reserved[10];
+} __attribute__((packed)) FM_NamesHeader_t;
+
+#define FM_NAMES_HEADER_SIZE ((uint32_t)sizeof(FM_NamesHeader_t))
+#define FM_NAMES_SLOT_ADDR(ch) (FM_NAMES_FLASH_ADDR + FM_NAMES_HEADER_SIZE + ((uint32_t)(ch) * FM_NAME_LEN))
+#define FM_NAMES_USED_SIZE  (FM_NAMES_HEADER_SIZE + ((uint32_t)FM_CHANNELS_MAX * FM_NAME_LEN))
+
+static char s_fmNameReadBuf[FM_NAME_LEN];
+
+typedef enum {
+    FM_MENU_NONE = 0,
+    FM_MENU_DELETE,
+    FM_MENU_NAME,
+} FM_MenuMode_t;
+
+static FM_MenuMode_t s_fmMenuMode;
+static bool s_fmNameEdit;
+static bool s_fmAutoScanConfirm;
+static char s_fmNameEditBuf[FM_NAME_LEN];
+static MSG_T9Editor_t s_fmNameEditor;
 
 const uint8_t BUTTON_STATE_PRESSED = 1 << 0;
 const uint8_t BUTTON_STATE_HELD = 1 << 1;
@@ -54,6 +84,148 @@ const uint8_t BUTTON_EVENT_LONG =  BUTTON_STATE_HELD;
 
 
 static void Key_FUNC(KEY_Code_t Key, uint8_t state);
+
+static void FM_MakeDefaultName(uint8_t Channel, char *out)
+{
+    snprintf(out, FM_NAME_LEN, "CH-%02u", (uint8_t)(Channel + 1U));
+}
+
+static bool FM_NamesHeaderValid(void)
+{
+    FM_NamesHeader_t hdr;
+    PY25Q16_ReadBuffer(FM_NAMES_FLASH_ADDR, &hdr, sizeof(hdr));
+    return hdr.magic == FM_NAMES_MAGIC && hdr.version == FM_NAMES_VERSION && hdr.count == FM_CHANNELS_MAX;
+}
+
+static void FM_NamesWriteHeader(void)
+{
+    FM_NamesHeader_t hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.magic = FM_NAMES_MAGIC;
+    hdr.version = FM_NAMES_VERSION;
+    hdr.count = FM_CHANNELS_MAX;
+    PY25Q16_WriteBuffer(FM_NAMES_FLASH_ADDR, &hdr, sizeof(hdr), false);
+}
+
+static void FM_NamesEnsureStore(void)
+{
+    if (!FM_NamesHeaderValid()) {
+        PY25Q16_SectorErase(FM_NAMES_FLASH_ADDR);
+        FM_NamesWriteHeader();
+    }
+}
+
+const char *FM_GetChannelName(uint8_t Channel)
+{
+    if (Channel >= FM_CHANNELS_MAX) return "";
+    if (!FM_NamesHeaderValid()) return "";
+    PY25Q16_ReadBuffer(FM_NAMES_SLOT_ADDR(Channel), s_fmNameReadBuf, FM_NAME_LEN);
+    if ((uint8_t)s_fmNameReadBuf[0] == 0xFFU || s_fmNameReadBuf[0] == 0) return "";
+    s_fmNameReadBuf[FM_NAME_LEN - 1U] = 0;
+    return s_fmNameReadBuf;
+}
+
+void FM_SetChannelName(uint8_t Channel, const char *Name)
+{
+    /* Flash cannot reliably change 0 bits back to 1 without erase.
+       Keep only a temporary stack copy of the small FM-name store, update one slot,
+       erase the private 0x013000 sector, then write it back. This avoids a permanent
+       50x16 RAM table and allows renaming the same channel repeatedly. */
+    uint8_t store[FM_NAMES_USED_SIZE];
+    char slot[FM_NAME_LEN];
+
+    if (Channel >= FM_CHANNELS_MAX) return;
+    FM_NamesEnsureStore();
+
+    PY25Q16_ReadBuffer(FM_NAMES_FLASH_ADDR, store, sizeof(store));
+
+    memset(slot, 0, sizeof(slot));
+    if (Name != NULL) strncpy(slot, Name, FM_NAME_LEN - 1U);
+    slot[FM_NAME_LEN - 1U] = 0;
+
+    memcpy(&store[FM_NAMES_HEADER_SIZE + ((uint32_t)Channel * FM_NAME_LEN)], slot, sizeof(slot));
+
+    PY25Q16_SectorErase(FM_NAMES_FLASH_ADDR);
+    PY25Q16_WriteBuffer(FM_NAMES_FLASH_ADDR, store, sizeof(store), false);
+}
+
+void FM_SetChannelDefaultName(uint8_t Channel)
+{
+    char name[FM_NAME_LEN];
+    if (Channel >= FM_CHANNELS_MAX) return;
+    FM_MakeDefaultName(Channel, name);
+    FM_SetChannelName(Channel, name);
+}
+
+void FM_NamesLoad(void)
+{
+    FM_NamesEnsureStore();
+}
+
+void FM_NamesSave(void)
+{
+    FM_NamesEnsureStore();
+}
+
+void FM_NamesErase(void)
+{
+    PY25Q16_SectorErase(FM_NAMES_FLASH_ADDR);
+    FM_NamesWriteHeader();
+}
+
+void FM_Tick(void)
+{
+    if (s_fmNameEdit)
+        MSG_T9_Tick(&s_fmNameEditor);
+}
+
+static void FM_NameEditStart(void)
+{
+    memset(s_fmNameEditBuf, 0, sizeof(s_fmNameEditBuf));
+    const char *cur = FM_GetChannelName(gEeprom.FM_SelectedChannel);
+    if (cur[0]) strncpy(s_fmNameEditBuf, cur, FM_NAME_LEN - 1U);
+    else FM_MakeDefaultName(gEeprom.FM_SelectedChannel, s_fmNameEditBuf);
+    s_fmNameEditBuf[FM_NAME_LEN - 1U] = 0;
+    MSG_T9_Start(&s_fmNameEditor, s_fmNameEditBuf, FM_NAME_LEN - 1U);
+    s_fmNameEdit = true;
+    gRequestDisplayScreen = DISPLAY_FM;
+}
+
+static void FM_NameEditSave(void)
+{
+    MSG_T9_Commit(&s_fmNameEditor);
+    FM_SetChannelName(gEeprom.FM_SelectedChannel, s_fmNameEditBuf);
+    s_fmNameEdit = false;
+    s_fmMenuMode = FM_MENU_NONE;
+    gRequestDisplayScreen = DISPLAY_FM;
+}
+
+static void FM_NameEditCancel(void)
+{
+    MSG_T9_Commit(&s_fmNameEditor);
+    s_fmNameEdit = false;
+    s_fmMenuMode = FM_MENU_NAME;
+    gRequestDisplayScreen = DISPLAY_FM;
+}
+
+static void FM_StartAutoScanNow(void)
+{
+    uint16_t freq;
+    s_fmAutoScanConfirm = false;
+    gFM_AutoScan = true;
+    gFM_ChannelPosition = 0;
+    FM_EraseChannels();
+    freq = BK1080_GetFreqLoLimit(gEeprom.FM_Band);
+    FM_Tune(freq, 1, false);
+}
+
+bool FM_IsNameEditActive(void) { return s_fmNameEdit; }
+bool FM_IsAutoScanConfirmActive(void) { return s_fmAutoScanConfirm; }
+uint8_t FM_GetMenuMode(void) { return (uint8_t)s_fmMenuMode; }
+const char *FM_GetNameEditBuffer(void) { return s_fmNameEditBuf; }
+uint8_t FM_GetNameEditorMode(void) { return s_fmNameEditor.mode; }
+bool FM_GetNameEditorUpper(void) { return s_fmNameEditor.upper; }
+
 
 bool FM_CheckValidChannel(uint8_t Channel)
 {
@@ -126,6 +298,7 @@ void FM_EraseChannels(void)
     PY25Q16_WriteBuffer(0x00A028, clearBuf, sizeof(clearBuf), false);
 
     memset(gFM_Channels, 0xFF, sizeof(gFM_Channels));
+    FM_NamesErase();
 }
 
 uint16_t FM_WrapFrequency(uint16_t Frequency) {
@@ -152,6 +325,7 @@ void FM_Tune(uint16_t Frequency, int8_t Step, bool bFlag)
     gFM_FoundFrequency          = false;
     gAskToSave                  = false;
     gAskToDelete                = false;
+    s_fmMenuMode                = FM_MENU_NONE;
     gEeprom.FM_FrequencyPlaying = Frequency;
 
     if (!bFlag) {
@@ -238,6 +412,12 @@ int FM_CheckFrequencyLock(uint16_t Frequency, uint16_t LowerLimit)
 static void Key_DIGITS(KEY_Code_t Key, uint8_t state)
 {
     enum { STATE_FREQ_MODE, STATE_MR_MODE, STATE_SAVE };
+
+    if (s_fmMenuMode != FM_MENU_NONE || s_fmAutoScanConfirm) {
+        if (state == BUTTON_EVENT_SHORT || state == BUTTON_EVENT_PRESSED)
+            gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        return;
+    }
 
     if (state == BUTTON_EVENT_SHORT && !gWasFKeyPressed) {
         uint8_t State;
@@ -382,7 +562,13 @@ static void Key_FUNC(KEY_Code_t Key, uint8_t state)
                 break;
 
             case KEY_STAR:
-                ACTION_Scan(autoScan);
+                if (autoScan && gEeprom.FM_IsMrMode && gFM_ScanState == FM_SCAN_OFF) {
+                    s_fmAutoScanConfirm = true;
+                    gRequestDisplayScreen = DISPLAY_FM;
+                } else {
+                    /* Keep original VFO scan behavior: auto-scan/save flow is only for MR mode. */
+                    ACTION_Scan(gEeprom.FM_IsMrMode ? autoScan : false);
+                }
                 break;
 
             default:
@@ -405,15 +591,19 @@ static void Key_EXIT(uint8_t state)
 
     gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
 
+    if (s_fmNameEdit) { FM_NameEditCancel(); return; }
+    if (s_fmAutoScanConfirm) { s_fmAutoScanConfirm = false; gRequestDisplayScreen = DISPLAY_FM; return; }
+
     if (gFM_ScanState == FM_SCAN_OFF) {
         if (gInputBoxIndex == 0) {
-            if (!gAskToSave && !gAskToDelete) {
+            if (!gAskToSave && !gAskToDelete && s_fmMenuMode == FM_MENU_NONE) {
                 ACTION_FM();
                 return;
             }
 
             gAskToSave   = false;
             gAskToDelete = false;
+            s_fmMenuMode = FM_MENU_NONE;
         }
         else {
             gInputBox[--gInputBoxIndex] = 10;
@@ -462,6 +652,9 @@ static void Key_MENU(uint8_t state)
 
     HideFKeyIcon();
 
+    if (s_fmNameEdit) { FM_NameEditSave(); return; }
+    if (s_fmAutoScanConfirm) { FM_StartAutoScanNow(); return; }
+
     if (gFM_ScanState == FM_SCAN_OFF) {
         if (gInputBoxIndex) {
             gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
@@ -476,15 +669,22 @@ static void Key_MENU(uint8_t state)
             gAskToSave = !gAskToSave;
         }
         else {
-            if (gAskToDelete) {
+            if (s_fmMenuMode == FM_MENU_NONE) {
+                s_fmMenuMode = FM_MENU_NAME;
+                gAskToDelete = false;
+            } else if (s_fmMenuMode == FM_MENU_DELETE) {
                 gFM_Channels[gEeprom.FM_SelectedChannel] = 0xFFFF;
+                FM_SetChannelName(gEeprom.FM_SelectedChannel, "");
 
                 FM_ConfigureChannelState();
                 BK1080_SetFrequency(gEeprom.FM_FrequencyPlaying, gEeprom.FM_Band/*, gEeprom.FM_Space*/);
 
+                s_fmMenuMode = FM_MENU_NONE;
+                gAskToDelete = false;
                 gRequestSaveFM = true;
+            } else if (s_fmMenuMode == FM_MENU_NAME) {
+                FM_NameEditStart();
             }
-            gAskToDelete = !gAskToDelete;
         }
     }
     else {
@@ -506,6 +706,11 @@ static void Key_UP_DOWN(uint8_t state, int8_t Step)
 {
     HideFKeyIcon();
 
+    if (s_fmNameEdit || s_fmAutoScanConfirm) {
+        if (state == BUTTON_EVENT_PRESSED) gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        return;
+    }
+
     if (state == BUTTON_EVENT_PRESSED) {
         if (gInputBoxIndex) {
             gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
@@ -524,6 +729,13 @@ static void Key_UP_DOWN(uint8_t state, int8_t Step)
     if (gAskToSave) {
         gRequestDisplayScreen = DISPLAY_FM;
         gFM_ChannelPosition   = NUMBER_AddWithWraparound(gFM_ChannelPosition, Step, 0, FM_CHANNELS_MAX - 1);
+        return;
+    }
+
+    if (s_fmMenuMode != FM_MENU_NONE) {
+        s_fmMenuMode = (s_fmMenuMode == FM_MENU_NAME) ? FM_MENU_DELETE : FM_MENU_NAME;
+        gAskToDelete = (s_fmMenuMode == FM_MENU_DELETE);
+        gRequestDisplayScreen = DISPLAY_FM;
         return;
     }
 
@@ -566,6 +778,27 @@ Bail:
 void FM_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
     uint8_t state = bKeyPressed + 2 * bKeyHeld;
+
+    if (s_fmNameEdit) {
+        if (Key == KEY_MENU) { Key_MENU(state); return; }
+        if (Key == KEY_EXIT) { Key_EXIT(state); return; }
+        if (state == BUTTON_EVENT_SHORT && Key >= KEY_0 && Key <= KEY_9) { MSG_T9_HandleKey(&s_fmNameEditor, Key); gRequestDisplayScreen = DISPLAY_FM; return; }
+        if (state == BUTTON_EVENT_LONG && Key >= KEY_0 && Key <= KEY_9) { MSG_T9_HandleLongKey(&s_fmNameEditor, Key); gRequestDisplayScreen = DISPLAY_FM; return; }
+        if (state == BUTTON_EVENT_SHORT && (Key == KEY_STAR || Key == KEY_F)) { MSG_T9_HandleKey(&s_fmNameEditor, Key); gRequestDisplayScreen = DISPLAY_FM; return; }
+        return;
+    }
+
+    if (s_fmAutoScanConfirm) {
+        if (Key == KEY_EXIT) { Key_EXIT(state); return; }
+        if ((Key == KEY_STAR && (state == BUTTON_EVENT_PRESSED || state == BUTTON_EVENT_SHORT || state == BUTTON_EVENT_HELD)) ||
+            (Key == KEY_MENU && state == BUTTON_EVENT_SHORT)) {
+            gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
+            FM_StartAutoScanNow();
+            gRequestDisplayScreen = DISPLAY_FM;
+            return;
+        }
+        return;
+    }
 
     switch (Key) {
         case KEY_0...KEY_9:
@@ -618,8 +851,11 @@ void FM_Play(void)
             return;
         }
 
-        if (gFM_ChannelPosition < FM_CHANNELS_MAX)
-            gFM_Channels[gFM_ChannelPosition++] = gEeprom.FM_FrequencyPlaying;
+        if (gFM_ChannelPosition < FM_CHANNELS_MAX) {
+            gFM_Channels[gFM_ChannelPosition] = gEeprom.FM_FrequencyPlaying;
+            FM_SetChannelDefaultName(gFM_ChannelPosition);
+            gFM_ChannelPosition++;
+        }
 
         if (gFM_ChannelPosition >= FM_CHANNELS_MAX) {
             FM_PlayAndUpdate();
@@ -642,6 +878,8 @@ void FM_Start(void)
     gFmRadioMode              = true;
     gFM_ScanState             = FM_SCAN_OFF;
     gFM_RestoreCountdown_10ms = 0;
+
+    FM_NamesLoad();
 
     BK1080_Init(gEeprom.FM_FrequencyPlaying, gEeprom.FM_Band/*, gEeprom.FM_Space*/);
     // Disable UHF LNA, enable VHF LNA

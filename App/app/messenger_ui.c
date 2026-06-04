@@ -21,8 +21,19 @@ extern char gMsgCallsignBuf[];
 extern MSG_T9Editor_t gMsgEditor;
 extern MSG_T9Editor_t gMsgCallsignEditor;
 extern uint8_t gMsgScreen;
+typedef struct {
+    bool used;
+    char callsign[MSG_CALLSIGN_EDIT_LEN + 1];
+    int8_t rssi;
+    uint16_t battery_cv;
+    uint16_t age;
+} MSG_RangeFound_t;
+extern MSG_RangeFound_t gMsgRangeFound[];
+extern uint8_t gMsgRangeCount;
+extern uint8_t gMsgRangeScroll;
+extern uint8_t gMsgRangeStatus;
 
-enum { MSG_SCREEN_HOME = 0, MSG_SCREEN_INBOX, MSG_SCREEN_OUTBOX, MSG_SCREEN_DRAFTS, MSG_SCREEN_COMPOSE, MSG_SCREEN_READ, MSG_SCREEN_SETTINGS, MSG_SCREEN_CALLSIGN };
+enum { MSG_SCREEN_HOME = 0, MSG_SCREEN_INBOX, MSG_SCREEN_OUTBOX, MSG_SCREEN_DRAFTS, MSG_SCREEN_COMPOSE, MSG_SCREEN_READ, MSG_SCREEN_SETTINGS, MSG_SCREEN_CALLSIGN, MSG_SCREEN_RANGE };
 
 static void print_line(const char *s, uint8_t line, bool sel)
 {
@@ -83,6 +94,28 @@ static void msg_fill_rect(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, bool o
     if (y1 > 63U) y1 = 63U;
     for (uint8_t y = y0; y <= y1; y++) {
         for (uint8_t x = x0; x <= x1; x++) msg_set_pixel(x, y, on);
+    }
+}
+
+static uint8_t range_rssi_bars(int8_t rssi)
+{
+    if (rssi >= -75) return 4u;
+    if (rssi >= -85) return 3u;
+    if (rssi >= -95) return 2u;
+    return 1u;
+}
+
+static void draw_rssi_bars(uint8_t x, uint8_t y, int8_t rssi)
+{
+    const uint8_t bars = range_rssi_bars(rssi);
+    const uint8_t heights[4] = { 2u, 4u, 6u, 8u };
+    const uint8_t base = (uint8_t)(y + 7u);
+    for (uint8_t i = 0; i < 4u; i++) {
+        if (i >= bars) break;
+        uint8_t h = heights[i];
+        uint8_t bx = (uint8_t)(x + i * 3u);
+        uint8_t y0 = (base >= h) ? (uint8_t)(base - h + 1u) : y;
+        msg_fill_rect(bx, y0, (uint8_t)(bx + 1u), base, true);
     }
 }
 
@@ -378,6 +411,69 @@ static void draw_compose(void)
     GUI_DisplaySmallest((gMsgEditor.mode == 2U) ? "2" : (gMsgEditor.upper ? "B" : "b"), 120, 49, false, true);
 }
 
+static void draw_range(void)
+{
+    char buf[24];
+    draw_title("RANGE CHECK");
+    if (gMsgRangeStatus == 1u) GUI_DisplaySmallest("WAIT", 0, 1, false, true);
+    else if (gMsgRangeStatus == 2u) GUI_DisplaySmallest("OK", 0, 1, false, true);
+
+    const uint8_t top_sep = 9u;
+    const uint8_t bottom_sep = 46u;
+    const uint8_t page_size = 3u;
+    draw_dotted_separator(top_sep);
+    draw_dotted_separator(bottom_sep);
+
+    if (gMsgRangeStatus == 0u && gMsgRangeCount == 0u) {
+        /* Center the two-line prompt between the fixed separators. */
+        msg_draw_small_at_y("PRESS MENU", 29, 20, false);
+        msg_draw_small_at_y("TO CHECK", 39, 29, false);
+    } else if (gMsgRangeStatus == 1u && gMsgRangeCount == 0u) {
+        /* During the 10 s listen window, do not show an empty FOUND list. */
+        msg_draw_small_at_y("WAITING", 40, 20, false);
+        msg_draw_small_at_y("FOR PONG", 36, 29, false);
+    } else if (gMsgRangeStatus == 2u && gMsgRangeCount == 0u) {
+        msg_draw_small_at_y("NOT FOUND", 33, 24, false);
+    } else {
+        GUI_DisplaySmallest("FOUND:", 0, 12, false, true);
+        uint8_t pages = 1u;
+        if (gMsgRangeCount > 0u) pages = (uint8_t)((gMsgRangeCount + page_size - 1u) / page_size);
+        if (gMsgRangeScroll >= pages) gMsgRangeScroll = (uint8_t)(pages - 1u);
+        if (gMsgRangeCount > 0u) {
+            snprintf(buf, sizeof(buf), "%u/%u", (uint8_t)(gMsgRangeScroll + 1u), pages);
+            uint8_t x = (uint8_t)(128u - (strlen(buf) * 4u));
+            GUI_DisplaySmallest(buf, x, 12, false, true);
+        }
+        for (uint8_t row = 0; row < page_size; row++) {
+            uint8_t idx = (uint8_t)(gMsgRangeScroll * page_size + row);
+            if (idx >= gMsgRangeCount) break;
+            uint8_t y = (uint8_t)(19u + row * 9u);
+            snprintf(buf, sizeof(buf), "%-6s", gMsgRangeFound[idx].callsign);
+            msg_draw_small_at_y(buf, 0, y, false);
+            /* 0.5.15: draw Range rows in fixed X columns instead of relying
+             * on spaces inside a single string.  The LCD font/pitch made
+             * the RSSI and voltage look visually glued together.  Keep one
+             * complete device per row while giving each field its own zone:
+             * callsign | RSSI | battery | bars. */
+            snprintf(buf, sizeof(buf), "%4d", (int)gMsgRangeFound[idx].rssi);
+            msg_draw_small_at_y(buf, 48, y, false);
+            if (gMsgRangeFound[idx].battery_cv != 0u) {
+                snprintf(buf, sizeof(buf), "%u.%uv",
+                         (unsigned)(gMsgRangeFound[idx].battery_cv / 100u),
+                         (unsigned)((gMsgRangeFound[idx].battery_cv % 100u) / 10u));
+            } else {
+                strncpy(buf, "--.-v", sizeof(buf));
+                buf[sizeof(buf) - 1u] = 0;
+            }
+            msg_draw_small_at_y(buf, 80, y, false);
+            draw_rssi_bars(114, y, gMsgRangeFound[idx].rssi);
+        }
+    }
+
+    GUI_DisplaySmallest("PING", 0, 49, false, true);
+    GUI_DisplaySmallest("EXIT", 112, 49, false, true);
+}
+
 static void draw_callsign(void)
 {
     draw_title("MSG CSG");
@@ -440,6 +536,7 @@ void UI_DisplayMessenger(void)
         case MSG_SCREEN_COMPOSE: draw_compose(); break;
         case MSG_SCREEN_CALLSIGN: draw_callsign(); break;
         case MSG_SCREEN_SETTINGS: draw_settings(); break;
+        case MSG_SCREEN_RANGE: draw_range(); break;
         default: draw_home(); break;
     }
     ST7565_BlitFullScreen();

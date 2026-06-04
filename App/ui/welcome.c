@@ -308,17 +308,31 @@ void UI_DisplayWelcome(void)
         UI_PrintString(WelcomeString1, 0, 127, 2, 10);
 
 #ifdef ENABLE_FEAT_F4HWN
-        UI_PrintStringSmallNormal(Version, 0, 128, 4);
+        UI_PrintStringSmallNormal(Version, 0, 127, 4);
 
-        UI_DrawLineBuffer(gFrameBuffer, 0, 35, 18, 35, 1);
-        gFrameBuffer[4][19] ^= 0x7F;
-        for (uint8_t x = 20; x < 108; x++)
+        /* GOGUFW 0.5.13: size the inverted version capsule from the actual
+         * rendered version string.  The old fixed 20..108 capsule was too
+         * narrow for longer labels like GOGUFW 0.5.12/0.5.13, making the last
+         * digits look outside the inverted area. */
         {
-            gFrameBuffer[4][x] ^= 0xFF;
-            gFrameBuffer[3][x] ^= 0x80;
+            const uint8_t version_len = (uint8_t)strlen(Version);
+            const uint8_t version_w = (uint8_t)(version_len * 7U);
+            uint8_t x0 = (version_w >= 126U) ? 0U : (uint8_t)((128U - version_w) / 2U);
+            uint8_t x1;
+            x0 = (x0 > 2U) ? (uint8_t)(x0 - 2U) : 0U;
+            x1 = (uint8_t)(x0 + version_w + 3U);
+            if (x1 > 127U) x1 = 127U;
+
+            if (x0 > 1U) UI_DrawLineBuffer(gFrameBuffer, 0, 35, (uint8_t)(x0 - 2U), 35, 1);
+            gFrameBuffer[4][x0] ^= 0x7F;
+            for (uint8_t x = (uint8_t)(x0 + 1U); x < x1; x++)
+            {
+                gFrameBuffer[4][x] ^= 0xFF;
+                gFrameBuffer[3][x] ^= 0x80;
+            }
+            gFrameBuffer[4][x1] ^= 0x7F;
+            if (x1 < 126U) UI_DrawLineBuffer(gFrameBuffer, (uint8_t)(x1 + 1U), 35, 127, 35, 1);
         }
-        gFrameBuffer[4][108] ^= 0x7F;
-        UI_DrawLineBuffer(gFrameBuffer, 109, 35, 127, 35, 1);
 
         /*
         #ifdef ENABLE_FEAT_F4HWN_MEM

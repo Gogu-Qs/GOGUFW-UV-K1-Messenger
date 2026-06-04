@@ -6,7 +6,7 @@
 #include "misc.h"
 
 #define MSG_CFG_MAGIC 0x47u
-#define MSG_CFG_VERSION 4u
+#define MSG_CFG_VERSION 7u
 #define MSG_CFG_FLASH_ADDR 0x012000u
 #define MSG_CFG_FLASH_SIZE 0x1000u
 
@@ -26,6 +26,9 @@ static void MSG_STORE_DefaultConfig(void)
     gMessengerConfig.msg_beep = 1;
     gMessengerConfig.msg_led = 1;
     gMessengerConfig.msg_debug = 0;
+    gMessengerConfig.call_tone = 0;
+    gMessengerConfig.call_vol = 1;
+    gMessengerConfig.rng_rsp = 1;
     gMessengerConfig.next_msg_id = 1;
     strncpy(gMessengerConfig.callsign, "UVK1", MSG_CALLSIGN_EDIT_LEN);
     strncpy(gMessengerConfig.drafts[0], "OK", MSG_TEXT_LEN);
@@ -68,13 +71,98 @@ void MSG_STORE_SaveConfig(void)
     flash_write_struct(MSG_CFG_FLASH_ADDR, &gMessengerConfig, sizeof(gMessengerConfig));
 }
 
+static void MSG_STORE_CopyCommonFromLegacyV4(const MSG_Config_t *old)
+{
+    gMessengerConfig.msg_rx = old->msg_rx;
+    gMessengerConfig.callsign_tx = old->callsign_tx;
+    gMessengerConfig.msg_ack = old->msg_ack;
+    gMessengerConfig.msg_hop = old->msg_hop;
+    gMessengerConfig.msg_beep = old->msg_beep;
+    gMessengerConfig.msg_led = old->msg_led;
+    gMessengerConfig.msg_debug = old->msg_debug;
+    gMessengerConfig.next_msg_id = old->next_msg_id ? old->next_msg_id : 1;
+    memcpy(gMessengerConfig.callsign, old->callsign, sizeof(gMessengerConfig.callsign));
+    memcpy(gMessengerConfig.drafts, old->drafts, sizeof(gMessengerConfig.drafts));
+}
+
+// Temporary bad test3/test4 layout inserted call_tone/call_vol before next_msg_id.
+typedef struct __attribute__((packed)) {
+    uint8_t magic;
+    uint8_t version;
+    uint8_t msg_rx;
+    uint8_t callsign_tx;
+    uint8_t msg_ack;
+    uint8_t msg_hop;
+    uint8_t msg_beep;
+    uint8_t msg_led;
+    uint8_t msg_debug;
+    uint8_t call_tone;
+    uint8_t call_vol;
+    uint16_t next_msg_id;
+    char callsign[MSG_CALLSIGN_LEN + 1];
+    char drafts[MSG_DRAFT_CAPACITY][MSG_TEXT_LEN + 1];
+} MSG_Config_BadV5_t;
+
+static bool MSG_STORE_LooksLikeBadV5(const MSG_Config_t *cfg)
+{
+    return cfg->version == 5u &&
+           ((uint8_t)cfg->callsign[0] < 0x20u || (uint8_t)cfg->callsign[1] < 0x20u);
+}
+
 void MSG_STORE_Init(void)
 {
     flash_read_struct(MSG_CFG_FLASH_ADDR, &gMessengerConfig, sizeof(gMessengerConfig));
-    if (gMessengerConfig.magic != MSG_CFG_MAGIC || gMessengerConfig.version != MSG_CFG_VERSION) {
+    if (gMessengerConfig.magic != MSG_CFG_MAGIC) {
+        MSG_STORE_DefaultConfig();
+        MSG_STORE_SaveConfig();
+    } else if (gMessengerConfig.version == 4u) {
+        // Clean v0.3.12 migration: common fields keep their original offsets;
+        // CllTon/CllVol are appended at the end only.
+        MSG_Config_t old = gMessengerConfig;
+        MSG_STORE_DefaultConfig();
+        MSG_STORE_CopyCommonFromLegacyV4(&old);
+        gMessengerConfig.call_tone = 0;
+        gMessengerConfig.call_vol = 1;
+        gMessengerConfig.rng_rsp = 1;
+        MSG_STORE_SaveConfig();
+    } else if (MSG_STORE_LooksLikeBadV5(&gMessengerConfig)) {
+        // Recover from the bad intermediate layout as much as possible and then
+        // rewrite the sector with the fixed v6 layout. Bytes already overwritten
+        // by the bad test build cannot always be reconstructed, but this stops
+        // further offset damage.
+        MSG_Config_BadV5_t bad;
+        flash_read_struct(MSG_CFG_FLASH_ADDR, &bad, sizeof(bad));
+        MSG_STORE_DefaultConfig();
+        gMessengerConfig.msg_rx = bad.msg_rx;
+        gMessengerConfig.callsign_tx = bad.callsign_tx;
+        gMessengerConfig.msg_ack = bad.msg_ack;
+        gMessengerConfig.msg_hop = bad.msg_hop;
+        gMessengerConfig.msg_beep = bad.msg_beep;
+        gMessengerConfig.msg_led = bad.msg_led;
+        gMessengerConfig.msg_debug = bad.msg_debug;
+        gMessengerConfig.next_msg_id = bad.next_msg_id ? bad.next_msg_id : 1;
+        memcpy(gMessengerConfig.callsign, bad.callsign, sizeof(gMessengerConfig.callsign));
+        memcpy(gMessengerConfig.drafts, bad.drafts, sizeof(gMessengerConfig.drafts));
+        gMessengerConfig.call_tone = (bad.call_tone <= 4u) ? bad.call_tone : 0;
+        gMessengerConfig.call_vol = (bad.call_vol == 0u) ? 0u : 1u;
+        gMessengerConfig.rng_rsp = 1;
+        MSG_STORE_SanitizeCallsign();
+        MSG_STORE_SaveConfig();
+    } else if (gMessengerConfig.version == 6u) {
+        /* v7 appends RngRsp at the end only; preserve all v6 offsets. */
+        gMessengerConfig.version = MSG_CFG_VERSION;
+        if (gMessengerConfig.call_tone > 4u) gMessengerConfig.call_tone = 0;
+        if (gMessengerConfig.call_vol > 1u) gMessengerConfig.call_vol = 1;
+        gMessengerConfig.rng_rsp = 1;
+        MSG_STORE_SanitizeCallsign();
+        MSG_STORE_SaveConfig();
+    } else if (gMessengerConfig.version != MSG_CFG_VERSION) {
         MSG_STORE_DefaultConfig();
         MSG_STORE_SaveConfig();
     } else {
+        if (gMessengerConfig.call_tone > 4u) gMessengerConfig.call_tone = 0;
+        if (gMessengerConfig.call_vol > 1u) gMessengerConfig.call_vol = 1;
+        if (gMessengerConfig.rng_rsp > 1u) gMessengerConfig.rng_rsp = 1;
         MSG_STORE_SanitizeCallsign();
     }
 }

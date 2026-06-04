@@ -1,0 +1,20 @@
+GGFW clean 5.5.0 - Stage 10A hotfix1
+
+Fixes in this package:
+1) Status bar envelope placement corrected:
+   - MO/DWR area is no longer replaced by the message icon.
+   - CL/OP/PTT-session area is reserved for Messenger unread notification.
+   - CL/OP is not drawn; if unread exists, the old 10x8 GGFW envelope icon is drawn there.
+
+2) Message beep made independent of global key beep setting:
+   - Added BEEP_500HZ_60MS_DOUBLE_BEEP_FORCE.
+   - TESTMSG / incoming demo message uses the forced double beep when MSG BEEP is ON.
+   - It no longer depends on the main BEEP menu item.
+
+3) List/read UI overflow fixes:
+   - Inbox/Sent/Drafts rows are truncated safely before drawing.
+   - Inverted selector now starts at x=1 and is clipped to avoid corrupting the previous row.
+   - Small text wrapping reduced to 17 chars per line to avoid half-drawn characters at the right edge.
+   - Top-right counters keep a safer right margin.
+
+RF/FSK was not changed in this package.

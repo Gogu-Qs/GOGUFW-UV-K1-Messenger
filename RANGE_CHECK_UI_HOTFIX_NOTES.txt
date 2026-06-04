@@ -1,0 +1,14 @@
+GOGUFW 0.5.12 Range Check UI hotfix
+
+Changes:
+- Range Check list now shows 3 entries per page with more vertical spacing.
+- Page indicator now shows page/total-pages (1/4, 2/4, etc.) instead of item index/count.
+- LEFT/RIGHT (KEY_UP/KEY_DOWN in current key layer) changes whole pages, not individual rows.
+- RSSI text remains visible and a small 4-bar signal indicator is drawn at the right of each row.
+- Range Check top separator remains moved upward and PRESS MENU / TO CHECK remains centered.
+- CHIRP MsgLed labels fixed to match radio UI: OFF / GREEN / YELLOW.
+
+Notes:
+- No flash storage layout changes.
+- No FM name storage changes.
+- Range Check found list remains RAM-only, max 10 devices.

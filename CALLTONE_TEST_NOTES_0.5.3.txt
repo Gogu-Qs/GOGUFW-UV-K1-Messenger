@@ -1,0 +1,8 @@
+GOGUFW 0.5.11 call tone stabilization build
+
+Changes vs previous test:
+- Reverted aggressive CllVol RF experiments that caused robotic/distorted HIGH audio.
+- CllVol menu/storage remains, but tone TX uses one clean stable level until proper BK4829 TX deviation control is identified.
+- CllTon preview is now simple blocking/stable instead of non-blocking tick-based preview.
+- CALLTX sidetone restored through the normal beep AF path; it should be audible locally.
+- Storage layout fix from prior 0.5.11 build is retained.

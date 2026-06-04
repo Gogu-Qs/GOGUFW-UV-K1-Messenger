@@ -34,6 +34,7 @@
 #include "../settings.h"
 #ifdef ENABLE_MESSENGER
     #include "app/messenger_store.h"
+    #include "app/main.h"
 #endif
 
 #ifdef ENABLE_FEAT_F4HWN
@@ -176,12 +177,15 @@ const t_menu_item MenuList[] =
 #endif
 #endif
 #ifdef ENABLE_MESSENGER
+    {"CllTon",      MENU_CALL_TONE    },
+    {"CllVol",      MENU_CALL_VOL     },
     {"MsgRx",       MENU_MSG_RX       },
     {"MsgCsg",      MENU_MSG_CSG      },
     {"MsgCtx",      MENU_MSG_CALLTX   },
     {"MsgAck",      MENU_MSG_ACK      },
     {"MsgBep",      MENU_MSG_BEEP     },
     {"MsgLed",      MENU_MSG_LED      },
+    {"RngRsp",      MENU_RNG_RSP      },
 #endif
     // hidden menu items from here on
     // enabled if pressing both the PTT and upper side button at power-on
@@ -622,6 +626,36 @@ static void UI_MENU_DrawTopRightRoundedBadge(const char *text, const uint8_t lin
 
 void UI_DisplayMenu(void)
 {
+#ifdef ENABLE_MESSENGER
+    if (gCallTonePreviewScreen)
+    {
+        char tone_label[12];
+        uint8_t tone = gCallTonePreviewTone;
+        if (tone > 4u) tone = 0;
+        sprintf(tone_label, "TONE-%u", (unsigned)(tone + 1u));
+
+        UI_DisplayClear();
+#ifdef ENABLE_FEAT_F4HWN
+        /* Match the simple Messenger-style screen: centered title, centered
+         * content, tiny action labels at the bottom. */
+#endif
+        UI_PrintStringSmallBold("PREVIEW", 0, LCD_WIDTH - 1, 0);
+        UI_PrintString(tone_label, 0, LCD_WIDTH - 1, 3, 8);
+#ifdef ENABLE_FEAT_F4HWN
+        GUI_DisplaySmallest("SELECT", 1, 49, false, true);
+        GUI_DisplaySmallest("EXIT", 111, 49, false, true);
+#else
+        UI_PrintStringSmallNormal("SELECT", 1, 0, 6);
+        UI_PrintStringSmallNormal("EXIT", 104, 0, 6);
+#endif
+        /* This branch returns before the normal menu footer, so it must flush
+         * the framebuffer itself. Without this, the preview state is active but
+         * the dedicated PREVIEW screen is never actually shown. */
+        ST7565_BlitFullScreen();
+        return;
+    }
+#endif
+
     const unsigned int menu_list_width = 6; // max no. of characters on the menu list (left side)
     const unsigned int menu_item_x1    = (8 * menu_list_width) + 2;
     const unsigned int menu_item_x2    = LCD_WIDTH - 1;
@@ -993,6 +1027,7 @@ void UI_DisplayMenu(void)
         case MENU_MSG_CALLTX:
         case MENU_MSG_ACK:
         case MENU_MSG_BEEP:
+        case MENU_RNG_RSP:
         case MENU_MSG_DEBUG:
         {
             uint8_t value = (uint8_t)gSubMenuSelection;
@@ -1004,10 +1039,28 @@ void UI_DisplayMenu(void)
                 else if (m == MENU_MSG_CALLTX) value = gMessengerConfig.callsign_tx;
                 else if (m == MENU_MSG_ACK) value = gMessengerConfig.msg_ack;
                 else if (m == MENU_MSG_BEEP) value = gMessengerConfig.msg_beep;
+                else if (m == MENU_RNG_RSP) value = gMessengerConfig.rng_rsp;
                 else if (m == MENU_MSG_DEBUG) value = gMessengerConfig.msg_debug;
             }
             if (value > 1u) value = 1u;
             strcpy(String, gSubMenu_OFF_ON[value]);
+            break;
+        }
+        case MENU_CALL_TONE:
+        {
+            uint8_t value = (uint8_t)gSubMenuSelection;
+            if (!gIsInSubMenu) { MSG_STORE_Init(); value = gMessengerConfig.call_tone; }
+            if (value > 4u) value = 0;
+            sprintf(String, "TONE%u", (unsigned)(value + 1u));
+            break;
+        }
+        case MENU_CALL_VOL:
+        {
+            static const char * const names[] = { "LOW", "HIGH" };
+            uint8_t value = (uint8_t)gSubMenuSelection;
+            if (!gIsInSubMenu) { MSG_STORE_Init(); value = gMessengerConfig.call_vol; }
+            if (value > 1u) value = 1;
+            strcpy(String, names[value]);
             break;
         }
 #endif

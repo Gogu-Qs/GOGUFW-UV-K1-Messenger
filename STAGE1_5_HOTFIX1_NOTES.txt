@@ -1,0 +1,15 @@
+GGFW Clean 5.5.0 Stage 1-5 Hotfix 1
+
+User test fixes:
+- Messenger home title centered.
+- Messenger home menu items rendered with 3x5 smallest font so they no longer look oversized.
+- Compose T9 changed from one-character-per-press to true multi-tap cycling:
+  2: ABC2, 3: DEF3, 4: GHI4, 5: JKL5, 6: MNO6, 7: PQRS7, 8: TUV8, 9: WXYZ9, 1: punctuation, 0: space/0.
+- Same-key repeated presses replace the pending character instead of appending aaa/ddd/etc.
+- Pending T9 character auto-commits after a short timeout via MSG_Tick.
+- MENU/EXIT commits pending T9 before send/exit.
+- Settings screen now scrolls after BEEP:ON and keeps the cursor visible through LED/DEBUG/TESTMSG/BACK.
+- Added settings position indicator at bottom-right.
+
+No RF/FSK changes in this hotfix.
+Normal RX/TX path untouched.
