@@ -57,6 +57,8 @@ Messenger is the flagship feature of GOGUFW.
 
 It enables low-speed digital text communication directly between GOGUFW radios without requiring external devices.
 
+![Message Composer](uv-k5-screenshot17.png)
+
 ### Messenger Features
 
 - Compose messages directly on the radio
@@ -79,7 +81,7 @@ It enables low-speed digital text communication directly between GOGUFW radios w
 
 Create and edit messages directly from the radio.
 
-![Message Composer](uv-k5-screenshot17.png)
+![Compose](uv-k5-screenshot19.png)
 
 ---
 
@@ -95,7 +97,7 @@ Received messages are stored in the Inbox and tracked as read or unread.
 
 Read received messages together with sender information.
 
-![Message Reader](uv-k5-screenshot19.png)
+![Message Reader](uv-k5-screenshot20.png)
 
 ---
 
