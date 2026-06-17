@@ -350,12 +350,11 @@ In addition to all F4HWN Fusion 5.6.0 functionality, GOGUFW adds:
 - Survival Mode
 - FM Naming
 - CALLTX
-- SetSav Screen Saver
 - Assignable Messenger Shortcuts
 - Sent ACK Tracking
 - ACK Queue
 - ACK Collect Window
-- UV-K5-style RSSI Bars
+- RSSI Bars
 - Enhanced Range Check Interface
 - Enhanced HEARD Interface
 - Enhanced Delivery Tracking System
@@ -374,7 +373,7 @@ Original license and attribution are preserved in this repository.
 
 ### Original Firmware
 
-F4HWN Fusion Team
+Armel/F4HWN
 
 ### GOGUFW Development
 
