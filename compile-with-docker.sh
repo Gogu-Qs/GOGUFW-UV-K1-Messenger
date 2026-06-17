@@ -32,7 +32,7 @@ echo "=== 🚀 Building GOGUFW 1.0.1 ==="
 echo "---------------------------------------------"
 docker run --rm \
   -u $(id -u):$(id -g) \
-  -it -v "$PWD":/src -w /src "$IMAGE" \
+  -v "$PWD":/src -w /src "$IMAGE" \
   bash -c "which arm-none-eabi-gcc && arm-none-eabi-gcc --version && \
            cmake --preset ${PRESET} ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} && \
            cmake --build --preset ${PRESET} -j"
