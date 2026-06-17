@@ -8,8 +8,8 @@
 #define MSG_PKT_MAGIC0          'G'
 #define MSG_PKT_MAGIC1          'G'
 #define MSG_PKT_MAGIC2          'M'
-#define MSG_PKT_MAGIC3          '1'
-#define MSG_PKT_VERSION         1u
+#define MSG_PKT_MAGIC3          '2'
+#define MSG_PKT_VERSION         2u
 #define MSG_PKT_TYPE_TEXT       1u
 #define MSG_PKT_TYPE_ACK        2u
 #define MSG_PKT_TYPE_PING       3u

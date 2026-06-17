@@ -74,8 +74,8 @@ uint8_t MSG_PACKET_BuildAck(uint8_t *out, uint8_t out_len, uint16_t id, const ch
     out[5] = MSG_PKT_TYPE_ACK;
     out[6] = 0;
     put_u16_le(&out[7], id);
-    out[9] = 0;
-    out[10] = 0;
+    out[9] = 1;
+    out[10] = 1;
     copy_field(&out[11], MSG_CALLSIGN_LEN, from && from[0] ? from : "UVK1");
     copy_field(&out[19], MSG_CALLSIGN_LEN, to && to[0] ? to : MSG_PKT_TO_ALL);
     /* RF21: mirror the ACKed MsgID in the ACK payload as well.

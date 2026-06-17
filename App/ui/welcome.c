@@ -44,6 +44,21 @@
 #define LOGO_FLASH_ADDR     0x011000
 #define LOGO_HEADER_SIZE    8
 #define LOGO_BITMAP_ADDR    (LOGO_FLASH_ADDR + LOGO_HEADER_SIZE)
+
+static void UI_LoadLogo(void)
+{
+    // Skip 8-byte header, then read 128x64 bitmap (1024 B):
+    // page 0 -> gStatusLine, pages 1..7 -> gFrameBuffer.
+    PY25Q16_ReadBuffer(LOGO_BITMAP_ADDR, gStatusLine, sizeof(gStatusLine));
+    PY25Q16_ReadBuffer(LOGO_BITMAP_ADDR + sizeof(gStatusLine), gFrameBuffer, sizeof(gFrameBuffer));
+}
+
+void UI_DisplayLogo(void)
+{
+    UI_LoadLogo();
+    ST7565_BlitStatusLine();
+    ST7565_BlitFullScreen();
+}
 #endif
 
 #ifdef ENABLE_FEAT_F4HWN_QRCODE
@@ -215,13 +230,53 @@ void UI_DisplayReleaseKeys(void)
     ST7565_BlitFullScreen();
 }
 
+#ifdef ENABLE_FEAT_F4HWN_LOGO
+void UI_DisplayScreenSaver(uint8_t mode)
+{
+    memset(gFrameBuffer, 0x00, sizeof(gFrameBuffer));
+    memset(gStatusLine, 0x00, sizeof(gStatusLine));
+
+    if (mode == 1 || mode == 2) {
+        PY25Q16_ReadBuffer(LOGO_BITMAP_ADDR, gStatusLine, sizeof(gStatusLine));
+        PY25Q16_ReadBuffer(LOGO_BITMAP_ADDR + sizeof(gStatusLine), gFrameBuffer, sizeof(gFrameBuffer));
+        if (mode == 2) {
+            UI_PrintStringSmallNormal("GOGUFW 1.0.1", 0, 127, 7);
+        }
+    } else if (mode == 3) {
+        // Lightweight MATRIX placeholder: avoids RAM-heavy animation and keeps
+        // Messenger/Range timing untouched while still giving an idle saver view.
+        for (uint8_t y = 0; y < 8; y++) {
+            for (uint8_t x = (y & 1) ? 4 : 0; x < 128; x += 8) {
+                gFrameBuffer[y][x] = (uint8_t)(0x11u << (y & 1));
+            }
+        }
+        UI_PrintStringSmallNormal("GOGUFW", 0, 127, 2);
+        UI_PrintStringSmallNormal("MATRIX", 0, 127, 4);
+    }
+
+    ST7565_BlitStatusLine();
+    ST7565_BlitFullScreen();
+}
+#endif
+
+void UI_DisplaySurvivalWelcome(void)
+{
+    UI_StatusClear();
+#if defined(ENABLE_FEAT_F4HWN_CTR) || defined(ENABLE_FEAT_F4HWN_INV)
+    ST7565_ContrastAndInv();
+#endif
+    UI_DisplayClear();
+
+    UI_PrintString("SURVIVAL", 0, 127, 1, 10);
+    UI_PrintString("MODE", 0, 127, 3, 10);
+    UI_PrintStringSmallNormal("RADIO ONLY", 0, 127, 6);
+
+    ST7565_BlitStatusLine();
+    ST7565_BlitFullScreen();
+}
+
 void UI_DisplayWelcome(void)
 {
-    char WelcomeString0[16];
-    char WelcomeString1[16];
-    char WelcomeString2[16];
-    char WelcomeString3[32];
-
     UI_StatusClear();
 
 #if defined(ENABLE_FEAT_F4HWN_CTR) || defined(ENABLE_FEAT_F4HWN_INV)
@@ -229,36 +284,32 @@ void UI_DisplayWelcome(void)
 #endif
     UI_DisplayClear();
 
-#ifdef ENABLE_FEAT_F4HWN_LOGO
-    if (gEeprom.POWER_ON_DISPLAY_MODE == POWER_ON_DISPLAY_MODE_LOGO) {
-        // Skip 8-byte header, then read 128x64 bitmap (1024 B):
-        // page 0 -> gStatusLine, pages 1..7 -> gFrameBuffer.
-        PY25Q16_ReadBuffer(LOGO_BITMAP_ADDR, gStatusLine, sizeof(gStatusLine));
-        PY25Q16_ReadBuffer(LOGO_BITMAP_ADDR + sizeof(gStatusLine), gFrameBuffer, sizeof(gFrameBuffer));
-        ST7565_BlitStatusLine();
-        ST7565_BlitFullScreen();
-        #ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
-            SCREENSHOT_Update(true);
-        #endif
-        return;
-    }
-#endif
-
 #ifdef ENABLE_FEAT_F4HWN
-    ST7565_BlitStatusLine();
-    ST7565_BlitFullScreen();
-
+    /* Do not blit an empty frame before the selected boot screen is ready.
+     * The 5.6.0 boot-flow refactor reused the logo path but the early blank
+     * blit left the LCD visibly white/empty while the welcome/logo data was
+     * still being prepared.  For NONE/SOUND we still blank the LCD explicitly;
+     * for LOGO/ALL/VOLTAGE we wait and blit the final screen once below. */
     if (gEeprom.POWER_ON_DISPLAY_MODE == POWER_ON_DISPLAY_MODE_NONE || gEeprom.POWER_ON_DISPLAY_MODE == POWER_ON_DISPLAY_MODE_SOUND) {
         ST7565_FillScreen(0x00);
+        return;
     }
 #else
     if (gEeprom.POWER_ON_DISPLAY_MODE == POWER_ON_DISPLAY_MODE_NONE || gEeprom.POWER_ON_DISPLAY_MODE == POWER_ON_DISPLAY_MODE_FULL_SCREEN) {
         ST7565_FillScreen(0xFF);
+        return;
+    }
+#endif
+#ifdef ENABLE_FEAT_F4HWN_LOGO
+    else if (gEeprom.POWER_ON_DISPLAY_MODE == POWER_ON_DISPLAY_MODE_LOGO) {
+        UI_LoadLogo();
     }
 #endif
     else {
-        memset(WelcomeString0, 0, sizeof(WelcomeString0));
-        memset(WelcomeString1, 0, sizeof(WelcomeString1));
+        char WelcomeString0[16];
+        char WelcomeString1[16];
+        char WelcomeString2[16];
+        char WelcomeString3[32];
 
         // 0x0EB0
         PY25Q16_ReadBuffer(0x00A0C8, WelcomeString0, 16);
@@ -360,12 +411,12 @@ void UI_DisplayWelcome(void)
 #else
         UI_PrintStringSmallNormal(Version, 0, 127, 6);
 #endif
-
-        //ST7565_BlitStatusLine();  // blank status line : I think it's useless
-        ST7565_BlitFullScreen();
-
-        #ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
-            SCREENSHOT_Update(true);
-        #endif
     }
+
+    ST7565_BlitStatusLine();
+    ST7565_BlitFullScreen();
+
+    #ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
+        SCREENSHOT_Update(true);
+    #endif
 }

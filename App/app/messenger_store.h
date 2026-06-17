@@ -7,9 +7,11 @@
 #define MSG_CALLSIGN_LEN       8
 #define MSG_CALLSIGN_EDIT_LEN  6
 #define MSG_TEXT_LEN           36
-#define MSG_INBOX_CAPACITY     20
-#define MSG_OUTBOX_CAPACITY    10
+#define MSG_INBOX_CAPACITY     16
+#define MSG_OUTBOX_CAPACITY    8
 #define MSG_DRAFT_CAPACITY     8
+#define MSG_ACK_SOURCE_MAX     3
+#define MSG_ACK_ID_LEN         MSG_CALLSIGN_EDIT_LEN
 
 #define MSG_STATUS_NONE        0u
 #define MSG_STATUS_PENDING     1u
@@ -23,9 +25,12 @@ typedef struct {
     uint8_t  ttl_init;
     uint8_t  ttl_remain;
     uint8_t  status;
+    uint16_t age_seconds;
     char     from[MSG_CALLSIGN_LEN + 1];
     char     to[MSG_CALLSIGN_LEN + 1];
     char     text[MSG_TEXT_LEN + 1];
+    uint8_t  ack_count;
+    char     ack_from[MSG_ACK_SOURCE_MAX][MSG_ACK_ID_LEN];
 } MSG_Message_t;
 
 typedef struct {
@@ -59,6 +64,7 @@ bool MSG_STORE_IsDuplicateInbox(const char *from, uint16_t id);
 void MSG_STORE_AddInboxMessage(const char *text, const char *from, const char *to, uint16_t id, uint8_t ttl_init, uint8_t ttl_remain, bool unread);
 void MSG_STORE_AddOutboxMessage(const char *text, const char *from, const char *to, uint16_t id, uint8_t ttl_init, uint8_t ttl_remain);
 void MSG_STORE_SetOutboxStatusById(uint16_t id, uint8_t status);
+void MSG_STORE_AddOutboxAckSourceById(uint16_t id, const char *from);
 void MSG_STORE_AddInboxDemo(const char *text);
 void MSG_STORE_AddOutboxDemo(const char *text);
 bool MSG_STORE_InjectNativePacket(const char *text);

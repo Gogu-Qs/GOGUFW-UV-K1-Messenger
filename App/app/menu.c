@@ -25,6 +25,7 @@
 #include "app/main.h"
 #ifdef ENABLE_MESSENGER
     #include "app/messenger_store.h"
+    #include "app/messenger_t9.h"
 #endif
 #include "app/scanner.h"
 #include "audio.h"
@@ -225,6 +226,7 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
             //*pMin = 0;
             *pMax = ARRAY_SIZE(gSubMenu_RX_TX) - 1;
             break;
+
 
         #ifndef ENABLE_FEAT_F4HWN
             #ifdef ENABLE_AM_FIX
@@ -436,6 +438,11 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
             *pMax = ARRAY_SIZE(gSubMenu_SET_SCN) - 1;
             break;
         #endif
+        #ifdef ENABLE_FEAT_F4HWN_LOGO_SAV
+        case MENU_SET_SAV:
+            *pMax = ARRAY_SIZE(gSubMenu_SET_SAV) - 1;
+            break;
+        #endif
         #ifdef ENABLE_FEAT_F4HWN_AUDIO
         case MENU_SET_AUD:
             //*pMin = 0;
@@ -570,6 +577,7 @@ void MENU_AcceptSetting(void)
         case MENU_MSG_BEEP:
             gMessengerConfig.msg_beep = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
         case MENU_CALL_TONE:
+            MAIN_CancelCallTonePreview();
             gMessengerConfig.call_tone = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
         case MENU_CALL_VOL:
             gMessengerConfig.call_vol = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
@@ -1071,6 +1079,11 @@ void MENU_AcceptSetting(void)
             gSetting_set_scn = gSubMenuSelection;
             break;
         #endif
+        #ifdef ENABLE_FEAT_F4HWN_LOGO_SAV
+        case MENU_SET_SAV:
+            gSetting_set_sav = gSubMenuSelection;
+            break;
+        #endif
         #ifdef ENABLE_FEAT_F4HWN_AUDIO
         case MENU_SET_AUD:
             if(gTxVfo->Modulation == MODULATION_AM)
@@ -1565,6 +1578,11 @@ void MENU_ShowCurrentSetting(void)
             gSubMenuSelection = gSetting_set_scn;
             break;
         #endif
+        #ifdef ENABLE_FEAT_F4HWN_LOGO_SAV
+        case MENU_SET_SAV:
+            gSubMenuSelection = gSetting_set_sav;
+            break;
+        #endif
         #ifdef ENABLE_FEAT_F4HWN_AUDIO
         case MENU_SET_AUD:
             if(gTxVfo->Modulation == MODULATION_AM)
@@ -1605,19 +1623,11 @@ void MENU_ShowCurrentSetting(void)
 
 static KEY_Code_t edit_last_key = 255;
 static uint8_t edit_char_index = 0;
+#ifdef ENABLE_MESSENGER
+static MSG_T9Editor_t s_menuTextEditor;
+uint8_t gMenuTextEditorMode; /* 0=B, 1=b, 2=2; displayed by UI menu editor */
+#endif
 
-static const char* const char_map[10] = {
-    " 0",                           // KEY_0
-    ".,-()@/\\+=*#<>[]~1",          // KEY_1
-    "abc2",                         // KEY_2
-    "def3",                         // KEY_3
-    "ghi4",                         // KEY_4
-    "jkl5",                         // KEY_5
-    "mno6",                         // KEY_6
-    "pqrs7",                        // KEY_7
-    "tuv8",                         // KEY_8
-    "wxyz9"                         // KEY_9
-};
 
 static bool MENU_IsTextEditMenuItemId(const int m)
 {
@@ -1659,42 +1669,17 @@ static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
     gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
 
     if (MENU_IsTextEditMenuItemId(UI_MENU_GetCurrentMenuId()) && edit_index >= 0)
-    {   // currently editing the channel name
-        if (edit_index >= MENU_TextEditMaxLen())
-            return;
-
-        uint8_t key_idx = Key - KEY_0;
-
-        if (bKeyHeld)
-        {
-            edit[edit_index] = '0' + key_idx;
-            edit_last_key = 255;
-            
-            gRequestDisplayScreen = DISPLAY_MENU;
-            return;
-        }
-
-        if (Key != edit_last_key)
-        {
-            edit_last_key = Key;
-            edit_char_index = 0;
-        }
-        else
-        {
-            edit_char_index++;
-            if (char_map[key_idx][edit_char_index] == '\0')
-            {
-                edit_char_index = 0;
-            }
-        }
-
-        char c = char_map[key_idx][edit_char_index];
-        if (edit_is_uppercase && c >= 'a' && c <= 'z')
-        {
-            c -= 32;
-        }
-        edit[edit_index] = c;
-
+    {   // unified GGFW text editor path
+#ifdef ENABLE_MESSENGER
+        if (bKeyHeld) MSG_T9_HandleLongKey(&s_menuTextEditor, Key);
+        else          MSG_T9_HandleKey(&s_menuTextEditor, Key);
+        edit_is_uppercase = s_menuTextEditor.upper;
+        gMenuTextEditorMode = s_menuTextEditor.mode;
+        edit_index = s_menuTextEditor.len;
+#else
+        (void)Key;
+#endif
+        edit_last_key = 255;
         gRequestDisplayScreen = DISPLAY_MENU;
         return;
     }
@@ -1852,47 +1837,28 @@ static void MENU_Key_EXIT(bool bKeyPressed, bool bKeyHeld)
 #endif
     if (MENU_IsEditingName())
     {
-        if (!bKeyPressed)
-        {
-            if (bKeyHeld)
-                return; // release after a long press, keep editing
-
-            if (edit_index == 0)
-                goto Skip;
-
-            if (edit_index > 0)
-            {   // step back one character while editing the channel name
-                edit_index--;
-                edit_last_key = 255;
-                gAskForConfirmation = 0;
-                gRequestDisplayScreen = DISPLAY_MENU;
-            }
-
+        if (!bKeyPressed || bKeyHeld)
             return;
-        }
 
-        if (!bKeyHeld)
-        {   // wait to see if the user wants a short exit or a long backspace
-            gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
-            return;
-        }
-
-Skip:
-
-        /* Backlight related menus set full brightness. Set it back to the configured value,
-           just in case we are editing from one of them. */
-        BACKLIGHT_TurnOn();
-
+        /* GGFW 0.6.3: unified menu text editor uses normal app semantics:
+         * EXIT is cancel/discard and returns one level immediately.  The old
+         * F4HWN name editor treated EXIT release/hold as character delete,
+         * which caused invisible intermediate states and required multiple
+         * EXIT presses for CH-NAME/MSGCSG. */
+        memcpy(edit, edit_original, sizeof(edit));
+        edit_index          = -1;
+        edit_last_key       = 255;
         gAskForConfirmation = 0;
         gIsInSubMenu        = false;
         gInputBoxIndex      = 0;
         gFlagRefreshSetting = true;
+        gRequestDisplayScreen = DISPLAY_MENU;
+
+        BACKLIGHT_TurnOn();
 
         #ifdef ENABLE_VOICE
             gAnotherVoiceID = VOICE_ID_CANCEL;
         #endif
-
-        gRequestDisplayScreen = DISPLAY_MENU;
 
         return;
     }
@@ -1908,7 +1874,22 @@ Skip:
         {
             if (gInputBoxIndex == 0 || UI_MENU_GetCurrentMenuId() != MENU_OFFSET)
             {
-                goto Skip;
+                /* GGFW 0.6.3 hotfix: the old shared Skip label was removed
+                 * when the name editor EXIT path was simplified.  Keep the
+                 * same submenu-exit behavior here without jumping to a missing
+                 * label. */
+                BACKLIGHT_TurnOn();
+                gAskForConfirmation = 0;
+                gIsInSubMenu        = false;
+                gInputBoxIndex      = 0;
+                gFlagRefreshSetting = true;
+
+                #ifdef ENABLE_VOICE
+                    gAnotherVoiceID = VOICE_ID_CANCEL;
+                #endif
+
+                gRequestDisplayScreen = DISPLAY_MENU;
+                return;
             }
             else
             {
@@ -1989,7 +1970,11 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
             edit_index          = -1;
         }
 
-        return;
+        /* GGFW 0.6.3: CH-NAME/MSGCSG should open the unified editor with a
+         * single MENU press.  Non-text menu items keep the normal submenu
+         * behavior. */
+        if (!MENU_IsTextEditMenuItemId(m))
+            return;
     }
 
     if (MENU_IsTextEditMenuItemId(UI_MENU_GetCurrentMenuId()))
@@ -2025,7 +2010,20 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
             edit_index = 0;  // 'edit_index' is going to be used as the cursor position
             edit_last_key = 255;
             edit_char_index = 0;
-            edit_is_uppercase = false;
+            edit_is_uppercase = true;
+#ifdef ENABLE_MESSENGER
+            /* GGFW: use the same multi-tap/T9 core as Messenger/FM naming for
+             * all menu text fields instead of the old per-menu editor feel. */
+            {
+                uint8_t tlen = edit_max_len;
+                while (tlen > 0u && (edit[tlen - 1u] == ' ' || edit[tlen - 1u] == 0xff)) tlen--;
+                edit[tlen] = 0;
+                MSG_T9_Start(&s_menuTextEditor, edit, edit_max_len);
+                edit_is_uppercase = s_menuTextEditor.upper;
+                gMenuTextEditorMode = s_menuTextEditor.mode;
+                edit_index = s_menuTextEditor.len;
+            }
+#endif
 
             // make a copy so we can test for change when exiting the menu item
             memcpy(edit_original, edit, sizeof(edit_original));
@@ -2034,15 +2032,12 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
         }
         else
         if (edit_index >= 0 && edit_index < edit_max_len)
-        {   // editing text characters
+        {   // finish editing text characters
             edit_last_key = 255;
-
-            if (bKeyHeld) {
-                edit_index = edit_max_len;
-            }
-            else if (++edit_index < edit_max_len) {
-                return;
-            }
+#ifdef ENABLE_MESSENGER
+            MSG_T9_Commit(&s_menuTextEditor);
+#endif
+            edit_index = edit_max_len;
 
             // exit
             gFlagAcceptSetting  = false;
@@ -2059,21 +2054,6 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
     if (gIsInSubMenu)
     {
         const int m = UI_MENU_GetCurrentMenuId();
-
-#ifdef ENABLE_MESSENGER
-        if (m == MENU_CALL_TONE)
-        {
-            if (gSubMenuSelection < 0) gSubMenuSelection = 0;
-            if (gSubMenuSelection > 4) gSubMenuSelection = 4;
-            gCallTonePreviewTone = (uint8_t)gSubMenuSelection;
-            gCallTonePreviewScreen = true;
-            gBeepToPlay = 0;
-            gRequestDisplayScreen = DISPLAY_MENU;
-            UI_DisplayMenu();
-            MAIN_PlayCallTonePreviewBlocking(gCallTonePreviewTone);
-            return;
-        }
-#endif
 
         if (m == MENU_RESET  ||
             m == MENU_MEM_CH ||
@@ -2139,16 +2119,17 @@ static void MENU_Key_STAR(const bool bKeyPressed, const bool bKeyHeld)
     gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
 
     if (MENU_IsTextEditMenuItemId(UI_MENU_GetCurrentMenuId()) && edit_index >= 0)
-    {   // currently editing the channel name
-
-        if (edit_index < MENU_TextEditMaxLen())
-        {
-            edit[edit_index] = !bKeyHeld ? '-' : '*';
-            edit_last_key = 255;
-
-            gRequestDisplayScreen = DISPLAY_MENU;
+    {
+#ifdef ENABLE_MESSENGER
+        if (!bKeyHeld) {
+            MSG_T9_HandleKey(&s_menuTextEditor, KEY_STAR);
+                edit_is_uppercase = s_menuTextEditor.upper;
+            gMenuTextEditorMode = s_menuTextEditor.mode;
+            edit_index = s_menuTextEditor.len;
         }
-
+#endif
+        edit_last_key = 255;
+        gRequestDisplayScreen = DISPLAY_MENU;
         return;
     }
 
@@ -2190,13 +2171,7 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
 
     if (!bKeyHeld) {
         gInputBoxIndex = 0;
-#ifdef ENABLE_MESSENGER
-        /* CllTon has its own 3-4 second preview.  The normal menu key-beep
-         * was racing the preview tone generator and caused random single/short
-         * beeps or no preview at all. */
-        if (!(gIsInSubMenu && UI_MENU_GetCurrentMenuId() == MENU_CALL_TONE))
-#endif
-            gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
+        gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
     }
 
     if (!gEeprom.SET_NAV && gIsInSubMenu) {
@@ -2204,25 +2179,11 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
     }
 
     if (MENU_IsTextEditMenuItemId(UI_MENU_GetCurrentMenuId()) && gIsInSubMenu && edit_index >= 0)
-    {   // change the character
-        if (edit_index < MENU_TextEditMaxLen() && Direction != 0)
-        {
-            const char   unwanted[] = "$%&!\"':;?^`|{}_";
-            char         c          = edit[edit_index] + Direction;
-            unsigned int i          = 0;
-            while (i < sizeof(unwanted) && c >= 32 && c <= 126)
-            {
-                if (c == unwanted[i++])
-                {   // choose next character
-                    c += Direction;
-                    i = 0;
-                }
-            }
-            edit[edit_index] = (c < 32) ? 126 : (c > 126) ? 32 : c;
-            edit_last_key = 255;
-
-            gRequestDisplayScreen = DISPLAY_MENU;
-        }
+    {
+        /* Unified text editor: UP/DOWN no longer performs the old ASCII
+         * character cycling.  Text entry uses the same keypad/T9 behavior as
+         * Messenger/FM naming. */
+        (void)Direction;
         return;
     }
 
@@ -2288,9 +2249,11 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
             MENU_ClampSelection(Direction);
 #ifdef ENABLE_MESSENGER
             if (m == MENU_CALL_TONE) {
-                /* CllTon list is selection-only. Preview is opened with MENU
-                 * on a dedicated screen so normal browsing never starts audio. */
-                MAIN_CancelCallTonePreview();
+                /* GGFW 0.6.3 final: CllTon preview was removed.  The menu now
+                 * behaves like a normal setting; users can hear the selected
+                 * melody with CALLTX after saving. */
+                if (gSubMenuSelection < 0) gSubMenuSelection = 0;
+                if (gSubMenuSelection > 4) gSubMenuSelection = 4;
             }
 #endif
             gRequestDisplayScreen = DISPLAY_MENU;
@@ -2345,43 +2308,6 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
 
 void MENU_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
-#ifdef ENABLE_MESSENGER
-    if (gCallTonePreviewScreen)
-    {
-        if (!bKeyPressed || bKeyHeld)
-            return;
-
-        if (Key == KEY_MENU)
-        {
-            MSG_STORE_Init();
-            if (gCallTonePreviewTone > 4u) gCallTonePreviewTone = 0;
-            gMessengerConfig.call_tone = gCallTonePreviewTone;
-            MSG_STORE_SaveConfig();
-            gSubMenuSelection = gCallTonePreviewTone;
-            gCallTonePreviewScreen = false;
-            gIsInSubMenu = false;
-            gInputBoxIndex = 0;
-            gFlagRefreshSetting = true;
-            gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
-            gRequestDisplayScreen = DISPLAY_MENU;
-            return;
-        }
-
-        if (Key == KEY_EXIT)
-        {
-            gCallTonePreviewScreen = false;
-            gIsInSubMenu = true;
-            gSubMenuSelection = gCallTonePreviewTone;
-            gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
-            gRequestDisplayScreen = DISPLAY_MENU;
-            return;
-        }
-
-        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
-        return;
-    }
-#endif
-
     switch (Key)
     {
         case KEY_0...KEY_9:
@@ -2402,22 +2328,19 @@ void MENU_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             break;
         case KEY_F:
             if (MENU_IsTextEditMenuItemId(UI_MENU_GetCurrentMenuId()) && edit_index >= 0)
-            {   // currently editing the channel name
+            {
                 if (!bKeyPressed)
                     break;
 
                 gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
-
-                if (edit_index < MENU_TextEditMaxLen())
-                {
-                    if (bKeyHeld)
-                        edit[edit_index] = '#';
-
-                    edit_is_uppercase = !edit_is_uppercase;
-                    edit_last_key = 255;
-
-                    gRequestDisplayScreen = DISPLAY_MENU;
-                }
+#ifdef ENABLE_MESSENGER
+                MSG_T9_HandleKey(&s_menuTextEditor, KEY_F);
+                edit_is_uppercase = s_menuTextEditor.upper;
+                gMenuTextEditorMode = s_menuTextEditor.mode;
+                edit_index = s_menuTextEditor.len;
+#endif
+                edit_last_key = 255;
+                gRequestDisplayScreen = DISPLAY_MENU;
                 break;
             }
 

@@ -181,7 +181,10 @@ void UI_DisplayStatus()
                     uint8_t sOff = 2;          // Offset relative to the reference position
 
                     #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
-                        if (gEeprom.MENU_LOCK) {
+                        if (gSurvivalMode) {
+                            src = gFontSURV;
+                            sSize = sizeof(gFontSURV);
+                        } else if (gEeprom.MENU_LOCK) {
                             src = gFontRO;
                             sSize = sizeof(gFontRO);
                         } else 
@@ -221,7 +224,10 @@ void UI_DisplayStatus()
                 }
             }
         }
-        x += sizeof(gFontDWR) + 3;
+        if (gSurvivalMode)
+            x += sizeof(gFontSURV) + 3;
+        else
+            x += sizeof(gFontDWR) + 3;
     #endif
 
 #ifdef ENABLE_VOX

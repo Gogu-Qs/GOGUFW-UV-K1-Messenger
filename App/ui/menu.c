@@ -175,6 +175,9 @@ const t_menu_item MenuList[] =
 #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
     {"SetScn",      MENU_SET_SCN       },
 #endif
+#ifdef ENABLE_FEAT_F4HWN_LOGO
+    {"SetSav",      MENU_SET_SAV       },
+#endif
 #endif
 #ifdef ENABLE_MESSENGER
     {"CllTon",      MENU_CALL_TONE    },
@@ -451,6 +454,16 @@ const char gSubMenu_SCRAMBLER[][7] =
         };
     #endif
 
+    #ifdef ENABLE_FEAT_F4HWN_LOGO
+        const char gSubMenu_SET_SAV[][7] =
+        {
+            "OFF",
+            "LOGO",
+            "LOGO+",
+            "MATRIX"
+        };
+    #endif
+
     #ifdef ENABLE_FEAT_F4HWN_AUDIO
         const char gSubMenu_SET_AUD_FM[][6] =
         {
@@ -538,6 +551,11 @@ const t_sidefunction gSubMenu_SIDEFUNCTIONS[] =
         {"BEAM",            ACTION_OPT_BEAM},
     #endif
 #endif
+#ifdef ENABLE_MESSENGER
+    {"MESSENGER",       ACTION_OPT_MESSENGER},
+    {"HEARD",           ACTION_OPT_HEARD},
+    {"CALLTX",          ACTION_OPT_CALLTX},
+#endif
 };
 
 const uint8_t gSubMenu_SIDEFUNCTIONS_size = ARRAY_SIZE(gSubMenu_SIDEFUNCTIONS);
@@ -566,6 +584,59 @@ char    edit_original[17]; // a copy of the text before editing so that we can e
 char    edit[17];
 int     edit_index;
 bool    edit_is_uppercase = false;
+
+#ifdef ENABLE_MESSENGER
+extern uint8_t gMenuTextEditorMode;
+#endif
+
+static uint8_t UI_MENU_TextEditMaxLenFor(const int m)
+{
+#ifdef ENABLE_MESSENGER
+    if (m == MENU_MSG_CSG)
+        return MSG_CALLSIGN_EDIT_LEN;
+#endif
+    return 10u;
+}
+
+static const char *UI_MENU_TextEditModeLabel(void)
+{
+#ifdef ENABLE_MESSENGER
+    if (gMenuTextEditorMode == 2u) return "2";
+    if (gMenuTextEditorMode == 1u) return "b";
+#endif
+    return edit_is_uppercase ? "B" : "b";
+}
+
+static void UI_MENU_DrawUnifiedTextEditor(const int m)
+{
+    char count[10];
+    const uint8_t max_len = UI_MENU_TextEditMaxLenFor(m);
+    uint8_t used = (uint8_t)strlen(edit);
+    const char *title = MenuList[gMenuCursor].name;
+
+    if (used > max_len) used = max_len;
+
+    UI_DisplayClear();
+#ifdef ENABLE_FEAT_F4HWN
+    UI_DisplayUnlockKeyboard(5);
+#endif
+    UI_PrintString(title, 0, LCD_WIDTH - 1, 0, 8);
+    UI_DrawLineBuffer(gFrameBuffer, 8, 17, 119, 17, 1);
+    UI_PrintStringSmallBold(edit[0] ? edit : " ", 4, 123, 3);
+    UI_DrawLineBuffer(gFrameBuffer, 8, 46, 119, 46, 1);
+
+#ifdef ENABLE_FEAT_F4HWN
+    GUI_DisplaySmallest("SAVE", 0, 49, false, true);
+    sprintf(count, "%u/%u", (unsigned)used, (unsigned)max_len);
+    GUI_DisplaySmallest(count, 54, 49, false, true);
+    GUI_DisplaySmallest(UI_MENU_TextEditModeLabel(), 120, 49, false, true);
+#else
+    UI_PrintStringSmallNormal("SAVE", 0, 0, 6);
+    sprintf(count, "%u/%u", (unsigned)used, (unsigned)max_len);
+    UI_PrintStringSmallNormal(count, 54, 0, 6);
+    UI_PrintStringSmallNormal(UI_MENU_TextEditModeLabel(), 120, 0, 6);
+#endif
+}
 
 static void UI_MENU_DrawTopRightRoundedBadge(const char *text, const uint8_t line, const bool center_in_area, const uint8_t area_x1, const uint8_t area_x2)
 {
@@ -626,36 +697,6 @@ static void UI_MENU_DrawTopRightRoundedBadge(const char *text, const uint8_t lin
 
 void UI_DisplayMenu(void)
 {
-#ifdef ENABLE_MESSENGER
-    if (gCallTonePreviewScreen)
-    {
-        char tone_label[12];
-        uint8_t tone = gCallTonePreviewTone;
-        if (tone > 4u) tone = 0;
-        sprintf(tone_label, "TONE-%u", (unsigned)(tone + 1u));
-
-        UI_DisplayClear();
-#ifdef ENABLE_FEAT_F4HWN
-        /* Match the simple Messenger-style screen: centered title, centered
-         * content, tiny action labels at the bottom. */
-#endif
-        UI_PrintStringSmallBold("PREVIEW", 0, LCD_WIDTH - 1, 0);
-        UI_PrintString(tone_label, 0, LCD_WIDTH - 1, 3, 8);
-#ifdef ENABLE_FEAT_F4HWN
-        GUI_DisplaySmallest("SELECT", 1, 49, false, true);
-        GUI_DisplaySmallest("EXIT", 111, 49, false, true);
-#else
-        UI_PrintStringSmallNormal("SELECT", 1, 0, 6);
-        UI_PrintStringSmallNormal("EXIT", 104, 0, 6);
-#endif
-        /* This branch returns before the normal menu footer, so it must flush
-         * the framebuffer itself. Without this, the preview state is active but
-         * the dedicated PREVIEW screen is never actually shown. */
-        ST7565_BlitFullScreen();
-        return;
-    }
-#endif
-
     const unsigned int menu_list_width = 6; // max no. of characters on the menu list (left side)
     const unsigned int menu_item_x1    = (8 * menu_list_width) + 2;
     const unsigned int menu_item_x2    = LCD_WIDTH - 1;
@@ -664,6 +705,18 @@ void UI_DisplayMenu(void)
     char               top_right_badge[16];
 
     const int m = UI_MENU_GetCurrentMenuId();
+
+    if (gIsInSubMenu && edit_index >= 0 &&
+        (m == MENU_MEM_NAME
+#ifdef ENABLE_MESSENGER
+         || m == MENU_MSG_CSG
+#endif
+        ))
+    {
+        UI_MENU_DrawUnifiedTextEditor(m);
+        ST7565_BlitFullScreen();
+        return;
+    }
 
 #ifdef ENABLE_DTMF_CALLING
     char               Contact[16];
@@ -1528,6 +1581,12 @@ void UI_DisplayMenu(void)
         #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
             case MENU_SET_SCN:
                 strcpy(String, gSubMenu_SET_SCN[gSubMenuSelection]);
+                break;
+        #endif
+
+        #ifdef ENABLE_FEAT_F4HWN_LOGO
+            case MENU_SET_SAV:
+                strcpy(String, gSubMenu_SET_SAV[gSubMenuSelection]);
                 break;
         #endif
 

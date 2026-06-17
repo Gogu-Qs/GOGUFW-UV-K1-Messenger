@@ -433,8 +433,15 @@ static void ToggleAFDAC(bool on)
     BK4819_WriteRegister(BK4819_REG_30, Reg);
 }
 
+static uint32_t NormalizeScanFrequency(uint32_t f)
+{
+    const uint16_t step = scanStepValues[settings.scanStepIndex];
+    return (step == 833) ? FREQUENCY_RoundToStep(f, step) : f;
+}
+
 static void SetF(uint32_t f)
 {
+    f = NormalizeScanFrequency(f);
     fMeasure = f;
 
     BK4819_SetFrequency(fMeasure);
@@ -451,6 +458,8 @@ static void SetF(uint32_t f)
 // cutting the SPI bus activity that causes SPI-induced audio interference.
 static void SetFScan(uint32_t f)
 {
+    f = NormalizeScanFrequency(f);
+
     // Refresh RF path only when crossing the VHF/UHF boundary (280 MHz)
     if ((f < 28000000) != (fMeasure < 28000000))
         BK4819_PickRXFilterPathBasedOnFrequency(f);
@@ -756,7 +765,7 @@ static void UpdateScanInfo()
     if (scanInfo.rssi > scanInfo.rssiMax)
     {
         scanInfo.rssiMax = scanInfo.rssi;
-        scanInfo.fPeak = scanInfo.f;
+        scanInfo.fPeak = NormalizeScanFrequency(scanInfo.f);
         scanInfo.iPeak = scanInfo.i;
     }
 
@@ -1593,6 +1602,7 @@ static void ShowChannelName(uint32_t f)
 {
     static uint32_t channelF = 0;
     static char channelName[12]; 
+    f = NormalizeScanFrequency(f);
 
     // Channel name starts at x=43 (fixed), leaving room for the dBm
     // string on the left (max ~40 px) and battery indicator at x=116.
@@ -1604,7 +1614,7 @@ static void ShowChannelName(uint32_t f)
         if (f != channelF) {
             channelF = f;
             unsigned int i;
-            memset(channelName, 0, sizeof(channelName));
+            channelName[0] = 0;
             for (i = 0; IS_MR_CHANNEL(i); i++)
             {
                 if (RADIO_CheckValidChannel(i, false, 0))
@@ -1632,6 +1642,7 @@ static void FormatFrequency(uint32_t freq, char *buffer) {
 
 static void DrawF(uint32_t f)
 {
+    f = NormalizeScanFrequency(f);
     FormatFrequency(f, String);
     // Align frequency with channel name in status bar (both at x=43).
     // Left-aligned (End == Start = 43) so it does not collide with BW at x=108.
@@ -1715,16 +1726,7 @@ static bool SpectrumColumnAtOrAboveY(const uint8_t *topY, uint8_t x, uint8_t y)
 
 static uint8_t GetScanStepTextWidth()
 {
-    uint16_t whole = GetScanStep() / 100;
-    uint8_t digits = 1;
-
-    while (whole >= 10)
-    {
-        whole /= 10;
-        digits++;
-    }
-
-    return (digits + 4) * 4; // "%u.%02uk", 4 px advance per char
+    return (sprintf(NULL, "%u", GetScanStep() / 100) + 4) * 4; // "%u.%02uk", 4 px advance per char
 }
 
 static void DrawRssiTriggerLevel(const uint8_t *topY)

@@ -25,6 +25,7 @@
 #include "driver/system.h"
 #include "misc.h"
 #include "screenshot.h"
+#include <string.h>
 
 #define SPIx SPI1
 
@@ -203,10 +204,20 @@ void ST7565_DrawLine(const unsigned int Column, const unsigned int Line, const u
 
 void ST7565_FillScreen(uint8_t value)
 {
+    /* Fill the controller LCD RAM with a constant byte.
+     *
+     * The old implementation called DrawLine(..., NULL, value).  DrawLine()
+     * treats the last argument as a byte count, so value=0x00 wrote zero
+     * bytes and left random LCD RAM visible during boot.  Use a real
+     * 128-byte fill buffer so both clear (0x00) and full (0xFF) writes are
+     * deterministic. */
+    uint8_t line[LCD_WIDTH];
+    memset(line, value, sizeof(line));
+
     CS_Assert();
+    ST7565_WriteByte(0x40);
     for (unsigned i = 0; i < 8; i++) {
-        // TODO: This is wrong
-        DrawLine(0, i, NULL, value);
+        DrawLine(0, i, line, LCD_WIDTH);
     }
     CS_Release();
 }

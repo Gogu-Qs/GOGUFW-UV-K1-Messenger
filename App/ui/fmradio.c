@@ -22,7 +22,6 @@
 static uint8_t text_width_3x5(const char *s) { return (uint8_t)(strlen(s) * 4U); }
 static uint8_t center_x_3x5(const char *s) { uint8_t w = text_width_3x5(s); return (w >= 128U) ? 0U : (uint8_t)((128U - w) / 2U); }
 static uint8_t text_width_small(const char *s) { return (uint8_t)(strlen(s) * 7U); }
-static uint8_t center_x_small(const char *s) { uint8_t w = text_width_small(s); return (w >= 128U) ? 0U : (uint8_t)((128U - w) / 2U); }
 static uint8_t right_x_small(const char *s) { uint8_t w = text_width_small(s); return (w >= 128U) ? 0U : (uint8_t)(128U - w); }
 
 static uint8_t FM_UI_BigFreqWidth(const char *s)

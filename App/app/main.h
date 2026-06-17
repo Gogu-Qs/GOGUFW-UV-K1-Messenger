@@ -21,14 +21,11 @@
 #include "driver/keyboard.h"
 
 extern bool gCallToneTxActive;
-extern bool gCallTonePreviewScreen;
-extern uint8_t gCallTonePreviewTone;
 
 void MAIN_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
-void MAIN_PlayCallTonePreview(uint8_t tone);
-void MAIN_PlayCallTonePreviewBlocking(uint8_t tone);
 void MAIN_CancelCallTonePreview(void);
 void MAIN_CallToneTick10ms(void);
+void MAIN_SendPmrCallToneAction(void);
 void channelMoveSwitch(void);
 
 #endif

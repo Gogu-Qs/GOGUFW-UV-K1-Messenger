@@ -139,6 +139,7 @@ enum
     MENU_SET_TMR,
     #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
         MENU_SET_SCN,
+        MENU_SET_SAV,
     #endif
     #ifdef ENABLE_FEAT_F4HWN_NARROWER
         MENU_SET_NFM,
@@ -215,6 +216,9 @@ extern const char        gSubMenu_D_RSP[4][11];
     #endif
     #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
         extern const char gSubMenu_SET_KEY[][9];
+    #endif
+    #ifdef ENABLE_FEAT_F4HWN_LOGO
+        extern const char    gSubMenu_SET_SAV[4][7];
     #endif
     #ifdef ENABLE_FEAT_F4HWN_AUDIO
         extern const char    gSubMenu_SET_AUD_FM[5][6];

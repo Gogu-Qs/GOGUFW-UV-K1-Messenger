@@ -18,6 +18,10 @@
 #include <string.h>
 
 #include "app/action.h"
+#ifdef ENABLE_MESSENGER
+#include "app/messenger.h"
+#include "app/main.h"
+#endif
 #include "app/app.h"
 #include "app/chFrScanner.h"
 #include "app/common.h"
@@ -59,7 +63,26 @@ inline static void ACTION_Alarm() { ACTION_AlarmOr1750(false); }
 inline static void ACTION_1750() { ACTION_AlarmOr1750(true); };
 #endif
 
-inline static void ACTION_ScanRestart() { ACTION_Scan(true); };
+inline static void ACTION_ScanRestart() { if (gSurvivalMode) { gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL; return; } ACTION_Scan(true); };
+
+#ifdef ENABLE_MESSENGER
+static void ACTION_OpenMessenger(void)
+{
+    if (gSurvivalMode) { gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL; return; }
+    MSG_Open();
+}
+
+static void ACTION_OpenHeard(void)
+{
+    if (gSurvivalMode) { gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL; return; }
+    MSG_RangeOpen();
+}
+
+static void ACTION_CallTx(void)
+{
+    MAIN_SendPmrCallToneAction();
+}
+#endif
 
 void (*action_opt_table[])(void) = {
     [ACTION_OPT_NONE] = &FUNCTION_NOP,
@@ -138,6 +161,11 @@ void (*action_opt_table[])(void) = {
 #ifdef ENABLE_FEAT_F4HWN_BEAM
     [ACTION_OPT_BEAM] = &ACTION_Beam,
 #endif
+#ifdef ENABLE_MESSENGER
+    [ACTION_OPT_MESSENGER] = &ACTION_OpenMessenger,
+    [ACTION_OPT_HEARD]     = &ACTION_OpenHeard,
+    [ACTION_OPT_CALLTX]    = &ACTION_CallTx,
+#endif
 };
 
 static_assert(ARRAY_SIZE(action_opt_table) == ACTION_OPT_LEN);
@@ -200,6 +228,10 @@ void ACTION_Monitor(void)
 void ACTION_Scan(bool bRestart)
 {
     (void)bRestart;
+    if (gSurvivalMode) {
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        return;
+    }
 
 #ifdef ENABLE_FMRADIO
     if (gFmRadioMode) {
@@ -400,6 +432,10 @@ void ACTION_Handle(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 #ifdef ENABLE_FMRADIO
 void ACTION_FM(void)
 {
+    if (gSurvivalMode) {
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        return;
+    }
     if (gCurrentFunction != FUNCTION_TRANSMIT && gCurrentFunction != FUNCTION_MONITOR)
     {
         gInputBoxIndex = 0;
@@ -428,6 +464,10 @@ void ACTION_FM(void)
 
 static void ACTION_Scan_FM(bool bRestart)
 {
+    if (gSurvivalMode) {
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        return;
+    }
     if (FUNCTION_IsRx())
         return;
 

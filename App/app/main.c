@@ -55,8 +55,6 @@
 #include <stdlib.h>
 
 bool gCallToneTxActive = false;
-bool gCallTonePreviewScreen = false;
-uint8_t gCallTonePreviewTone = 0;
 
 // Full VFO backup for restore on EXIT
 static VFO_Info_t gVfoBackup;
@@ -186,12 +184,6 @@ static void MAIN_CallToneRestoreDeviation(uint16_t saved)
     BK4819_WriteRegister(0x40, saved);
 }
 
-static uint8_t MAIN_GetCallTonePreviewGain(void)
-{
-    /* Local preview/sidetone must stay quiet. */
-    return 18;
-}
-
 static void MAIN_SetQuietLocalMonitor(void)
 {
     /* Lower only the local AF/speaker path.  REG_70 tone gain still controls
@@ -199,175 +191,19 @@ static void MAIN_SetQuietLocalMonitor(void)
     BK4819_WriteRegister(BK4819_REG_48,
         (11u << 12) |      /* existing high field used by F4HWN */
         ( 0u << 10) |      /* AF Rx Gain-1 */
-        ( 4u << 4)  |      /* AF Rx Gain-2: quiet local monitor */
-        ( 1u << 0));       /* AF DAC gain */
-}
-
-static volatile bool     s_call_preview_active;
-static volatile uint8_t  s_call_preview_tone;
-static uint8_t           s_call_preview_note;
-static uint8_t           s_call_preview_phase_ticks;
-static uint16_t          s_call_preview_elapsed_ticks;
-static bool              s_call_preview_on_phase;
-
-static void MAIN_CallToneStopPreview(void)
-{
-    if (!s_call_preview_active) {
-        return;
-    }
-    s_call_preview_active = false;
-
-    AUDIO_AudioPathOff();
-    gEnableSpeaker = false;
-    BK4819_EnterTxMute();
-    BK4819_WriteRegister(BK4819_REG_70, 0x0000);
-    BK4819_TurnsOffTones_TurnsOnRX();
-    BK4819_SetRxAudioGain();
-}
-
-void MAIN_PlayCallTonePreview(uint8_t tone)
-{
-    if (tone > 4u) tone = 0;
-    if (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx())
-        return;
-
-    /* Non-blocking preview: about 2 seconds, cancellable by MENU/EXIT or by
-     * selecting another tone.  Do not use SYSTEM_DelayMs here; that freezes
-     * the menu and delays the value shown on screen. */
-    MAIN_CallToneStopPreview();
-
-    s_call_preview_active = true;
-    s_call_preview_tone = tone;
-    s_call_preview_note = 0;
-    s_call_preview_phase_ticks = 0;
-    s_call_preview_elapsed_ticks = 0;
-    s_call_preview_on_phase = false;
-
-    BK4819_EnterTxMute();
-    BK4819_SetAF(BK4819_AF_BEEP);
-    MAIN_SetQuietLocalMonitor();
-    BK4819_WriteRegister(BK4819_REG_30, 0);
-    BK4819_WriteRegister(BK4819_REG_30,
-        BK4819_REG_30_ENABLE_AF_DAC |
-        BK4819_REG_30_ENABLE_DISC_MODE |
-        BK4819_REG_30_ENABLE_TX_DSP);
-    AUDIO_AudioPathOn();
-    gEnableSpeaker = true;
+        ( 8u << 4)  |      /* AF Rx Gain-2: clearer local preview */
+        ( 2u << 0));       /* AF DAC gain */
 }
 
 void MAIN_CancelCallTonePreview(void)
 {
-    MAIN_CallToneStopPreview();
+    /* GGFW 0.6.5: CllTon preview was removed. Keep a safe no-op so
+     * stale menu transitions and tick hooks cannot affect audio/RF paths. */
 }
 
 void MAIN_CallToneTick10ms(void)
 {
-    if (!s_call_preview_active)
-        return;
-
-    if (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx()) {
-        MAIN_CallToneStopPreview();
-        return;
-    }
-
-    if (++s_call_preview_elapsed_ticks >= 200u) { // ~2 seconds
-        MAIN_CallToneStopPreview();
-        return;
-    }
-
-    if (s_call_preview_phase_ticks > 0) {
-        s_call_preview_phase_ticks--;
-        return;
-    }
-
-    const CallToneNote_t *n = &gCallToneMelodies[s_call_preview_tone][s_call_preview_note];
-    if (s_call_preview_note >= 16u || n->hz == 0) {
-        MAIN_CallToneStopPreview();
-        return;
-    }
-
-    if (!s_call_preview_on_phase) {
-        BK4819_SetAF(BK4819_AF_BEEP);
-        MAIN_SetQuietLocalMonitor();
-        BK4819_WriteRegister(BK4819_REG_70,
-            BK4819_REG_70_ENABLE_TONE1 | ((uint16_t)MAIN_GetCallTonePreviewGain() << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
-        BK4819_WriteRegister(BK4819_REG_30,
-            BK4819_REG_30_ENABLE_AF_DAC |
-            BK4819_REG_30_ENABLE_DISC_MODE |
-            BK4819_REG_30_ENABLE_TX_DSP);
-        AUDIO_AudioPathOn();
-        gEnableSpeaker = true;
-        BK4819_WriteRegister(BK4819_REG_71, MAIN_ScaleToneFreq(n->hz));
-        BK4819_ExitTxMute();
-        s_call_preview_on_phase = true;
-        s_call_preview_phase_ticks = n->on_10ms;
-    } else {
-        BK4819_EnterTxMute();
-        s_call_preview_on_phase = false;
-        s_call_preview_phase_ticks = n->off_10ms;
-        s_call_preview_note++;
-    }
-}
-
-
-static void MAIN_PlayLocalCallToneNote(uint16_t hz, uint8_t on_10ms, uint8_t off_10ms)
-{
-    if (hz == 0 || on_10ms == 0) return;
-
-    BK4819_WriteRegister(BK4819_REG_71, MAIN_ScaleToneFreq(hz));
-    BK4819_WriteRegister(BK4819_REG_70,
-        BK4819_REG_70_ENABLE_TONE1 | ((uint16_t)MAIN_GetCallTonePreviewGain() << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
-    BK4819_ExitTxMute();
-    SYSTEM_DelayMs((unsigned)on_10ms * 10u);
-    BK4819_EnterTxMute();
-    if (off_10ms) SYSTEM_DelayMs((unsigned)off_10ms * 10u);
-}
-
-void MAIN_PlayCallTonePreviewBlocking(uint8_t tone)
-{
-    if (tone > 4u) tone = 0;
-    if (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx())
-        return;
-
-    MAIN_CallToneStopPreview();
-
-#ifdef ENABLE_MESSENGER
-    MSG_RF_HardRestoreVoicePath();
-#endif
-
-    /* Dedicated preview screen path: intentionally simple/blocking for clean
-     * sound. It is NOT used while moving through the menu list; the user first
-     * enters the PREVIEW screen, then hears one clean 2s local preview. */
-    BK4819_EnterTxMute();
-    BK4819_SetAF(BK4819_AF_BEEP);
-    MAIN_SetQuietLocalMonitor();
-    BK4819_WriteRegister(BK4819_REG_30, 0);
-    BK4819_WriteRegister(BK4819_REG_30,
-        BK4819_REG_30_ENABLE_AF_DAC |
-        BK4819_REG_30_ENABLE_DISC_MODE |
-        BK4819_REG_30_ENABLE_TX_DSP);
-    AUDIO_AudioPathOn();
-    gEnableSpeaker = true;
-    BK4819_WriteRegister(BK4819_REG_70, 0x0000);
-    SYSTEM_DelayMs(40);
-
-    uint16_t elapsed = 0;
-    for (uint8_t pass = 0; pass < 3u && elapsed < 2000u; ++pass) {
-        for (uint8_t i = 0; i < 16u && elapsed < 2000u; ++i) {
-            const CallToneNote_t *n = &gCallToneMelodies[tone][i];
-            if (n->hz == 0) break;
-            MAIN_PlayLocalCallToneNote(n->hz, n->on_10ms, n->off_10ms);
-            elapsed += (uint16_t)((uint16_t)n->on_10ms + (uint16_t)n->off_10ms) * 10u;
-        }
-    }
-
-    BK4819_EnterTxMute();
-    BK4819_WriteRegister(BK4819_REG_70, 0x0000);
-
-    AUDIO_AudioPathOff();
-    gEnableSpeaker = false;
-    BK4819_TurnsOffTones_TurnsOnRX();
-    BK4819_SetRxAudioGain();
+    /* No-op: CllTon preview removed. */
 }
 
 static void MAIN_SendCallToneNote(uint16_t hz, uint8_t on_10ms, uint8_t off_10ms)
@@ -401,7 +237,7 @@ static void MAIN_SendPmrCallTone(void)
 #endif
     if (tone > 4u) tone = 0;
 
-    MAIN_CallToneStopPreview();
+    MAIN_CancelCallTonePreview();
 
 #ifdef ENABLE_MESSENGER
     MSG_RF_HardRestoreVoicePath();
@@ -462,6 +298,11 @@ static void MAIN_SendPmrCallTone(void)
     gRequestDisplayScreen = DISPLAY_MAIN;
     gUpdateStatus = true;
     gUpdateDisplay = true;
+}
+
+void MAIN_SendPmrCallToneAction(void)
+{
+    MAIN_SendPmrCallTone();
 }
 
 static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
@@ -580,8 +421,13 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
             gBackup_CROSS_BAND_RX_TX  = gEeprom.CROSS_BAND_RX_TX;
             gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;     
 
-            SCANNER_Start(false);
-            gRequestDisplayScreen = DISPLAY_SCANNER;
+            if (!gSurvivalMode) {
+                SCANNER_Start(false);
+                gRequestDisplayScreen = DISPLAY_SCANNER;
+            } else {
+                gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+                gEeprom.CROSS_BAND_RX_TX = gBackup_CROSS_BAND_RX_TX;
+            }
             break;
 
         case KEY_5:
@@ -599,7 +445,7 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
                 gRequestSaveVFO   = true;
                 gVfoConfigureMode = VFO_CONFIGURE_RELOAD;
 #elif defined(ENABLE_SPECTRUM)
-                APP_RunSpectrum();
+                if (!gSurvivalMode) APP_RunSpectrum(); else gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
                 gRequestDisplayScreen = DISPLAY_MAIN;
 #endif
             }
@@ -616,7 +462,8 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
         case KEY_7:
 #ifdef ENABLE_MESSENGER
             if (!beep) {
-                MSG_RangeOpen();
+                if (!gSurvivalMode) MSG_RangeOpen();
+                else gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
             } else
 #endif
             {
@@ -1097,8 +944,12 @@ static void MAIN_Key_MENU(bool bKeyPressed, bool bKeyHeld)
 #ifdef ENABLE_MESSENGER
     if (!bKeyHeld && !bKeyPressed && gWasFKeyPressed) {
         gWasFKeyPressed = false;
-        MSG_Open();
-        gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
+        if (!gSurvivalMode) {
+            MSG_Open();
+            gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
+        } else {
+            gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        }
         return;
     }
 #endif
@@ -1280,8 +1131,13 @@ static void MAIN_Key_STAR(bool bKeyPressed, bool bKeyHeld)
         gBackup_CROSS_BAND_RX_TX  = gEeprom.CROSS_BAND_RX_TX;
         gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
 
-        SCANNER_Start(true);
-        gRequestDisplayScreen = DISPLAY_SCANNER;
+        if (!gSurvivalMode) {
+            SCANNER_Start(true);
+            gRequestDisplayScreen = DISPLAY_SCANNER;
+        } else {
+            gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+            gEeprom.CROSS_BAND_RX_TX = gBackup_CROSS_BAND_RX_TX;
+        }
     }
     
     //gPttWasReleased = true; Fixed issue #138

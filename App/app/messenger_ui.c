@@ -3,6 +3,7 @@
 #include "app/messenger_store.h"
 #include "app/messenger_t9.h"
 #include "app/messenger_rf.h"
+#include "app/messenger_packet.h"
 #include "driver/st7565.h"
 #include "external/printf/printf.h"
 #include "ui/helper.h"
@@ -26,14 +27,38 @@ typedef struct {
     char callsign[MSG_CALLSIGN_EDIT_LEN + 1];
     int8_t rssi;
     uint16_t battery_cv;
-    uint16_t age;
+    uint16_t age_seconds;
+    uint8_t packet_type;
+    uint16_t range_session;
 } MSG_RangeFound_t;
 extern MSG_RangeFound_t gMsgRangeFound[];
 extern uint8_t gMsgRangeCount;
 extern uint8_t gMsgRangeScroll;
 extern uint8_t gMsgRangeStatus;
+extern uint16_t gMsgRangeSession;
+#define MSG_RANGE_MAX_FOUND 6u
 
 enum { MSG_SCREEN_HOME = 0, MSG_SCREEN_INBOX, MSG_SCREEN_OUTBOX, MSG_SCREEN_DRAFTS, MSG_SCREEN_COMPOSE, MSG_SCREEN_READ, MSG_SCREEN_SETTINGS, MSG_SCREEN_CALLSIGN, MSG_SCREEN_RANGE };
+
+
+static void format_age(uint16_t seconds, char *buf, uint8_t len)
+{
+    if (!buf || len == 0u) return;
+    if (seconds < 60u) snprintf(buf, len, "NOW");
+    else if (seconds < 3600u) snprintf(buf, len, "%um", (unsigned)(seconds / 60u));
+    else snprintf(buf, len, "%uh", (unsigned)(seconds / 3600u));
+}
+
+static const char *packet_type_short(uint8_t type)
+{
+    switch (type) {
+        case MSG_PKT_TYPE_TEXT: return "MSG";
+        case MSG_PKT_TYPE_ACK:  return "ACK";
+        case MSG_PKT_TYPE_PING: return "PNG";
+        case MSG_PKT_TYPE_PONG: return "PON";
+        default: return "---";
+    }
+}
 
 static void print_line(const char *s, uint8_t line, bool sel)
 {
@@ -99,23 +124,48 @@ static void msg_fill_rect(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, bool o
 
 static uint8_t range_rssi_bars(int8_t rssi)
 {
-    if (rssi >= -75) return 4u;
-    if (rssi >= -85) return 3u;
-    if (rssi >= -95) return 2u;
-    return 1u;
+    /* Same visual scale as the UV-K5 GOGUFW Messenger UI. */
+    if (rssi > -75)  return 5u;
+    if (rssi > -88)  return 4u;
+    if (rssi > -100) return 3u;
+    if (rssi > -112) return 2u;
+    if (rssi > -124) return 1u;
+    return 0u;
 }
 
 static void draw_rssi_bars(uint8_t x, uint8_t y, int8_t rssi)
 {
-    const uint8_t bars = range_rssi_bars(rssi);
-    const uint8_t heights[4] = { 2u, 4u, 6u, 8u };
-    const uint8_t base = (uint8_t)(y + 7u);
-    for (uint8_t i = 0; i < 4u; i++) {
-        if (i >= bars) break;
-        uint8_t h = heights[i];
-        uint8_t bx = (uint8_t)(x + i * 3u);
-        uint8_t y0 = (base >= h) ? (uint8_t)(base - h + 1u) : y;
-        msg_fill_rect(bx, y0, (uint8_t)(bx + 1u), base, true);
+    uint8_t bars = range_rssi_bars(rssi);
+    if (bars > 5u) bars = 5u;
+
+    /* UV-K5-style five-step bar: inactive bars remain visible as a small
+     * baseline tick, active bars are filled vertical columns. */
+    for (uint8_t i = 0u; i < 5u; i++) {
+        const uint8_t h = (uint8_t)(2u + i);
+        const uint8_t bx = (uint8_t)(x + i * 4u);
+        const uint8_t base = (uint8_t)(y + 6u);
+        const uint8_t y0 = (uint8_t)(base - h);
+        if (i < bars) msg_fill_rect(bx, y0, (uint8_t)(bx + 2u), base, true);
+        else UI_DrawLineBuffer(gFrameBuffer, bx, base, (uint8_t)(bx + 2u), base, 1);
+    }
+}
+
+static void draw_rssi_bars_compact(uint8_t x, uint8_t y, int8_t rssi)
+{
+    uint8_t bars = range_rssi_bars(rssi);
+    if (bars > 5u) bars = 5u;
+
+    /* Compact variant for Range Check rows.  The text row must fit:
+     * ID(6 chars) + RSSI(4 chars) + 5-bar meter + voltage(4 chars).
+     * Keep the five UV-K5-like baseline ticks, but use a 3 px pitch so the
+     * bar block ends before the right-aligned voltage column. */
+    for (uint8_t i = 0u; i < 5u; i++) {
+        const uint8_t h = (uint8_t)(2u + i);
+        const uint8_t bx = (uint8_t)(x + i * 3u);
+        const uint8_t base = (uint8_t)(y + 6u);
+        const uint8_t y0 = (uint8_t)(base - h);
+        if (i < bars) msg_fill_rect(bx, y0, (uint8_t)(bx + 1u), base, true);
+        else UI_DrawLineBuffer(gFrameBuffer, bx, base, (uint8_t)(bx + 1u), base, 1);
     }
 }
 
@@ -333,10 +383,16 @@ static void draw_list(void)
         if (gMsgScreen == MSG_SCREEN_DRAFTS) snprintf(buf, sizeof(buf), "%u %.18s", idx + 1, gMessengerConfig.drafts[idx]);
         else if (gMsgScreen == MSG_SCREEN_OUTBOX) {
             char st = '?';
+            char age[5];
+            format_age(list[idx].age_seconds, age, sizeof(age));
             if (list[idx].status == MSG_STATUS_ACKED) st = '+';
             else if (list[idx].status == MSG_STATUS_FAILED) st = 'x';
-            snprintf(buf, sizeof(buf), "%c%.17s", st, list[idx].text);
-        } else snprintf(buf, sizeof(buf), "%c%.17s", (list[idx].unread ? '*' : ' '), list[idx].text);
+            snprintf(buf, sizeof(buf), "%c%-11.11s%4s", st, list[idx].text, age);
+        } else {
+            char age[5];
+            format_age(list[idx].age_seconds, age, sizeof(age));
+            snprintf(buf, sizeof(buf), "%c%-11.11s%4s", (list[idx].unread ? '*' : ' '), list[idx].text, age);
+        }
         print_line(buf, row + 1, idx == gMsgCursor);
     }
 }
@@ -353,13 +409,15 @@ static void draw_read(void)
     }
 
     uint8_t used_hops = (m->ttl_init >= m->ttl_remain) ? (uint8_t)(m->ttl_init - m->ttl_remain) : 0;
+    char age[5];
+    format_age(m->age_seconds, age, sizeof(age));
     if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
         char st = '?';
         if (m->status == MSG_STATUS_ACKED) st = '+';
         else if (m->status == MSG_STATUS_FAILED) st = 'x';
 
-        if (gMessengerConfig.msg_hop == 0U) snprintf(buf, sizeof(buf), "TO:%s HOP:OFF", m->to);
-        else snprintf(buf, sizeof(buf), "TO:%s HOP:%u", m->to, gMessengerConfig.msg_hop);
+        if (gMessengerConfig.msg_hop == 0U) snprintf(buf, sizeof(buf), "TO:%s HOP:OFF %s", m->to, age);
+        else snprintf(buf, sizeof(buf), "TO:%s HOP:%u %s", m->to, gMessengerConfig.msg_hop, age);
 
         /* Metadata is pixel-positioned: one pixel lower than 0.2.4 so it
          * visually aligns with the large ACK marker and sits closer to the
@@ -368,8 +426,8 @@ static void draw_read(void)
         char stbuf[2] = { st, 0 };
         UI_PrintStringSmallBold(stbuf, 120, 0, 1);
     } else {
-        if (m->ttl_init == 0U) snprintf(buf, sizeof(buf), "FROM:%s HOP:OFF", m->from);
-        else snprintf(buf, sizeof(buf), "FROM:%s HOP:%u/%u", m->from, used_hops, m->ttl_init);
+        if (m->ttl_init == 0U) snprintf(buf, sizeof(buf), "FROM:%s HOP:OFF %s", m->from, age);
+        else snprintf(buf, sizeof(buf), "FROM:%s HOP:%u/%u %s", m->from, used_hops, m->ttl_init, age);
         GUI_DisplaySmallest(buf, 0, 9, false, true);
     }
 
@@ -377,7 +435,18 @@ static void draw_read(void)
      * begins 4 px higher than before, and footer labels move up 1 px while
      * keeping the real-LCD safe area. */
     draw_dotted_separator(17);
-    print_wrapped_small_y(m->text, 20, 3);
+    if (gMsgReadSource == MSG_SCREEN_OUTBOX && m->ack_count > 0u) {
+        print_wrapped_small_y(m->text, 20, 2);
+        char ackbuf[32];
+        uint8_t pos = 0u;
+        pos += (uint8_t)snprintf(ackbuf + pos, sizeof(ackbuf) - pos, "ACK:");
+        for (uint8_t i = 0u; i < m->ack_count && i < MSG_ACK_SOURCE_MAX && pos < sizeof(ackbuf); i++) {
+            pos += (uint8_t)snprintf(ackbuf + pos, sizeof(ackbuf) - pos, "%s%.*s", i ? " " : "", MSG_ACK_ID_LEN, m->ack_from[i]);
+        }
+        GUI_DisplaySmallest(ackbuf, 0, 40, false, true);
+    } else {
+        print_wrapped_small_y(m->text, 20, 3);
+    }
     draw_dotted_separator(46);
 
     if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
@@ -413,10 +482,10 @@ static void draw_compose(void)
 
 static void draw_range(void)
 {
-    char buf[24];
-    draw_title("RANGE CHECK");
+    char buf[28];
+    draw_title((gMsgRangeStatus == 1u || gMsgRangeStatus == 2u) ? "RANGE CHECK" : "HEARD");
     if (gMsgRangeStatus == 1u) GUI_DisplaySmallest("WAIT", 0, 1, false, true);
-    else if (gMsgRangeStatus == 2u) GUI_DisplaySmallest("OK", 0, 1, false, true);
+    else if (gMsgRangeStatus == 2u) GUI_DisplaySmallest("RESULT", 0, 1, false, true);
 
     const uint8_t top_sep = 9u;
     const uint8_t bottom_sep = 46u;
@@ -424,49 +493,90 @@ static void draw_range(void)
     draw_dotted_separator(top_sep);
     draw_dotted_separator(bottom_sep);
 
-    if (gMsgRangeStatus == 0u && gMsgRangeCount == 0u) {
-        /* Center the two-line prompt between the fixed separators. */
-        msg_draw_small_at_y("PRESS MENU", 29, 20, false);
-        msg_draw_small_at_y("TO CHECK", 39, 29, false);
-    } else if (gMsgRangeStatus == 1u && gMsgRangeCount == 0u) {
-        /* During the 10 s listen window, do not show an empty FOUND list. */
-        msg_draw_small_at_y("WAITING", 40, 20, false);
-        msg_draw_small_at_y("FOR PONG", 36, 29, false);
-    } else if (gMsgRangeStatus == 2u && gMsgRangeCount == 0u) {
-        msg_draw_small_at_y("NOT FOUND", 33, 24, false);
+    if (gMsgRangeStatus == 1u || gMsgRangeStatus == 2u) {
+        /* Active Range Check result screen: show only PONG results from the
+         * current ping session, live as they arrive, strongest RSSI first.
+         * This is intentionally different from HEARD: no TYPE/AGE here. */
+        uint8_t session_count = 0u;
+        for (uint8_t i = 0; i < gMsgRangeCount; i++) {
+            if (gMsgRangeFound[i].used && gMsgRangeFound[i].range_session == gMsgRangeSession) session_count++;
+        }
+        if (session_count == 0u) {
+            if (gMsgRangeStatus == 1u) {
+                msg_draw_small_at_y("WAITING", 40, 20, false);
+                msg_draw_small_at_y("FOR PONG", 36, 29, false);
+            } else {
+                msg_draw_small_at_y("NOT FOUND", 33, 24, false);
+            }
+        } else {
+            GUI_DisplaySmallest("FOUND:", 0, 12, false, true);
+            bool used[MSG_RANGE_MAX_FOUND];
+            memset(used, 0, sizeof(used));
+            uint8_t drawn = 0u;
+            for (uint8_t row = 0; row < page_size; row++) {
+                int8_t best_rssi = -128;
+                uint8_t best = 0xFFu;
+                for (uint8_t i = 0; i < gMsgRangeCount && i < MSG_RANGE_MAX_FOUND; i++) {
+                    if (used[i]) continue;
+                    if (!gMsgRangeFound[i].used || gMsgRangeFound[i].range_session != gMsgRangeSession) continue;
+                    if (best == 0xFFu || gMsgRangeFound[i].rssi > best_rssi) {
+                        best = i;
+                        best_rssi = gMsgRangeFound[i].rssi;
+                    }
+                }
+                if (best == 0xFFu) break;
+                used[best] = true;
+                const uint8_t y = (uint8_t)(19u + row * 9u);
+                /* Fixed-column Range row layout.  IMPORTANT: the Range
+                 * Check meter must be pixel-identical to the HEARD meter, so
+                 * do not use a compact/thinner variant here.  Columns are
+                 * shifted left enough to keep the full HEARD-width bar clear
+                 * of the fixed voltage column by at least one small-font
+                 * character width.
+                 *
+                 *   x=0..41   : 6-char callsign/msgid
+                 *   x=43..70  : RSSI, right aligned to 4 chars (-102)
+                 *   x=74..92  : HEARD-style 5-step RSSI bar, same pixels
+                 *   x=93..99  : one small-font char gap before voltage
+                 *   x=100..127: voltage, 4 chars (7.4V)
+                 */
+                snprintf(buf, sizeof(buf), "%-6s", gMsgRangeFound[best].callsign);
+                msg_draw_small_at_y(buf, 0, y, false);
+                snprintf(buf, sizeof(buf), "%4d", (int)gMsgRangeFound[best].rssi);
+                msg_draw_small_at_y(buf, 43, y, false);
+                draw_rssi_bars(74, y, gMsgRangeFound[best].rssi);
+                snprintf(buf, sizeof(buf), "%u.%uV", (unsigned)(gMsgRangeFound[best].battery_cv / 100u), (unsigned)((gMsgRangeFound[best].battery_cv / 10u) % 10u));
+                msg_draw_small_at_y(buf, 100, y, false);
+                drawn++;
+            }
+            (void)drawn;
+        }
     } else {
-        GUI_DisplaySmallest("FOUND:", 0, 12, false, true);
+        GUI_DisplaySmallest("LAST HEARD:", 0, 12, false, true);
         uint8_t pages = 1u;
         if (gMsgRangeCount > 0u) pages = (uint8_t)((gMsgRangeCount + page_size - 1u) / page_size);
         if (gMsgRangeScroll >= pages) gMsgRangeScroll = (uint8_t)(pages - 1u);
-        if (gMsgRangeCount > 0u) {
-            snprintf(buf, sizeof(buf), "%u/%u", (uint8_t)(gMsgRangeScroll + 1u), pages);
-            uint8_t x = (uint8_t)(128u - (strlen(buf) * 4u));
-            GUI_DisplaySmallest(buf, x, 12, false, true);
+        snprintf(buf, sizeof(buf), "%u/%u", (uint8_t)(gMsgRangeScroll + 1u), pages);
+        uint8_t x = (uint8_t)(128u - (strlen(buf) * 4u));
+        GUI_DisplaySmallest(buf, x, 12, false, true);
+
+        if (gMsgRangeCount == 0u) {
+            msg_draw_small_at_y("NO HEARD", 36, 24, false);
         }
         for (uint8_t row = 0; row < page_size; row++) {
             uint8_t idx = (uint8_t)(gMsgRangeScroll * page_size + row);
             if (idx >= gMsgRangeCount) break;
             uint8_t y = (uint8_t)(19u + row * 9u);
+            char age[5];
+            format_age(gMsgRangeFound[idx].age_seconds, age, sizeof(age));
+            /* Fixed-column HEARD row: use the full row while keeping
+             * callsign/bar/type/age separated on the small LCD. */
             snprintf(buf, sizeof(buf), "%-6s", gMsgRangeFound[idx].callsign);
             msg_draw_small_at_y(buf, 0, y, false);
-            /* 0.5.15: draw Range rows in fixed X columns instead of relying
-             * on spaces inside a single string.  The LCD font/pitch made
-             * the RSSI and voltage look visually glued together.  Keep one
-             * complete device per row while giving each field its own zone:
-             * callsign | RSSI | battery | bars. */
-            snprintf(buf, sizeof(buf), "%4d", (int)gMsgRangeFound[idx].rssi);
-            msg_draw_small_at_y(buf, 48, y, false);
-            if (gMsgRangeFound[idx].battery_cv != 0u) {
-                snprintf(buf, sizeof(buf), "%u.%uv",
-                         (unsigned)(gMsgRangeFound[idx].battery_cv / 100u),
-                         (unsigned)((gMsgRangeFound[idx].battery_cv % 100u) / 10u));
-            } else {
-                strncpy(buf, "--.-v", sizeof(buf));
-                buf[sizeof(buf) - 1u] = 0;
-            }
-            msg_draw_small_at_y(buf, 80, y, false);
-            draw_rssi_bars(114, y, gMsgRangeFound[idx].rssi);
+            draw_rssi_bars(48, y, gMsgRangeFound[idx].rssi);
+            msg_draw_small_at_y(packet_type_short(gMsgRangeFound[idx].packet_type), 76, y, false);
+            uint8_t age_x = (uint8_t)(127u - ((uint8_t)strlen(age) * 7u));
+            msg_draw_small_at_y(age, age_x, y, false);
         }
     }
 

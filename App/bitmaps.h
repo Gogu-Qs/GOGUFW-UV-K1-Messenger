@@ -12,6 +12,7 @@ extern const uint8_t gFontS[6];
 
 extern const uint8_t gFontKeyLock[9];
 extern const uint8_t gFontLight[9];
+extern const uint8_t gFontLightOff[9];
 extern const uint8_t gFontMute[12];
 
 extern const uint8_t gFontXB[2][6];
@@ -19,6 +20,8 @@ extern const uint8_t gFontMO[2][6];
 extern const uint8_t gFontDWR[3][6];
 #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
     extern const uint8_t gFontRO[2][6];
+    extern const uint8_t gFontSV[2][6];
+    extern const uint8_t gFontSURV[4][6];
 #endif
 extern const uint8_t gFontHold[2][5];
 

@@ -38,10 +38,11 @@ extern uint8_t gFSKWriteIndex;
 #define MSG_RF_REARM_DELAY_TICKS     80u
 #define MSG_RF_RX_STALE_TICKS        120u
 #define MSG_RF_ACK_TIMEOUT_TICKS      400u  /* 4.0s: wait past delayed ACK before retry */
+#define MSG_RF_ACK_COLLECT_TICKS      150u  /* 1.5s: after first ACK, keep RX locked to collect more ACK sources */
 #define MSG_RF_ACK_RETRY_GAP_TICKS    50u
 #define MSG_RF_ACK_SEND_DELAY_MIN_TICKS  80u   /* 800ms compatibility-safe ACK delay min */
 #define MSG_RF_ACK_SEND_DELAY_JIT_TICKS 30u    /* +0..300ms random ACK jitter */
-#define MSG_RF_REPRIME_DELAY_TICKS     30u   /* 300ms after TX/RX end */
+#define MSG_RF_REPRIME_DELAY_TICKS     20u   /* 200ms after TX/RX end */
 #define MSG_RF_IDLE_REPRIME_TICKS      0u    /* RF28: periodic idle re-prime disabled; event-based only */
 #define MSG_RF_UNREAD_LED_PERIOD_TICKS 300u   /* 3 seconds */
 #define MSG_RF_UNREAD_LED_FLASH_TICKS  8u     /* 80 ms */
@@ -49,13 +50,14 @@ extern uint8_t gFSKWriteIndex;
 #define MSG_RF_RANGE_PONG_MIN_TICKS     300u   /* 0.5.18: 3000 ms; wait until 3x PING repeats are safely over */
 #define MSG_RF_RANGE_PONG_JIT_TICKS     300u   /* 0.5.18: +0..3000 ms; PONG window = 3..6s inside 10s listen */
 #define MSG_RF_RANGE_BACKOFF_TICKS      100u   /* 1000 ms if FSK busy */
-#define MSG_RF_RANGE_PING_REPEATS       3u     /* 0.5.17: send multiple identical PING frames for better sync capture */
-#define MSG_RF_RANGE_PONG_REPEATS       2u     /* 0.5.17: duplicate PONG reply frames */
-#define MSG_RF_ACK_REPEATS              2u     /* 0.5.17: duplicate ACK frames, same ACK text/id */
+#define MSG_RF_RANGE_PING_REPEATS       1u     /* 1.0.1: single Range Check PING; reduce RF traffic and UI wait */
+#define MSG_RF_RANGE_PONG_REPEATS       1u     /* 1.0.1: single Range Check PONG; reduce collisions */
+#define MSG_RF_ACK_REPEATS              1u     /* GGFW 1.0.1: one ACK frame; message retry still handles missed ACKs */
+#define MSG_RF_ACK_QUEUE_LEN             4u     /* 1.0.1: queue ACKs so delayed ACKs do not overwrite each other */
 #define MSG_RF_REPEAT_GAP_MS            100u   /* short gap between repeated FSK frames */
 #define MSG_RF_RANGE_WAIT_PONG_TICKS    1000u  /* 10 s same-channel PONG listen lock */
-#define MSG_RF_SAFE_KEEPALIVE_TICKS      3000u  /* 30 s safe Messenger/Range RX keepalive */
-#define MSG_RF_SAFE_KEEPALIVE_RETRY_TICKS 100u  /* retry in 1 s if channel busy */
+#define MSG_RF_SAFE_KEEPALIVE_TICKS      500u   /* 5 s safe Messenger/Range RX keepalive */
+#define MSG_RF_SAFE_KEEPALIVE_RETRY_TICKS 50u   /* retry in 0.5 s if channel busy */
 
 #define MSG_RF_REG59_RX_CLEAR        0x4068u
 #define MSG_RF_REG59_RX_ENABLE       0x3068u
@@ -111,11 +113,15 @@ static bool s_rx_channel_lock_old_dw_active;
 static bool s_range_beep_pending;
 static uint8_t s_range_beep_ticks;
 
-static bool s_pending_ack_active;
-static uint8_t s_pending_ack_delay_ticks;
-static uint16_t s_pending_ack_id;
-static char s_pending_ack_to[MSG_CALLSIGN_LEN + 1];
-static uint8_t s_pending_ack_vfo;
+typedef struct {
+    bool active;
+    uint8_t delay_ticks;
+    uint16_t id;
+    char to[MSG_CALLSIGN_LEN + 1];
+    uint8_t vfo;
+} MSG_RF_PendingAck_t;
+
+static MSG_RF_PendingAck_t s_pending_ack_queue[MSG_RF_ACK_QUEUE_LEN];
 
 static bool s_pending_range_pong_active;
 static uint16_t s_pending_range_pong_delay_ticks;
@@ -125,7 +131,6 @@ static char s_last_range_ping_from[MSG_CALLSIGN_LEN + 1];
 static char s_pending_range_pong_to[MSG_CALLSIGN_LEN + 1];
 static uint8_t s_pending_range_pong_vfo;
 
-static void MSG_RF_FormatAckText(char *dst, uint16_t id);
 static bool MSG_RF_ParseAckText(const char *text, uint16_t *id);
 
 static bool s_wait_ack_active;
@@ -134,6 +139,10 @@ static uint16_t s_wait_ack_ticks;
 static uint8_t s_wait_ack_retries;
 static uint8_t s_wait_ack_ttl;
 static char s_wait_ack_text[MSG_TEXT_LEN + 1];
+
+static bool s_ack_collect_active;
+static uint16_t s_ack_collect_id;
+static uint16_t s_ack_collect_ticks;
 
 /* RF22 ACK debug: replace old RF register debug on-screen with the
  * actual ACK state machine values.  These fields are intentionally tiny
@@ -170,11 +179,11 @@ static MSG_RF_RegSnapshot_t s_voice_snapshot;
 
 static bool MSG_RF_SendPacketFrame(const uint8_t *packet, bool count_tx, bool ignore_self_rx);
 static bool MSG_RF_SendPacketFrameRepeated(const uint8_t *packet, bool count_tx, bool ignore_self_rx, uint8_t repeats);
-static bool MSG_RF_SendPacketFrameOnVfo(const uint8_t *packet, bool count_tx, bool ignore_self_rx, uint8_t tx_vfo);
 static bool MSG_RF_SendPacketFrameRepeatedOnVfo(const uint8_t *packet, bool count_tx, bool ignore_self_rx, uint8_t tx_vfo, uint8_t repeats);
 static void MSG_RF_RequestControlledReprime(uint8_t delay_ticks);
 static void MSG_RF_DoControlledReprime(void);
 static void MSG_RF_EnsureFskIrqMask(void);
+static bool MSG_RF_AutoTxBusy(void);
 
 static void MSG_RF_QueueAck(uint16_t id, const char *to, uint8_t rx_vfo);
 
@@ -185,10 +194,17 @@ static bool MSG_RF_ChannelBusy(void)
 
 static bool MSG_RF_FskBusy(void)
 {
-    /* RF23: Messenger TX should not be blocked by ordinary voice RX/carrier.
-     * Only defer if we are actively capturing an FSK packet. This is the
-     * common rule for manual sends, ACKs, retries and future hop/relay TX. */
+    /* Manual user TX keeps the RF23 rule: do not block only because voice
+     * squelch/carrier is open. */
     return s_rx_capture_active || (s_rx_stale_ticks != 0u);
+}
+
+static bool MSG_RF_AutoTxBusy(void)
+{
+    /* UV-K5 parity: automatic ACK/PONG/retry must not collide with ordinary
+     * channel activity.  Manual SEND still uses MSG_RF_FskBusy(), but all
+     * automatic replies defer while squelch/carrier is open. */
+    return MSG_RF_FskBusy() || MSG_RF_ChannelBusy();
 }
 
 static void MSG_RF_EnsureStoreInitialized(void)
@@ -594,6 +610,27 @@ static void MSG_RF_KeepFskRxEnabled(void)
 }
 
 
+void MSG_RF_OnRadioSetupRegisters(void)
+{
+#ifdef ENABLE_AIRCOPY
+    if (gSurvivalMode) return;
+    if (!gMessengerConfig.msg_rx) return;
+    if (gCurrentFunction == FUNCTION_TRANSMIT) return;
+
+    /* RADIO_SetupRegisters() rewrites the voice/interrupt/FSK related BK4829
+     * registers.  The old UV-K1 sidecar flag could remain true while the chip
+     * was no longer in the same FSK RX state.  Mark it stale and let the next
+     * idle tick fully re-arm the Aircopy-compatible RX path. */
+    s_sidecar_armed = false;
+    s_rx_capture_active = false;
+    s_rx_stale_ticks = 0u;
+    s_reprime_delay_ticks = 1u;
+    s_safe_keepalive_ticks = MSG_RF_SAFE_KEEPALIVE_RETRY_TICKS;
+    MSG_RF_EnsureFskIrqMask();
+#endif
+}
+
+
 void MSG_RF_Open(void) { MSG_RF_EnsureStoreInitialized(); }
 void MSG_RF_Close(void) {}
 
@@ -623,11 +660,20 @@ static void MSG_RF_ArmSidecarIfIdle(void)
 #ifdef ENABLE_AIRCOPY
     if (!gMessengerConfig.msg_rx) return;
     if (s_sidecar_armed) {
-        /* If another path accidentally dropped REG_59<12>, restore only while idle. */
-        if (!MSG_RF_ChannelBusy() && (BK4819_ReadRegister(BK4819_REG_59) & 0x1000u) == 0u) {
-            MSG_RF_KeepFskRxEnabled();
+        /* If another path (dual-watch, scan, AM/FM retune, voice restore)
+         * touched BK4829 while we still believed the sidecar was armed, do
+         * not just set REG_59.  UV-K5 is robust because it re-applies the FSK
+         * RX path after radio setup.  Do the same here, but only while idle. */
+        if (!MSG_RF_ChannelBusy()) {
+            const uint16_t r3f = BK4819_ReadRegister(BK4819_REG_3F);
+            const uint16_t r59 = BK4819_ReadRegister(BK4819_REG_59);
+            if ((r59 & 0x1000u) == 0u || (r3f & MSG_RF_FSK_IRQ_MASK) != MSG_RF_FSK_IRQ_MASK) {
+                s_sidecar_armed = false;
+            } else {
+                MSG_RF_EnsureFskIrqMask();
+            }
         }
-        return;
+        if (s_sidecar_armed) return;
     }
     if (gCurrentFunction == FUNCTION_TRANSMIT) return;
     if (MSG_RF_ChannelBusy()) return;
@@ -724,6 +770,7 @@ static void MSG_RF_FinishRxAttempt(bool parsed)
 
 void MSG_RF_Tick10ms(void)
 {
+    if (gSurvivalMode) return;
     MSG_RF_EnsureStoreInitialized();
     MSG_RF_UpdateDebugSnapshot();
     MSG_RF_RxChannelLockTick();
@@ -817,7 +864,7 @@ void MSG_RF_Tick10ms(void)
     if (s_pending_range_pong_active) {
         if (s_pending_range_pong_delay_ticks > 0u) --s_pending_range_pong_delay_ticks;
         if (s_pending_range_pong_delay_ticks == 0u) {
-            if (gCurrentFunction != FUNCTION_TRANSMIT && !MSG_RF_FskBusy()) {
+            if (gCurrentFunction != FUNCTION_TRANSMIT && !MSG_RF_AutoTxBusy()) {
                 uint8_t pong_frame[MSG_PKT_WIRE_LEN];
                 if (MSG_PACKET_BuildPong(pong_frame, sizeof(pong_frame), s_pending_range_pong_id,
                                          gMessengerConfig.callsign, s_pending_range_pong_to, gBatteryVoltageAverage) == MSG_PKT_WIRE_LEN) {
@@ -835,38 +882,55 @@ void MSG_RF_Tick10ms(void)
         }
     }
 
-    if (s_pending_ack_active && !MSG_RF_AckEnabledNow()) {
-        s_pending_ack_active = false;
+    if (s_ack_collect_active && !MSG_RF_AckEnabledNow()) {
+        s_ack_collect_active = false;
+        MSG_RF_RxChannelLockStop();
     }
-    if (s_pending_ack_active) {
-        if (s_pending_ack_delay_ticks > 0u) {
-            --s_pending_ack_delay_ticks;
+    if (s_ack_collect_active) {
+        if (s_ack_collect_ticks > 0u) --s_ack_collect_ticks;
+        if (s_ack_collect_ticks == 0u) {
+            s_ack_collect_active = false;
+            MSG_RF_RxChannelLockStop();
         }
     }
-    if (s_pending_ack_active && MSG_RF_AckEnabledNow() && s_pending_ack_delay_ticks == 0u &&
-        gCurrentFunction != FUNCTION_TRANSMIT && !MSG_RF_FskBusy()) {
-        uint8_t ack_frame[MSG_PKT_WIRE_LEN];
-        char ack_text[9];
-        MSG_RF_FormatAckText(ack_text, s_pending_ack_id);
-        /* RF25: send ACK as a normal text packet with its own fresh
-         * packet MsgID, while ACK:hhhh carries the original message id.
-         * Using the original MsgID as the ACK packet id could be filtered or
-         * confused with the already-seen outgoing message on some paths.
-         */
-        const uint16_t ack_frame_id = MSG_STORE_NextMsgId();
-        if (MSG_PACKET_BuildText(ack_frame, sizeof(ack_frame), ack_frame_id,
-                                 gMessengerConfig.callsign, ack_text, 1u) == MSG_PKT_WIRE_LEN) {
-            if (MSG_RF_SendPacketFrameRepeatedOnVfo(ack_frame, false, true, s_pending_ack_vfo, MSG_RF_ACK_REPEATS)) {
-                s_ack_dbg_sent_id = s_pending_ack_id;
-                s_ack_dbg_sent_count++;
-                s_pending_ack_active = false;
+
+
+    if (!MSG_RF_AckEnabledNow()) {
+        for (uint8_t i = 0; i < MSG_RF_ACK_QUEUE_LEN; ++i) {
+            s_pending_ack_queue[i].active = false;
+        }
+    }
+    for (uint8_t i = 0; i < MSG_RF_ACK_QUEUE_LEN; ++i) {
+        if (s_pending_ack_queue[i].active && s_pending_ack_queue[i].delay_ticks > 0u) {
+            --s_pending_ack_queue[i].delay_ticks;
+        }
+    }
+    if (MSG_RF_AckEnabledNow() &&
+        gCurrentFunction != FUNCTION_TRANSMIT && !MSG_RF_AutoTxBusy()) {
+        for (uint8_t i = 0; i < MSG_RF_ACK_QUEUE_LEN; ++i) {
+            if (!s_pending_ack_queue[i].active || s_pending_ack_queue[i].delay_ticks != 0u) continue;
+            uint8_t ack_frame[MSG_PKT_WIRE_LEN];
+            /* GOGUFW 0.6.0: real ACK packet, not ACK-as-text.
+             * ACK carries FROM/TO/ID/TTL fields so HEARD can show who acknowledged,
+             * and future hop/reverse-hop handling has a proper addressable frame.
+             * 1.0.1 ACK queue: do not let a later delayed ACK overwrite an
+             * earlier one while the channel is busy or FSK RX is active. */
+            if (MSG_PACKET_BuildAck(ack_frame, sizeof(ack_frame), s_pending_ack_queue[i].id,
+                                    gMessengerConfig.callsign, s_pending_ack_queue[i].to) == MSG_PKT_WIRE_LEN) {
+                if (MSG_RF_SendPacketFrameRepeatedOnVfo(ack_frame, false, true, s_pending_ack_queue[i].vfo, MSG_RF_ACK_REPEATS)) {
+                    s_ack_dbg_sent_id = s_pending_ack_queue[i].id;
+                    s_ack_dbg_sent_count++;
+                    s_pending_ack_queue[i].active = false;
+                }
             }
+            break;
         }
     }
 
     if (s_wait_ack_active && !MSG_RF_AckEnabledNow()) {
         MSG_STORE_SetOutboxStatusById(s_wait_ack_id, MSG_STATUS_NONE);
         s_wait_ack_active = false;
+        s_ack_collect_active = false;
         MSG_RF_RxChannelLockStop();
         s_ack_dbg_wait_active = 0u;
     }
@@ -876,7 +940,7 @@ void MSG_RF_Tick10ms(void)
         }
         if (s_wait_ack_ticks == 0u) {
             if (s_wait_ack_retries == 0u &&
-                gCurrentFunction != FUNCTION_TRANSMIT && !MSG_RF_FskBusy()) {
+                gCurrentFunction != FUNCTION_TRANSMIT && !MSG_RF_AutoTxBusy()) {
                 uint8_t retry_frame[MSG_PKT_WIRE_LEN];
                 if (MSG_PACKET_BuildText(retry_frame, sizeof(retry_frame), s_wait_ack_id,
                                          gMessengerConfig.callsign, s_wait_ack_text,
@@ -893,8 +957,7 @@ void MSG_RF_Tick10ms(void)
                 MSG_RF_RxChannelLockStop();
                 s_ack_dbg_wait_active = 0u;
             } else {
-                /* Active FSK capture: do not collide; retry shortly.
-                 * Ordinary voice RX/carrier does not block Messenger TX. */
+                /* Active FSK capture or carrier busy: do not collide; retry shortly. */
                 s_wait_ack_ticks = MSG_RF_ACK_RETRY_GAP_TICKS;
             }
         }
@@ -1067,36 +1130,6 @@ static bool MSG_RF_SendPacketFrameRepeatedOnVfo(const uint8_t *packet, bool coun
 #endif
 }
 
-static bool MSG_RF_SendPacketFrameOnVfo(const uint8_t *packet, bool count_tx, bool ignore_self_rx, uint8_t tx_vfo)
-{
-#ifdef ENABLE_AIRCOPY
-    const uint8_t old_tx_vfo = gEeprom.TX_VFO;
-    bool ok;
-
-    tx_vfo &= 1u;
-    if (old_tx_vfo != tx_vfo) {
-        gEeprom.TX_VFO = tx_vfo;
-        RADIO_SelectVfos();
-        RADIO_SetupRegisters(true);
-        MSG_RF_EnsureFskIrqMask();
-    }
-
-    ok = MSG_RF_SendPacketFrame(packet, count_tx, ignore_self_rx);
-
-    if (old_tx_vfo != tx_vfo) {
-        gEeprom.TX_VFO = old_tx_vfo;
-        RADIO_SelectVfos();
-        RADIO_SetupRegisters(true);
-        MSG_RF_EnsureFskIrqMask();
-    }
-
-    return ok;
-#else
-    (void)packet; (void)count_tx; (void)ignore_self_rx; (void)tx_vfo;
-    return false;
-#endif
-}
-
 static void clamp_rf_text(char *dst, const char *src)
 {
     uint8_t i = 0;
@@ -1179,17 +1212,41 @@ static void MSG_RF_QueueRangePong(uint16_t id, const char *to, uint8_t rx_vfo)
 
 static void MSG_RF_QueueAck(uint16_t id, const char *to, uint8_t rx_vfo)
 {
+    char ack_to[MSG_CALLSIGN_LEN + 1];
+    memset(ack_to, 0, sizeof(ack_to));
+    if (to && to[0]) strncpy(ack_to, to, MSG_CALLSIGN_LEN);
+    else strncpy(ack_to, MSG_PKT_TO_ALL, MSG_CALLSIGN_LEN);
+
     if (!MSG_RF_AckEnabledNow()) {
-        s_pending_ack_active = false;
+        for (uint8_t i = 0; i < MSG_RF_ACK_QUEUE_LEN; ++i) {
+            s_pending_ack_queue[i].active = false;
+        }
         return;
     }
-    s_pending_ack_active = true;
-    s_pending_ack_delay_ticks = MSG_RF_RandomAckDelayTicks(id);
-    s_pending_ack_id = id;
-    s_pending_ack_vfo = (uint8_t)(rx_vfo & 1u);
-    memset(s_pending_ack_to, 0, sizeof(s_pending_ack_to));
-    if (to && to[0]) strncpy(s_pending_ack_to, to, MSG_CALLSIGN_LEN);
-    else strncpy(s_pending_ack_to, MSG_PKT_TO_ALL, MSG_CALLSIGN_LEN);
+
+    /* Avoid duplicate queued ACKs for the same received packet/source.
+     * This still allows a later retry frame to get a fresh ACK after the
+     * previous queued ACK has already been sent. */
+    for (uint8_t i = 0; i < MSG_RF_ACK_QUEUE_LEN; ++i) {
+        if (!s_pending_ack_queue[i].active) continue;
+        if (s_pending_ack_queue[i].id == id && strncmp(s_pending_ack_queue[i].to, ack_to, MSG_CALLSIGN_LEN) == 0) {
+            return;
+        }
+    }
+
+    for (uint8_t i = 0; i < MSG_RF_ACK_QUEUE_LEN; ++i) {
+        if (s_pending_ack_queue[i].active) continue;
+        s_pending_ack_queue[i].active = true;
+        s_pending_ack_queue[i].delay_ticks = MSG_RF_RandomAckDelayTicks(id);
+        s_pending_ack_queue[i].id = id;
+        s_pending_ack_queue[i].vfo = (uint8_t)(rx_vfo & 1u);
+        memset(s_pending_ack_queue[i].to, 0, sizeof(s_pending_ack_queue[i].to));
+        strncpy(s_pending_ack_queue[i].to, ack_to, MSG_CALLSIGN_LEN);
+        return;
+    }
+
+    /* Queue full: keep the older ACKs rather than overwriting/dropping a
+     * delayed ACK that is already waiting for the channel to clear. */
 }
 
 /* RF24 daily-v1 ACK fallback: ACK is carried as an ordinary text message
@@ -1197,22 +1254,6 @@ static void MSG_RF_QueueAck(uint16_t id, const char *to, uint8_t rx_vfo)
  * Normal text RF parsing is already proven reliable; this avoids the separate
  * ACK frame parser path that stayed R0 even when the ACK FSK burst was audible.
  */
-static char MSG_RF_HexNibble(uint8_t v)
-{
-    v &= 0x0Fu;
-    return (char)(v < 10u ? ('0' + v) : ('A' + (v - 10u)));
-}
-
-static void MSG_RF_FormatAckText(char *dst, uint16_t id)
-{
-    dst[0] = 'A'; dst[1] = 'C'; dst[2] = 'K'; dst[3] = ':';
-    dst[4] = MSG_RF_HexNibble((uint8_t)(id >> 12));
-    dst[5] = MSG_RF_HexNibble((uint8_t)(id >> 8));
-    dst[6] = MSG_RF_HexNibble((uint8_t)(id >> 4));
-    dst[7] = MSG_RF_HexNibble((uint8_t)id);
-    dst[8] = 0;
-}
-
 static bool MSG_RF_ParseAckText(const char *text, uint16_t *id)
 {
     if (!text || !id) return false;
@@ -1231,24 +1272,36 @@ static bool MSG_RF_ParseAckText(const char *text, uint16_t *id)
     return true;
 }
 
-static void MSG_RF_HandleAckFor(uint16_t ack_id)
+static void MSG_RF_HandleAckFor(uint16_t ack_id, const char *ack_from)
 {
     s_ack_dbg_rx_id = ack_id;
     s_ack_dbg_rx_count++;
+
     if (s_wait_ack_active) {
         if (ack_id == s_wait_ack_id) {
             s_ack_dbg_match_count++;
+            MSG_STORE_AddOutboxAckSourceById(s_wait_ack_id, ack_from);
+            MSG_STORE_SetOutboxStatusById(s_wait_ack_id, MSG_STATUS_ACKED);
+
+            /* 1.0.1 follow-up: first ACK means delivered and cancels retry,
+             * but keep a short same-channel receive window open so the Sent
+             * READ screen can collect up to three ACK source IDs. */
+            s_wait_ack_active = false;
+            s_ack_collect_active = true;
+            s_ack_collect_id = ack_id;
+            s_ack_collect_ticks = MSG_RF_ACK_COLLECT_TICKS;
+            MSG_RF_RxChannelLockStart(gEeprom.TX_VFO, MSG_RF_ACK_COLLECT_TICKS);
+            s_ack_dbg_wait_active = 0u;
+            MSG_RF_RequestAckSuccessBeep();
         } else {
             s_ack_dbg_miss_count++;
         }
-        if (ack_id == s_wait_ack_id) {
-            MSG_STORE_SetOutboxStatusById(s_wait_ack_id, MSG_STATUS_ACKED);
-            s_wait_ack_active = false;
-            MSG_RF_RxChannelLockStop();
-            s_ack_dbg_wait_active = 0u;
-            MSG_RF_RequestAckSuccessBeep();
-        }
+    } else if (s_ack_collect_active && ack_id == s_ack_collect_id) {
+        MSG_STORE_AddOutboxAckSourceById(ack_id, ack_from);
+        MSG_STORE_SetOutboxStatusById(ack_id, MSG_STATUS_ACKED);
+        /* Do not beep again; this is an extra ACK source for the same sent message. */
     } else {
+        MSG_STORE_AddOutboxAckSourceById(ack_id, ack_from);
         MSG_STORE_SetOutboxStatusById(ack_id, MSG_STATUS_ACKED);
         MSG_RF_RequestAckSuccessBeep();
     }
@@ -1262,6 +1315,7 @@ static void try_store_rx_packet(void)
     if (!parse_aircopy_native_packet(&pkt)) return;
 
     if (pkt.type == MSG_PKT_TYPE_PING) {
+        MSG_HeardUpdate(pkt.from, MSG_RF_CurrentRSSIdBm(), MSG_PKT_TYPE_PING);
         if (strncmp(pkt.from, gMessengerConfig.callsign, MSG_CALLSIGN_LEN) != 0) {
             MSG_RF_QueueRangePong(pkt.id, pkt.from, gEeprom.RX_VFO);
             MSG_RF_RequestRangeBeep();
@@ -1287,11 +1341,12 @@ static void try_store_rx_packet(void)
     }
 
     if (pkt.type == MSG_PKT_TYPE_ACK) {
+        MSG_HeardUpdate(pkt.from, MSG_RF_CurrentRSSIdBm(), MSG_PKT_TYPE_ACK);
         uint16_t ack_id = pkt.id;
         if (pkt.payload_len >= 2u) {
             ack_id = (uint16_t)(uint8_t)pkt.payload[0] | ((uint16_t)(uint8_t)pkt.payload[1] << 8);
         }
-        MSG_RF_HandleAckFor(ack_id);
+        MSG_RF_HandleAckFor(ack_id, pkt.from);
         MSG_RF_FinishRxAttempt(true);
         return;
     }
@@ -1300,9 +1355,10 @@ static void try_store_rx_packet(void)
 
     uint16_t ack_text_id;
     if (MSG_RF_ParseAckText(pkt.payload, &ack_text_id)) {
+        MSG_HeardUpdate(pkt.from, MSG_RF_CurrentRSSIdBm(), MSG_PKT_TYPE_ACK);
         /* RF28: text ACK is now proven enough for debugging; keep it out of
          * Inbox for daily use and only update the matching Sent status. */
-        MSG_RF_HandleAckFor(ack_text_id);
+        MSG_RF_HandleAckFor(ack_text_id, pkt.from);
         MSG_RF_FinishRxAttempt(true);
         gUpdateDisplay = true;
         return;
@@ -1312,6 +1368,8 @@ static void try_store_rx_packet(void)
         s_ignore_next_self_rx = false;
         return;
     }
+
+    MSG_HeardUpdate(pkt.from, MSG_RF_CurrentRSSIdBm(), MSG_PKT_TYPE_TEXT);
 
     const bool duplicate = MSG_STORE_IsDuplicateInbox(pkt.from, pkt.id);
 
@@ -1341,6 +1399,7 @@ static void try_store_rx_packet(void)
 
 void MSG_RF_OnRadioInterrupt(uint16_t status)
 {
+    if (gSurvivalMode) return;
 #ifdef ENABLE_AIRCOPY
     const bool fsk_sync    = (status & BK4819_REG_02_FSK_RX_SYNC) != 0;
     const bool fifo_full   = (status & BK4819_REG_02_FSK_FIFO_ALMOST_FULL) != 0;
@@ -1382,16 +1441,66 @@ void MSG_RF_OnRadioInterrupt(uint16_t status)
 #endif
 }
 
+
+static void MSG_RF_RangeForceRxReprime(void)
+{
+#ifdef ENABLE_AIRCOPY
+    /* 0.6.1 Range Check hardening:
+     * Immediately before the PONG wait window, refresh only the FSK sidecar
+     * receive path.  Do not touch REG_47/AF speaker routing or globally change
+     * normal voice state.  This targets the long-idle Range Check case where
+     * PING TX appears to happen but the following PONG decode window is stale. */
+    if (!gMessengerConfig.msg_rx) return;
+    if (gCurrentFunction == FUNCTION_TRANSMIT) return;
+
+    if (!s_voice_snapshot.valid) MSG_RF_CaptureVoiceSnapshot();
+    s_sidecar_armed = true;
+    s_rx_capture_active = false;
+    s_rx_stale_ticks = 0u;
+    s_rx_words = 0u;
+    gFSKWriteIndex = 0u;
+    memset(g_FSK_Buffer, 0, sizeof(g_FSK_Buffer));
+
+    BK4819_SetupAircopy();
+    BK4819_WriteRegister(BK4819_REG_5D, MSG_RF_REG5D_LEN_100_BYTES);
+    BK4819_WriteRegister(BK4819_REG_02, 0x0000);
+    MSG_RF_EnsureFskIrqMask();
+    BK4819_WriteRegister(BK4819_REG_59, MSG_RF_REG59_RX_CLEAR);
+    BK4819_WriteRegister(BK4819_REG_59, MSG_RF_REG59_RX_ENABLE);
+
+    s_reprime_delay_ticks = 0u;
+    s_safe_keepalive_ticks = MSG_RF_SAFE_KEEPALIVE_TICKS;
+    s_sidecar_count++;
+#endif
+}
+
 bool MSG_RF_SendRangePing(void)
 {
+    if (gSurvivalMode) return false;
     MSG_RF_EnsureStoreInitialized();
 #ifdef ENABLE_AIRCOPY
+    /* 0.6.1: make Range Check self-healing after long idle.  Restore any
+     * stale FSK/voice remnants before building and sending the PING; normal
+     * Messenger TX still uses the proven generic path. */
+    MSG_RF_HardRestoreVoicePath();
+
     uint8_t packet[MSG_PKT_WIRE_LEN];
     const uint16_t id = MSG_STORE_NextMsgId();
     if (MSG_PACKET_BuildPing(packet, sizeof(packet), id, gMessengerConfig.callsign) != MSG_PKT_WIRE_LEN) {
         return false;
     }
-    if (!MSG_RF_SendPacketFrameRepeated(packet, true, true, MSG_RF_RANGE_PING_REPEATS)) return false;
+    bool ping_sent = MSG_RF_SendPacketFrameRepeated(packet, true, true, MSG_RF_RANGE_PING_REPEATS);
+    if (!ping_sent) {
+        /* 1.0.1 follow-up: Range Check is user-triggered; if the first TX attempt
+         * is refused by a stale FSK/RX state, force the same voice-path recovery
+         * and try once more instead of silently entering an empty wait screen. */
+        MSG_RF_HardRestoreVoicePath();
+        SYSTEM_DelayMs(80u);
+        ping_sent = MSG_RF_SendPacketFrameRepeated(packet, true, true, MSG_RF_RANGE_PING_REPEATS);
+    }
+    if (!ping_sent) return false;
+    SYSTEM_DelayMs(50u);
+    MSG_RF_RangeForceRxReprime();
     MSG_RF_RxChannelLockStart(gEeprom.TX_VFO, MSG_RF_RANGE_WAIT_PONG_TICKS);
     /* 0.5.15: for Range Check, enter the PONG listening window as soon as
      * possible after the PING TX restore.  The generic post-TX re-prime delay
@@ -1407,6 +1516,7 @@ bool MSG_RF_SendRangePing(void)
 
 bool MSG_RF_SendText(const char *text)
 {
+    if (gSurvivalMode) return false;
     MSG_RF_EnsureStoreInitialized();
 #ifdef ENABLE_AIRCOPY
     uint8_t packet[MSG_PKT_WIRE_LEN];
@@ -1435,6 +1545,7 @@ bool MSG_RF_SendText(const char *text)
         memset(s_wait_ack_text, 0, sizeof(s_wait_ack_text));
         strncpy(s_wait_ack_text, rf_text, MSG_TEXT_LEN);
         MSG_RF_RxChannelLockStart(gEeprom.TX_VFO, MSG_RF_ACK_TIMEOUT_TICKS);
+        MSG_RF_RequestControlledReprime(1u);
     } else {
         MSG_STORE_SetOutboxStatusById(id, MSG_STATUS_NONE);
         s_wait_ack_active = false;

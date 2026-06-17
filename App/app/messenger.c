@@ -3,6 +3,7 @@
 #include "app/messenger_store.h"
 #include "app/messenger_t9.h"
 #include "app/messenger_rf.h"
+#include "app/messenger_packet.h"
 #include "audio.h"
 #include "ui/ui.h"
 #include "misc.h"
@@ -36,10 +37,12 @@ typedef struct {
     char callsign[MSG_CALLSIGN_EDIT_LEN + 1];
     int8_t rssi;
     uint16_t battery_cv;
-    uint16_t age;
+    uint16_t age_seconds;
+    uint8_t packet_type;
+    uint16_t range_session;
 } MSG_RangeFound_t;
 
-#define MSG_RANGE_MAX_FOUND 10u
+#define MSG_RANGE_MAX_FOUND 6u
 #define MSG_RANGE_PAGE_SIZE 3u
 #define MSG_RANGE_WAIT_TICKS 1000u
 
@@ -47,7 +50,9 @@ MSG_RangeFound_t gMsgRangeFound[MSG_RANGE_MAX_FOUND];
 uint8_t gMsgRangeCount;
 uint8_t gMsgRangeScroll;
 uint8_t gMsgRangeStatus; /* 0 idle, 1 wait, 2 ok */
+uint16_t gMsgRangeSession;
 static uint16_t s_msgRangeWaitTicks;
+static uint8_t s_msgAgeSubTicks;
 
 static bool gMsgComposeIsDraftEdit;
 static uint8_t gMsgComposeDraftIndex;
@@ -59,6 +64,11 @@ void MSG_Init(void)
 
 void MSG_Open(void)
 {
+    if (gSurvivalMode) {
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        gRequestDisplayScreen = DISPLAY_MAIN;
+        return;
+    }
     MSG_Init();
     gMsgScreen = MSG_SCREEN_HOME;
     gMsgCursor = 0;
@@ -69,6 +79,7 @@ void MSG_Open(void)
 
 void MSG_Tick(void)
 {
+    if (gSurvivalMode) return;
     if (gMsgScreen == MSG_SCREEN_COMPOSE) MSG_T9_Tick(&gMsgEditor);
     else if (gMsgScreen == MSG_SCREEN_CALLSIGN) MSG_T9_Tick(&gMsgCallsignEditor);
     else if (gMsgScreen == MSG_SCREEN_RANGE && gMsgRangeStatus == 1u) {
@@ -79,17 +90,35 @@ void MSG_Tick(void)
             gUpdateDisplay = true;
         }
     }
+
+    if (++s_msgAgeSubTicks >= 100u) {
+        s_msgAgeSubTicks = 0u;
+        for (uint8_t i = 0; i < MSG_RANGE_MAX_FOUND; i++) {
+            if (gMsgRangeFound[i].used && gMsgRangeFound[i].age_seconds < 0xFFFFu) ++gMsgRangeFound[i].age_seconds;
+        }
+        for (uint8_t i = 0; i < MSG_INBOX_CAPACITY; i++) {
+            if (gMessengerInbox[i].used && gMessengerInbox[i].age_seconds < 0xFFFFu) ++gMessengerInbox[i].age_seconds;
+        }
+        for (uint8_t i = 0; i < MSG_OUTBOX_CAPACITY; i++) {
+            if (gMessengerOutbox[i].used && gMessengerOutbox[i].age_seconds < 0xFFFFu) ++gMessengerOutbox[i].age_seconds;
+        }
+        if (gMsgScreen == MSG_SCREEN_RANGE || gMsgScreen == MSG_SCREEN_INBOX ||
+            gMsgScreen == MSG_SCREEN_OUTBOX || gMsgScreen == MSG_SCREEN_READ) gUpdateDisplay = true;
+    }
 }
 
 void MSG_RangeOpen(void)
 {
+    if (gSurvivalMode) {
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        gRequestDisplayScreen = DISPLAY_MAIN;
+        return;
+    }
     MSG_Init();
     gMsgScreen = MSG_SCREEN_RANGE;
-    gMsgRangeCount = 0;
     gMsgRangeScroll = 0;
     gMsgRangeStatus = 0;
     s_msgRangeWaitTicks = 0;
-    memset(gMsgRangeFound, 0, sizeof(gMsgRangeFound));
     gRequestDisplayScreen = DISPLAY_MESSENGER;
 }
 
@@ -98,70 +127,48 @@ bool MSG_RangeIsOpen(void)
     return gMsgScreen == MSG_SCREEN_RANGE;
 }
 
-void MSG_RangeOnPong(const char *callsign, int8_t rssi_dbm, uint16_t battery_cv)
+void MSG_HeardUpdate(const char *callsign, int8_t rssi_dbm, uint8_t packet_type)
 {
     if (!callsign || !callsign[0]) return;
+    if (strncmp(callsign, gMessengerConfig.callsign, MSG_CALLSIGN_LEN) == 0) return;
+
     uint8_t pos = 0xFFu;
     for (uint8_t i = 0; i < gMsgRangeCount; i++) {
         if (strncmp(gMsgRangeFound[i].callsign, callsign, MSG_CALLSIGN_EDIT_LEN) == 0) { pos = i; break; }
     }
     if (pos == 0xFFu) {
-        if (gMsgRangeCount < MSG_RANGE_MAX_FOUND) pos = gMsgRangeCount++;
-        else pos = MSG_RANGE_MAX_FOUND - 1u;
+        pos = (gMsgRangeCount < MSG_RANGE_MAX_FOUND) ? gMsgRangeCount++ : (MSG_RANGE_MAX_FOUND - 1u);
     }
-    memset(&gMsgRangeFound[pos], 0, sizeof(gMsgRangeFound[pos]));
-    gMsgRangeFound[pos].used = true;
-    strncpy(gMsgRangeFound[pos].callsign, callsign, MSG_CALLSIGN_EDIT_LEN);
-    gMsgRangeFound[pos].callsign[MSG_CALLSIGN_EDIT_LEN] = 0;
-    gMsgRangeFound[pos].rssi = rssi_dbm;
-    gMsgRangeFound[pos].battery_cv = battery_cv;
 
-    /* Keep strongest signals at the top. */
-    for (uint8_t i = 0; i + 1 < gMsgRangeCount; i++) {
-        for (uint8_t j = i + 1; j < gMsgRangeCount; j++) {
-            if (gMsgRangeFound[j].rssi > gMsgRangeFound[i].rssi) {
-                MSG_RangeFound_t t = gMsgRangeFound[i];
-                gMsgRangeFound[i] = gMsgRangeFound[j];
-                gMsgRangeFound[j] = t;
-            }
-        }
-    }
-    if (gMsgRangeCount == 0u) gMsgRangeScroll = 0u;
-    else {
-        uint8_t pages = (uint8_t)((gMsgRangeCount + MSG_RANGE_PAGE_SIZE - 1u) / MSG_RANGE_PAGE_SIZE);
-        if (gMsgRangeScroll >= pages) gMsgRangeScroll = (uint8_t)(pages - 1u);
-    }
+    MSG_RangeFound_t rec = gMsgRangeFound[pos];
+    memset(&rec, 0, sizeof(rec));
+    rec.used = true;
+    strncpy(rec.callsign, callsign, MSG_CALLSIGN_EDIT_LEN);
+    rec.callsign[MSG_CALLSIGN_EDIT_LEN] = 0;
+    rec.rssi = rssi_dbm;
+    rec.packet_type = packet_type;
+    rec.age_seconds = 0u;
+
+    for (uint8_t i = pos; i > 0u; i--) gMsgRangeFound[i] = gMsgRangeFound[i - 1u];
+    gMsgRangeFound[0] = rec;
+    gMsgRangeScroll = 0u;
     gUpdateDisplay = true;
 }
 
-static void MSG_RangeFillTest(void)
+void MSG_RangeOnPong(const char *callsign, int8_t rssi_dbm, uint16_t battery_cv)
 {
-    static const char ids[10][MSG_CALLSIGN_EDIT_LEN + 1] = {
-        "TA1ABC", "GGFW01", "NODE01", "NODE02", "MOB001",
-        "CAR001", "TEST01", "TEST02", "TEST03", "TEST04"
-    };
-    static const int8_t rssi[10] = { -68, -72, -75, -80, -84, -87, -90, -94, -97, -101 };
-    memset(gMsgRangeFound, 0, sizeof(gMsgRangeFound));
-    gMsgRangeCount = MSG_RANGE_MAX_FOUND;
-    gMsgRangeScroll = 0;
-    gMsgRangeStatus = 2u;
-    s_msgRangeWaitTicks = 0;
-    for (uint8_t i = 0; i < MSG_RANGE_MAX_FOUND; i++) {
-        gMsgRangeFound[i].used = true;
-        strncpy(gMsgRangeFound[i].callsign, ids[i], MSG_CALLSIGN_EDIT_LEN);
-        gMsgRangeFound[i].callsign[MSG_CALLSIGN_EDIT_LEN] = 0;
-        gMsgRangeFound[i].rssi = rssi[i];
-        gMsgRangeFound[i].battery_cv = (uint16_t)(740u + i * 5u);
+    MSG_HeardUpdate(callsign, rssi_dbm, MSG_PKT_TYPE_PONG);
+    if (!callsign || !callsign[0]) return;
+    for (uint8_t i = 0; i < gMsgRangeCount; i++) {
+        if (strncmp(gMsgRangeFound[i].callsign, callsign, MSG_CALLSIGN_EDIT_LEN) == 0) {
+            gMsgRangeFound[i].battery_cv = battery_cv;
+            gMsgRangeFound[i].rssi = rssi_dbm;
+            gMsgRangeFound[i].range_session = gMsgRangeSession;
+            break;
+        }
     }
-}
-
-static void MSG_RangeClearTest(void)
-{
-    memset(gMsgRangeFound, 0, sizeof(gMsgRangeFound));
-    gMsgRangeCount = 0;
-    gMsgRangeScroll = 0;
-    gMsgRangeStatus = 0u;
-    s_msgRangeWaitTicks = 0;
+    if (gMsgRangeStatus == 1u) gMsgRangeStatus = 2u; /* show live result immediately */
+    gUpdateDisplay = true;
 }
 
 bool MSG_HasUnread(void) { return MSG_STORE_HasUnread(); }
@@ -205,6 +212,22 @@ static void open_sent_after_send(void)
     gMsgScreen = MSG_SCREEN_OUTBOX;
     gMsgCursor = 0;
     gMsgScroll = 0;
+}
+
+static void return_to_read_source_list(void)
+{
+    const MSG_Screen_t src = (gMsgReadSource == MSG_SCREEN_OUTBOX) ? MSG_SCREEN_OUTBOX : MSG_SCREEN_INBOX;
+    const uint8_t count = (src == MSG_SCREEN_OUTBOX) ? MSG_STORE_CountOutbox() : MSG_STORE_CountInbox();
+    gMsgScreen = src;
+    gMsgCursor = gMsgReadIndex;
+    if (count == 0u) {
+        gMsgCursor = 0u;
+        gMsgScroll = 0u;
+        return;
+    }
+    if (gMsgCursor >= count) gMsgCursor = (uint8_t)(count - 1u);
+    if (gMsgCursor < gMsgScroll) gMsgScroll = gMsgCursor;
+    if (gMsgCursor >= (uint8_t)(gMsgScroll + 6u)) gMsgScroll = (uint8_t)(gMsgCursor - 5u);
 }
 
 static void open_compose(const char *seed)
@@ -280,8 +303,6 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                 }
             } else if (Key == KEY_EXIT) {
                 gRequestDisplayScreen = DISPLAY_MAIN;
-            } else if (Key == KEY_1) {
-                MSG_STORE_InjectNativePacket("DEMO INBOX MESSAGE");
             }
             break;
 
@@ -320,13 +341,12 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             } else if (Key == KEY_F) {
                 if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
                     MSG_STORE_DeleteOutbox(gMsgReadIndex);
-                    open_list(MSG_SCREEN_OUTBOX);
                 } else {
                     MSG_STORE_DeleteInbox(gMsgReadIndex);
-                    open_list(MSG_SCREEN_INBOX);
                 }
+                return_to_read_source_list();
             } else if (Key == KEY_EXIT) {
-                open_list((gMsgReadSource == MSG_SCREEN_OUTBOX) ? MSG_SCREEN_OUTBOX : MSG_SCREEN_INBOX);
+                return_to_read_source_list();
             }
             break;
 
@@ -355,21 +375,22 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
         case MSG_SCREEN_RANGE:
             if (Key == KEY_EXIT) {
                 MSG_RF_HardRestoreVoicePath();
-                gRequestDisplayScreen = DISPLAY_MAIN;
+                if (gMsgRangeStatus == 2u) {
+                    gMsgRangeStatus = 0u;
+                    s_msgRangeWaitTicks = 0u;
+                } else {
+                    gRequestDisplayScreen = DISPLAY_MAIN;
+                }
             } else if (Key == KEY_MENU) {
                 if (gMsgRangeStatus != 1u) {
-                    memset(gMsgRangeFound, 0, sizeof(gMsgRangeFound));
-                    gMsgRangeCount = 0;
-                    gMsgRangeScroll = 0;
                     if (MSG_RF_SendRangePing()) {
+                        gMsgRangeSession++;
+                        if (gMsgRangeSession == 0u) gMsgRangeSession = 1u;
                         gMsgRangeStatus = 1u;
                         s_msgRangeWaitTicks = MSG_RANGE_WAIT_TICKS;
+                        gMsgRangeScroll = 0u;
                     }
                 }
-            } else if (Key == KEY_1) {
-                MSG_RangeFillTest();
-            } else if (Key == KEY_2) {
-                MSG_RangeClearTest();
             } else if (Key == KEY_UP) {
                 if (gMsgRangeCount > 0u && gMsgRangeScroll > 0u) --gMsgRangeScroll;
             } else if (Key == KEY_DOWN) {

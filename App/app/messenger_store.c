@@ -185,6 +185,7 @@ static void add_to_list(MSG_Message_t *list, uint8_t cap, const char *text, cons
     list[0].ttl_init = ttl_init;
     list[0].ttl_remain = ttl_remain;
     list[0].status = MSG_STATUS_NONE;
+    list[0].age_seconds = 0u;
     strncpy(list[0].from, from && from[0] ? from : "UVK1", MSG_CALLSIGN_LEN);
     strncpy(list[0].to, to && to[0] ? to : "ALL", MSG_CALLSIGN_LEN);
     strncpy(list[0].text, text ? text : "TEST", MSG_TEXT_LEN);
@@ -240,6 +241,29 @@ void MSG_STORE_SetOutboxStatusById(uint16_t id, uint8_t status)
             gUpdateDisplay = true;
             return;
         }
+    }
+}
+
+void MSG_STORE_AddOutboxAckSourceById(uint16_t id, const char *from)
+{
+    if (!from || !from[0]) return;
+    for (uint8_t i = 0; i < MSG_OUTBOX_CAPACITY; i++) {
+        MSG_Message_t *m = &gMessengerOutbox[i];
+        if (!m->used || m->id != id) continue;
+
+        for (uint8_t j = 0; j < m->ack_count && j < MSG_ACK_SOURCE_MAX; j++) {
+            if (strncmp(m->ack_from[j], from, MSG_ACK_ID_LEN) == 0) {
+                return;
+            }
+        }
+
+        if (m->ack_count < MSG_ACK_SOURCE_MAX) {
+            memset(m->ack_from[m->ack_count], 0, sizeof(m->ack_from[m->ack_count]));
+            strncpy(m->ack_from[m->ack_count], from, MSG_ACK_ID_LEN);
+            m->ack_count++;
+            gUpdateDisplay = true;
+        }
+        return;
     }
 }
 

@@ -1,9 +1,11 @@
 
 #include <stddef.h>
+#include <string.h>
 
 #include "app/app.h"
 #include "app/chFrScanner.h"
 #include "audio.h"
+#include "driver/bk4819.h"
 #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
 #include "driver/systick.h"
 #endif
@@ -20,6 +22,13 @@ bool              gScanPauseMode;
 #ifdef ENABLE_SCAN_RANGES
 uint32_t          gScanRangeStart;
 uint32_t          gScanRangeStop;
+
+#if defined(ENABLE_FEAT_F4HWN_SCAN_SUBAUDIBLE) && ENABLE_FEAT_F4HWN_SCAN_SUBAUDIBLE
+DCS_CodeType_t    gScanRangeCssType  = CODE_TYPE_OFF;
+uint8_t           gScanRangeCssCode  = 0xFF;
+static uint8_t    scanRangeCssCandidate = 0xFF;
+static uint8_t    scanRangeCssHitCount  = 0;
+#endif
 
 #define SCAN_RANGE_SKIP_MAX 32
 #if (SCAN_RANGE_SKIP_MAX & (SCAN_RANGE_SKIP_MAX - 1)) != 0
@@ -182,6 +191,58 @@ bool CHFRSCANNER_HasScanRangeExcludedOrdinal(uint32_t first_ordinal, uint32_t la
 
     return false;
 }
+
+#if defined(ENABLE_FEAT_F4HWN_SCAN_SUBAUDIBLE) && ENABLE_FEAT_F4HWN_SCAN_SUBAUDIBLE
+void CHFRSCANNER_UpdateCssDetection(void)
+{
+    if (!gScanRangeStart || !FUNCTION_IsRx())
+    {
+        gScanRangeCssType    = CODE_TYPE_OFF;
+        gScanRangeCssCode    = 0xFF;
+        scanRangeCssCandidate = 0xFF;
+        scanRangeCssHitCount  = 0;
+        return;
+    }
+
+    uint32_t cdcssFreq;
+    uint16_t ctcssFreq;
+    const BK4819_CssScanResult_t result = BK4819_GetCxCSSScanResult(&cdcssFreq, &ctcssFreq);
+
+    if (result == BK4819_CSS_RESULT_CDCSS)
+    {
+        const uint8_t Code = DCS_GetCdcssCode(cdcssFreq);
+        if (Code != 0xFF && Code != gScanRangeCssCode)
+        {
+            gScanRangeCssType    = CODE_TYPE_DIGITAL;
+            gScanRangeCssCode    = Code;
+            scanRangeCssCandidate = 0xFF;
+            scanRangeCssHitCount  = 0;
+            gUpdateDisplay = true;
+        }
+    }
+    else if (result == BK4819_CSS_RESULT_CTCSS)
+    {
+        const uint8_t Code = DCS_GetCtcssCode(ctcssFreq);
+        if (Code != 0xFF)
+        {
+            if (Code == scanRangeCssCandidate)
+            {
+                if (++scanRangeCssHitCount >= 2 && Code != gScanRangeCssCode)
+                {
+                    gScanRangeCssType = CODE_TYPE_CONTINUOUS_TONE;
+                    gScanRangeCssCode = Code;
+                    gUpdateDisplay    = true;
+                }
+            }
+            else
+            {
+                scanRangeCssCandidate = Code;
+                scanRangeCssHitCount  = 1;
+            }
+        }
+    }
+}
+#endif
 #endif
 
 static void CHFRSCANNER_AbortActiveReception(void)
@@ -232,6 +293,74 @@ static uint32_t scanFastPrevFrequency;
 static bool     scanFastLastFullTuneCandidate;
 static VFO_Info_t scanFastDisplayVfo;
 static bool       scanFastDisplayVfoValid;
+#ifdef ENABLE_FEAT_F4HWN_SCAN_RSSI
+static uint16_t scanRssiSparkline[CHFRSCANNER_RSSI_SPARKLINE_WIDTH];
+static uint8_t  scanRssiSparklineWrite;
+static uint8_t  scanRssiSparklineCount;
+
+static void ScanRssiSparklineReset(void)
+{
+    memset(scanRssiSparkline, 0, sizeof(scanRssiSparkline));
+    scanRssiSparklineWrite = 0;
+    scanRssiSparklineCount = 0;
+}
+
+static void ScanRssiSparklinePush(uint16_t rssi)
+{
+    scanRssiSparkline[scanRssiSparklineWrite] = rssi;
+    scanRssiSparklineWrite++;
+    if (scanRssiSparklineWrite >= CHFRSCANNER_RSSI_SPARKLINE_WIDTH)
+        scanRssiSparklineWrite = 0;
+
+    if (scanRssiSparklineCount < CHFRSCANNER_RSSI_SPARKLINE_WIDTH)
+        scanRssiSparklineCount++;
+}
+
+static void ScanRssiSparklinePushCurrent(void)
+{
+    /* Normal SetScn does not run the fast precheck path that upstream used
+     * for RSSI samples.  Sample the tuned channel/range after the regular
+     * radio setup too so the sparkline exists in both Normal and Fast scan. */
+    BK4819_GetRSSI();
+    ScanRssiSparklinePush(BK4819_GetRSSI());
+}
+
+bool CHFRSCANNER_HasScanRssiSparkline(void)
+{
+    return gScanStateDir != SCAN_OFF && scanRssiSparklineCount > 1;
+}
+
+uint8_t CHFRSCANNER_GetScanRssiSparklineLevel(uint8_t index)
+{
+    uint16_t minRssi = SCAN_FAST_RSSI_MAX;
+    uint16_t rssi = 0;
+    uint8_t oldest;
+
+    if (index >= CHFRSCANNER_RSSI_SPARKLINE_WIDTH || scanRssiSparklineCount == 0)
+        return 0;
+
+    if (index < CHFRSCANNER_RSSI_SPARKLINE_WIDTH - scanRssiSparklineCount)
+        return 0;
+
+    oldest = (uint8_t)((scanRssiSparklineWrite + CHFRSCANNER_RSSI_SPARKLINE_WIDTH - scanRssiSparklineCount)
+                       % CHFRSCANNER_RSSI_SPARKLINE_WIDTH);
+    index -= (uint8_t)(CHFRSCANNER_RSSI_SPARKLINE_WIDTH - scanRssiSparklineCount);
+
+    for (uint8_t i = 0; i < scanRssiSparklineCount; i++)
+    {
+        const uint16_t sample = scanRssiSparkline[(oldest + i) % CHFRSCANNER_RSSI_SPARKLINE_WIDTH];
+        if (sample != 0 && sample < minRssi)
+            minRssi = sample;
+    }
+
+    rssi = scanRssiSparkline[(oldest + index) % CHFRSCANNER_RSSI_SPARKLINE_WIDTH];
+    if (rssi == 0 || minRssi == SCAN_FAST_RSSI_MAX || rssi <= minRssi + 2)
+        return 0;
+
+    // 48 RSSI units ~= 24 dB. This keeps quiet jitter low while strong hits pop.
+    return (uint8_t)MIN(((uint32_t)(rssi - minRssi) * 5u + 24u) / 48u, 5u);
+}
+#endif
 
 static void ScanFastResetState(void)
 {
@@ -538,6 +667,9 @@ static scan_fast_result_t ScanRangeFastPrecheck(void)
         ScanFastTune(freq);
 
         const uint16_t rssi = ScanFastReadCandidateRssi();
+#ifdef ENABLE_FEAT_F4HWN_SCAN_RSSI
+        ScanRssiSparklinePush(rssi);
+#endif
         if (ScanFastIsCandidate(rssi))
         {
             ScanRangeFastRefineCandidate(rssi);
@@ -573,7 +705,12 @@ static bool MemChannelFastPrecheck(uint16_t channel)
     scanFastReg30 = BK4819_ReadRegister(BK4819_REG_30) & ~BK4819_REG_30_MASK_ENABLE_AF_DAC;
     ScanFastTune(frequency);
 
-    if (ScanFastIsCandidate(ScanFastReadCandidateRssi()))
+    const uint16_t rssi = ScanFastReadCandidateRssi();
+#ifdef ENABLE_FEAT_F4HWN_SCAN_RSSI
+    ScanRssiSparklinePush(rssi);
+#endif
+
+    if (ScanFastIsCandidate(rssi))
     {
         scanFastLastFullTuneCandidate = true;
         return true;  // signal detected: let the full tune path follow
@@ -636,6 +773,9 @@ void CHFRSCANNER_Start(const bool storeBackupSettings, const int8_t scan_directi
     gNextMrChannel   = gRxVfo->CHANNEL_SAVE;
     currentScanList = SCAN_NEXT_CHAN_SCANLIST1;
     gScanStateDir    = scan_direction;
+#ifdef ENABLE_FEAT_F4HWN_SCAN_RSSI
+    ScanRssiSparklineReset();
+#endif
 #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
     ScanFastResetState();
 #endif
@@ -729,6 +869,18 @@ void CHFRSCANNER_ContinueScanning(void)
     }
     else
     {
+#ifdef ENABLE_FEAT_F4HWN_SCAN_RSSI
+#ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
+        if (!ScanFastEnabled())
+#endif
+        {
+            /* Normal SetScn does not use the fast precheck RSSI path.
+             * Sample at the end of the normal dwell, just before moving on,
+             * so the BK4819 AGC/RSSI has actually settled. Sampling right
+             * after RADIO_SetupRegisters() produced a stale flat line. */
+            ScanRssiSparklinePushCurrent();
+        }
+#endif
         IS_FREQ_CHANNEL(gNextMrChannel) ? NextFreqChannel() : NextMemChannel();
     }
 
@@ -820,6 +972,9 @@ void CHFRSCANNER_Stop(void)
     }
     
     gScanStateDir = SCAN_OFF;
+#ifdef ENABLE_FEAT_F4HWN_SCAN_RSSI
+    ScanRssiSparklineReset();
+#endif
 
     const uint32_t chFr = gScanKeepResult ? lastFoundFrqOrChan : initialFrqOrChan;
     const bool channelChanged = chFr != initialFrqOrChan;

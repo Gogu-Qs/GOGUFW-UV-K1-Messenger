@@ -57,6 +57,21 @@ const uint8_t gFontLight[9] =
     0b00001100,
 };
 
+// Same bulb outline as gFontLight with the inner filament removed,
+// used when the manual backlight is currently off
+const uint8_t gFontLightOff[9] =
+{
+    0b00001100,
+    0b00010010,
+    0b00100001,
+    0b01100001,
+    0b01100001,
+    0b01100001,
+    0b00100001,
+    0b00010010,
+    0b00001100,
+};
+
 const uint8_t gFontMute[12] =
 {
     0b00011100,
@@ -96,9 +111,21 @@ const uint8_t gFontDWR[3][6] =
 
 #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
     const uint8_t gFontRO[2][6] =
-    {   // "RO"
+    {   // "RO" (legacy Rescue Ops indicator, no longer used by GOGUFW Survival)
         {0x00, 0x7f, 0x9, 0x19, 0x29, 0x46},
         {0x00, 0x3e, 0x41, 0x41, 0x41, 0x3e},
+    };
+    const uint8_t gFontSV[2][6] =
+    {   // "SV" - Survival Mode (legacy short indicator)
+        {0x00, 0x46, 0x49, 0x49, 0x49, 0x31},
+        {0x00, 0x1f, 0x20, 0x40, 0x20, 0x1f},
+    };
+    const uint8_t gFontSURV[4][6] =
+    {   // "SURV" - Survival Mode
+        {0x00, 0x46, 0x49, 0x49, 0x49, 0x31}, // S
+        {0x00, 0x3f, 0x40, 0x40, 0x40, 0x3f}, // U
+        {0x00, 0x7f, 0x09, 0x19, 0x29, 0x46}, // R
+        {0x00, 0x1f, 0x20, 0x40, 0x20, 0x1f}, // V
     };
 #endif
 

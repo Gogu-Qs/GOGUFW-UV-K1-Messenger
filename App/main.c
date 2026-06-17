@@ -48,6 +48,7 @@
 #include "driver/gpio.h"
 #include "driver/system.h"
 #include "driver/systick.h"
+#include "driver/st7565.h"
 #include "driver/py25q16.h"
 #ifdef ENABLE_UART
     #include "driver/uart.h"
@@ -77,6 +78,11 @@ void Main(void)
 {
     SYSTICK_Init();
     BOARD_Init();
+
+    /* GOGUFW 0.6.5 hotfix: blank the LCD immediately after init.
+     * This prevents random LCD RAM/glitch pixels from being visible during
+     * the normal boot path before the standard welcome screen is drawn. */
+    ST7565_FillScreen(0x00);
 
     boot_counter_10ms = 250;   // 2.5 sec
 
@@ -128,25 +134,21 @@ void Main(void)
 #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
     if (BootMode == BOOT_MODE_RESCUE_OPS)
     {
-        gEeprom.MENU_LOCK = !gEeprom.MENU_LOCK;
-        SETTINGS_SaveSettings();
-    }
-
-    /*
-    if(gEeprom.MENU_LOCK == true) // Force Main Only
-    {
-        gEeprom.DUAL_WATCH = 0;
-        gEeprom.CROSS_BAND_RX_TX = 0;
-        //gFlagReconfigureVfos = true;
-        //gUpdateStatus        = true;
-    }
-    */
-#endif
-
-#ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
-    if (BootMode == BOOT_MODE_F_LOCK && gEeprom.MENU_LOCK == true)
-    {
+        /* GOGUFW: Rescue Ops has been repurposed as a session-only
+         * Survival Mode.  Do not toggle MENU_LOCK and do not write EEPROM.
+         * A normal power-on always returns to full GGFW mode. */
+        gSurvivalMode = true;
         BootMode = BOOT_MODE_NORMAL;
+
+        /* Keep this boot session in a simple, single-channel voice mode.
+         * These are RAM-only runtime changes; SETTINGS_SaveSettings() is
+         * intentionally not called here. */
+        gEeprom.DUAL_WATCH = DUAL_WATCH_OFF;
+        gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
+#ifdef ENABLE_VOX
+        gEeprom.VOX_SWITCH = false;
+#endif
+        gUpdateStatus = true;
     }
 #endif
 
@@ -171,6 +173,15 @@ void Main(void)
         gMenuListCount++;
     }
 
+    // GOGUFW Survival Mode: keep only the first 17 basic radio menu items
+    // visible for this boot session.  This does not alter EEPROM or the normal
+    // menu layout; normal boot restores the complete menu automatically.
+    if (gSurvivalMode && gMenuListCount > 17) {
+        gMenuListCount = 17;
+        if (gMenuCursor >= gMenuListCount)
+            gMenuCursor = gMenuListCount - 1;
+    }
+
     // wait for user to release all butts before moving on
     if (GPIO_IsPttPressed() ||
          KEYBOARD_Poll() != KEY_INVALID ||
@@ -188,6 +199,7 @@ void Main(void)
         gKeyReading0 = KEY_INVALID;
         gKeyReading1 = KEY_INVALID;
         gDebounceCounter = 0;
+        ST7565_FillScreen(0x00);
     }
 
     if (!gChargingWithTypeC && gBatteryDisplayLevel == 0)
@@ -203,25 +215,42 @@ void Main(void)
     }
     else
     {
-        UI_DisplayWelcome();
+        /* Prepare the boot/splash frame before lighting the LCD.
+         * With 5.6.0 logo/saver refactors, logo/message preparation may take
+         * long enough that turning the backlight on first shows a blank white
+         * panel. Keep the light off until the first real frame is ready. */
 
-        BACKLIGHT_TurnOn();
+        if (gSurvivalMode)
+        {
+            /* GOGUFW 0.6.5: Survival Mode has its own clean boot notice.
+             * Do not show the normal firmware/version splash in this mode. */
+            UI_DisplaySurvivalWelcome();
+            BACKLIGHT_TurnOn();
+            SYSTEM_DelayMs(3000);
+            RADIO_SetupRegisters(true);
+        }
+        else
+        {
+            ST7565_FillScreen(0x00);
+            UI_DisplayWelcome();
+            BACKLIGHT_TurnOn();
 
 #ifdef ENABLE_FEAT_F4HWN
-        if (gEeprom.POWER_ON_DISPLAY_MODE != POWER_ON_DISPLAY_MODE_NONE && gEeprom.POWER_ON_DISPLAY_MODE != POWER_ON_DISPLAY_MODE_SOUND)
+            if (gEeprom.POWER_ON_DISPLAY_MODE != POWER_ON_DISPLAY_MODE_NONE && gEeprom.POWER_ON_DISPLAY_MODE != POWER_ON_DISPLAY_MODE_SOUND)
 #else
-        if (gEeprom.POWER_ON_DISPLAY_MODE != POWER_ON_DISPLAY_MODE_NONE)
+            if (gEeprom.POWER_ON_DISPLAY_MODE != POWER_ON_DISPLAY_MODE_NONE)
 #endif
-        {   // 2.55 second boot-up screen
-            while (boot_counter_10ms > 0)
-            {
-                if (KEYBOARD_Poll() != KEY_INVALID)
-                {   // halt boot beeps
-                    boot_counter_10ms = 0;
-                    break;
+            {   // 2.55 second boot-up screen
+                while (boot_counter_10ms > 0)
+                {
+                    if (KEYBOARD_Poll() != KEY_INVALID)
+                    {   // halt boot beeps
+                        boot_counter_10ms = 0;
+                        break;
+                    }
                 }
+                RADIO_SetupRegisters(true);
             }
-            RADIO_SetupRegisters(true);
         }
 
 #ifdef ENABLE_PWRON_PASSWORD
@@ -250,6 +279,7 @@ void Main(void)
         gUpdateStatus = true;
 
 #ifdef ENABLE_VOICE
+        if (!gSurvivalMode)
         {
             uint16_t Channel;
 
