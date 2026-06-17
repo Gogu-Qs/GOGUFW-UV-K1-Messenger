@@ -4,7 +4,6 @@ Advanced F4HWN Fusion 5.6.0 based firmware for the Quansheng UV-K1 (BK4829).
 
 > GOGUFW preserves all features of F4HWN Fusion 5.6.0 and extends the UV-K1 with digital messaging, station discovery, emergency communication tools and enhanced user interface functionality.
 
-![Main Radio Screen](radio_vfo.png)
 
 ---
 
@@ -44,7 +43,7 @@ GOGUFW is based on the F4HWN Fusion 5.6.0 codebase and keeps the original Fusion
 - Range Check for UV-K1 to UV-K1 testing using the Messenger FSK infrastructure
 - F+9 CALLTX call-tone feature with selectable tone preview screen
 - FM broadcast radio UI refinements and memory-channel naming
-- SetSav screen saver system
+- Screen saver system
 - Survival Mode
 - Assignable shortcuts for Messenger, HEARD and CALLTX
 - UV-K5-style RSSI bars in HEARD and Range Check
@@ -205,7 +204,6 @@ Supported functions:
 
 - Messenger
 - HEARD
-- Range Check
 - CALLTX
 
 Supported shortcut locations:
@@ -227,7 +225,6 @@ CALLTX provides PMR-style call tone transmission.
 Features:
 
 - Multiple selectable call tones
-- Preview mode
 - Fast access through shortcuts
 - Quick station alerting
 
@@ -247,33 +244,13 @@ This keeps F+9 available for CALLTX.
 
 ---
 
-## Screen Saver System
-
-GOGUFW includes the SetSav screen saver system.
-
-Available modes:
-
-- OFF
-- LOGO
-- LOGO+
-- MATRIX
-
-Features:
-
-- Integrated backlight management
-- Power-saving support
-- Improved wake-up behavior
-- Main-screen operation
-
----
-
 ## Survival Mode
 
-Survival Mode is designed for disaster and emergency communication scenarios.
+Survival Mode is designed for battery saving in disaster and emergency scenarios.
 
 Activation:
 
-**Hold PTT + SET while powering on**
+**Hold PTT + MENU while powering on**
 
 Survival Mode features:
 
@@ -399,7 +376,7 @@ F4HWN Fusion Team
 
 ### GOGUFW Development
 
-Gökhan Gunalp
+Gogu
 
 ### Community Testing
 
