@@ -1,4 +1,4 @@
-# GOGUFW Messenger Edition
+# GOGUFW Messenger
 
 Advanced F4HWN Fusion 5.6.0 based firmware for the Quansheng UV-K1 (BK4829).
 
@@ -51,7 +51,7 @@ GOGUFW is based on the F4HWN Fusion 5.6.0 codebase and keeps the original Fusion
 
 ---
 
-## Messenger
+## Messenger (F+MENU)
 
 Messenger is the flagship feature of GOGUFW.
 
@@ -129,7 +129,7 @@ The ACK source list is especially useful for group or broadcast-style communicat
 
 ---
 
-## HEARD
+## HEARD (F+7)
 
 HEARD automatically tracks recently received GOGUFW stations.
 
@@ -220,7 +220,7 @@ Supported shortcut locations:
 
 ---
 
-## CALLTX
+## CALLTX (F+9)
 
 CALLTX provides PMR-style call tone transmission.
 
