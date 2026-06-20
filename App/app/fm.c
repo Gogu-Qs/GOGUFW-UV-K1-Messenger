@@ -543,6 +543,17 @@ static void Key_FUNC(KEY_Code_t Key, uint8_t state)
             //  break;
 
             case KEY_3:
+                /* GOGUFW 1.0.2: VFO/MR mode change must not inherit the
+                 * previous mode's FM scan state.  A VFO scan could otherwise
+                 * enter MR mode with the UI still showing M-SCAN. */
+                if (gFM_ScanState != FM_SCAN_OFF) {
+                    gFM_ScanState = FM_SCAN_OFF;
+                    gFM_AutoScan = false;
+                    gScheduleFM = false;
+                    gFmPlayCountdown_10ms = 0;
+                    gFM_FoundFrequency = false;
+                }
+
                 gEeprom.FM_IsMrMode = !gEeprom.FM_IsMrMode;
 
                 if (!FM_ConfigureChannelState()) {

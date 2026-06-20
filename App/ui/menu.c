@@ -184,7 +184,6 @@ const t_menu_item MenuList[] =
     {"CllVol",      MENU_CALL_VOL     },
     {"MsgRx",       MENU_MSG_RX       },
     {"MsgCsg",      MENU_MSG_CSG      },
-    {"MsgCtx",      MENU_MSG_CALLTX   },
     {"MsgAck",      MENU_MSG_ACK      },
     {"MsgBep",      MENU_MSG_BEEP     },
     {"MsgLed",      MENU_MSG_LED      },

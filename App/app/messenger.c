@@ -127,6 +127,11 @@ bool MSG_RangeIsOpen(void)
     return gMsgScreen == MSG_SCREEN_RANGE;
 }
 
+bool MSG_IsHomeOpen(void)
+{
+    return gMsgScreen != MSG_SCREEN_RANGE;
+}
+
 void MSG_HeardUpdate(const char *callsign, int8_t rssi_dbm, uint8_t packet_type)
 {
     if (!callsign || !callsign[0]) return;
@@ -336,7 +341,7 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                     }
                     open_sent_after_send();
                 } else {
-                    open_compose("REPLY ");
+                    open_compose("RE: ");
                 }
             } else if (Key == KEY_F) {
                 if (gMsgReadSource == MSG_SCREEN_OUTBOX) {

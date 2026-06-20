@@ -69,12 +69,29 @@ inline static void ACTION_ScanRestart() { if (gSurvivalMode) { gBeepToPlay = BEE
 static void ACTION_OpenMessenger(void)
 {
     if (gSurvivalMode) { gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL; return; }
+
+    /* GOGUFW 1.0.2: make Messenger shortcut behave like FM Radio.
+     * Press once to open; press again while already in Messenger (but not
+     * HEARD/Range) to return to the main screen. */
+    if (gScreenToDisplay == DISPLAY_MESSENGER && MSG_IsHomeOpen()) {
+        gRequestDisplayScreen = DISPLAY_MAIN;
+        return;
+    }
+
     MSG_Open();
 }
 
 static void ACTION_OpenHeard(void)
 {
     if (gSurvivalMode) { gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL; return; }
+
+    /* GOGUFW 1.0.2: HEARD shortcut toggles closed when HEARD/Range is
+     * already on screen. CALLTX remains unchanged. */
+    if (gScreenToDisplay == DISPLAY_MESSENGER && MSG_RangeIsOpen()) {
+        gRequestDisplayScreen = DISPLAY_MAIN;
+        return;
+    }
+
     MSG_RangeOpen();
 }
 

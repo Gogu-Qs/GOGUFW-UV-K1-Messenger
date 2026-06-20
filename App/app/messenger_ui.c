@@ -452,7 +452,7 @@ static void draw_read(void)
     if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
         GUI_DisplaySmallest("RESEND", 0, 49, false, true);
     } else {
-        GUI_DisplaySmallest("REPLY", 0, 49, false, true);
+        GUI_DisplaySmallest("RE:", 0, 49, false, true);
     }
     GUI_DisplaySmallest("F:DEL", 104, 49, false, true);
 }

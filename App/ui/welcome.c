@@ -240,7 +240,7 @@ void UI_DisplayScreenSaver(uint8_t mode)
         PY25Q16_ReadBuffer(LOGO_BITMAP_ADDR, gStatusLine, sizeof(gStatusLine));
         PY25Q16_ReadBuffer(LOGO_BITMAP_ADDR + sizeof(gStatusLine), gFrameBuffer, sizeof(gFrameBuffer));
         if (mode == 2) {
-            UI_PrintStringSmallNormal("GOGUFW 1.0.1", 0, 127, 7);
+            UI_PrintStringSmallNormal("GOGUFW 1.0.3", 0, 127, 7);
         }
     } else if (mode == 3) {
         // Lightweight MATRIX placeholder: avoids RAM-heavy animation and keeps

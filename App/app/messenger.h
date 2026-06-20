@@ -6,6 +6,7 @@
 void MSG_Init(void);
 void MSG_Open(void);
 void MSG_RangeOpen(void);
+bool MSG_IsHomeOpen(void);
 void MSG_Tick(void);
 void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
 bool MSG_HasUnread(void);
