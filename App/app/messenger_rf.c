@@ -38,24 +38,26 @@ extern uint8_t gFSKWriteIndex;
 #define MSG_RF_REARM_DELAY_TICKS     80u
 #define MSG_RF_RX_STALE_TICKS        120u
 #define MSG_RF_ACK_TIMEOUT_TICKS      400u  /* 4.0s: wait past delayed ACK before retry */
-#define MSG_RF_ACK_COLLECT_TICKS      150u  /* 1.5s: after first ACK, keep RX locked to collect more ACK sources */
+#define MSG_RF_ACK_COLLECT_TICKS      250u  /* 2.5s: after first ACK, keep RX locked to collect more ACK sources */
 #define MSG_RF_ACK_RETRY_GAP_TICKS    50u
 #define MSG_RF_ACK_SEND_DELAY_MIN_TICKS  80u   /* 800ms compatibility-safe ACK delay min */
-#define MSG_RF_ACK_SEND_DELAY_JIT_TICKS 30u    /* +0..300ms random ACK jitter */
+#define MSG_RF_ACK_SEND_DELAY_JIT_TICKS 220u   /* +0..2200ms random ACK jitter; ACK window = 0.8..3.0s */
 #define MSG_RF_REPRIME_DELAY_TICKS     20u   /* 200ms after TX/RX end */
 #define MSG_RF_IDLE_REPRIME_TICKS      0u    /* RF28: periodic idle re-prime disabled; event-based only */
 #define MSG_RF_UNREAD_LED_PERIOD_TICKS 300u   /* 3 seconds */
 #define MSG_RF_UNREAD_LED_FLASH_TICKS  8u     /* 80 ms */
 #define MSG_RF_UNREAD_LED_GAP_TICKS    14u    /* 140 ms between double flashes */
 #define MSG_RF_RANGE_PONG_MIN_TICKS     300u   /* 0.5.18: 3000 ms; wait until 3x PING repeats are safely over */
-#define MSG_RF_RANGE_PONG_JIT_TICKS     300u   /* 0.5.18: +0..3000 ms; PONG window = 3..6s inside 10s listen */
+#define MSG_RF_RANGE_PONG_JIT_TICKS     500u   /* +0..5000 ms; PONG window = 3..8s inside 12s listen */
 #define MSG_RF_RANGE_BACKOFF_TICKS      100u   /* 1000 ms if FSK busy */
-#define MSG_RF_RANGE_PING_REPEATS       1u     /* 1.0.1: single Range Check PING; reduce RF traffic and UI wait */
+#define MSG_RF_RANGE_PING_REPEATS       2u     /* 1.0.1d: send two Range Check PING frames; first may wake UV-K1 FSK RX */
 #define MSG_RF_RANGE_PONG_REPEATS       1u     /* 1.0.1: single Range Check PONG; reduce collisions */
+#define MSG_RF_RANGE_TX_WARMUP_MS        180u   /* 1.0.1b: refresh BK4829/FSK TX path before Range PING/PONG */
+#define MSG_RF_RANGE_PING_DUP_WINDOW_TICKS 200u   /* 1.0.1c: suppress same PING only for 2 seconds */
 #define MSG_RF_ACK_REPEATS              1u     /* GGFW 1.0.1: one ACK frame; message retry still handles missed ACKs */
 #define MSG_RF_ACK_QUEUE_LEN             4u     /* 1.0.1: queue ACKs so delayed ACKs do not overwrite each other */
 #define MSG_RF_REPEAT_GAP_MS            100u   /* short gap between repeated FSK frames */
-#define MSG_RF_RANGE_WAIT_PONG_TICKS    1000u  /* 10 s same-channel PONG listen lock */
+#define MSG_RF_RANGE_WAIT_PONG_TICKS    1200u  /* 12 s same-channel PONG listen lock */
 #define MSG_RF_SAFE_KEEPALIVE_TICKS      500u   /* 5 s safe Messenger/Range RX keepalive */
 #define MSG_RF_SAFE_KEEPALIVE_RETRY_TICKS 50u   /* retry in 0.5 s if channel busy */
 
@@ -127,6 +129,7 @@ static bool s_pending_range_pong_active;
 static uint16_t s_pending_range_pong_delay_ticks;
 static uint16_t s_pending_range_pong_id;
 static uint16_t s_last_range_ping_id;
+static uint16_t s_last_range_ping_age_ticks;
 static char s_last_range_ping_from[MSG_CALLSIGN_LEN + 1];
 static char s_pending_range_pong_to[MSG_CALLSIGN_LEN + 1];
 static uint8_t s_pending_range_pong_vfo;
@@ -180,6 +183,7 @@ static MSG_RF_RegSnapshot_t s_voice_snapshot;
 static bool MSG_RF_SendPacketFrame(const uint8_t *packet, bool count_tx, bool ignore_self_rx);
 static bool MSG_RF_SendPacketFrameRepeated(const uint8_t *packet, bool count_tx, bool ignore_self_rx, uint8_t repeats);
 static bool MSG_RF_SendPacketFrameRepeatedOnVfo(const uint8_t *packet, bool count_tx, bool ignore_self_rx, uint8_t tx_vfo, uint8_t repeats);
+static bool MSG_RF_SendRangePacketFrameRepeatedOnVfo(const uint8_t *packet, bool count_tx, bool ignore_self_rx, uint8_t tx_vfo, uint8_t repeats);
 static void MSG_RF_RequestControlledReprime(uint8_t delay_ticks);
 static void MSG_RF_DoControlledReprime(void);
 static void MSG_RF_EnsureFskIrqMask(void);
@@ -407,7 +411,7 @@ static void MSG_RF_RestoreFskAudioMute(void)
 static bool MSG_RF_LedBlinkAllowed(void)
 {
     if (gCurrentFunction == FUNCTION_TRANSMIT) return false;
-    if (MSG_RF_ChannelBusy()) return false;
+    // if (MSG_RF_ChannelBusy()) return false;
     if (s_rx_capture_active || s_rx_stale_ticks) return false;
     return true;
 }
@@ -770,6 +774,7 @@ static void MSG_RF_FinishRxAttempt(bool parsed)
 
 void MSG_RF_Tick10ms(void)
 {
+    if (s_last_range_ping_age_ticks < MSG_RF_RANGE_PING_DUP_WINDOW_TICKS) ++s_last_range_ping_age_ticks;
     if (gSurvivalMode) return;
     MSG_RF_EnsureStoreInitialized();
     MSG_RF_UpdateDebugSnapshot();
@@ -868,7 +873,7 @@ void MSG_RF_Tick10ms(void)
                 uint8_t pong_frame[MSG_PKT_WIRE_LEN];
                 if (MSG_PACKET_BuildPong(pong_frame, sizeof(pong_frame), s_pending_range_pong_id,
                                          gMessengerConfig.callsign, s_pending_range_pong_to, gBatteryVoltageAverage) == MSG_PKT_WIRE_LEN) {
-                    if (MSG_RF_SendPacketFrameRepeatedOnVfo(pong_frame, false, true, s_pending_range_pong_vfo, MSG_RF_RANGE_PONG_REPEATS)) {
+                    if (MSG_RF_SendRangePacketFrameRepeatedOnVfo(pong_frame, false, true, s_pending_range_pong_vfo, MSG_RF_RANGE_PONG_REPEATS)) {
                         s_pending_range_pong_active = false;
                     } else {
                         s_pending_range_pong_delay_ticks = MSG_RF_RANGE_BACKOFF_TICKS;
@@ -1130,6 +1135,75 @@ static bool MSG_RF_SendPacketFrameRepeatedOnVfo(const uint8_t *packet, bool coun
 #endif
 }
 
+static void MSG_RF_RangeTxWarmupCurrentVfo(void)
+{
+#ifdef ENABLE_AIRCOPY
+    /* 1.0.1b Range Check reliable TX path:
+     * Single PING/PONG frames exposed a long-idle UV-K1 issue that the old
+     * 3x PING burst used to hide: the first Range Check FSK TX could start
+     * while the BK4829 sidecar/voice path was stale.  Messenger TX usually
+     * refreshed the path first, which is why Range Check improved after using
+     * Messenger.  Before every Range PING and automatic PONG, explicitly put
+     * the radio back into a clean TX-ready state, clear local FSK RX state and
+     * give the BK4829 a short settling time.  This is Range-only; normal
+     * Messenger SEND/ACK path remains unchanged. */
+    if (!s_voice_snapshot.valid) MSG_RF_CaptureVoiceSnapshot();
+
+    MSG_RF_DisarmSidecarNoRadioReset();
+    MSG_RF_NarrowLockEnd();
+    BK4819_ResetFSK();
+
+    s_rx_capture_active = false;
+    s_rx_stale_ticks = 0u;
+    s_rx_words = 0u;
+    s_reprime_delay_ticks = 0u;
+    s_safe_keepalive_ticks = MSG_RF_SAFE_KEEPALIVE_TICKS;
+    gFSKWriteIndex = 0u;
+    memset(g_FSK_Buffer, 0, sizeof(g_FSK_Buffer));
+
+    RADIO_SelectVfos();
+    RADIO_SetupRegisters(true);
+    MSG_RF_EnsureFskIrqMask();
+    MSG_RF_NarrowLockBegin();
+    RADIO_SetTxParameters();
+    BK4819_SetupAircopy();
+    MSG_RF_NarrowLockEnd();
+    SYSTEM_DelayMs(MSG_RF_RANGE_TX_WARMUP_MS);
+#else
+#endif
+}
+
+static bool MSG_RF_SendRangePacketFrameRepeatedOnVfo(const uint8_t *packet, bool count_tx, bool ignore_self_rx, uint8_t tx_vfo, uint8_t repeats)
+{
+#ifdef ENABLE_AIRCOPY
+    const uint8_t old_tx_vfo = gEeprom.TX_VFO;
+    bool ok;
+
+    tx_vfo &= 1u;
+    if (old_tx_vfo != tx_vfo) {
+        gEeprom.TX_VFO = tx_vfo;
+        RADIO_SelectVfos();
+        RADIO_SetupRegisters(true);
+        MSG_RF_EnsureFskIrqMask();
+    }
+
+    MSG_RF_RangeTxWarmupCurrentVfo();
+    ok = MSG_RF_SendPacketFrameRepeated(packet, count_tx, ignore_self_rx, repeats);
+
+    if (old_tx_vfo != tx_vfo) {
+        gEeprom.TX_VFO = old_tx_vfo;
+        RADIO_SelectVfos();
+        RADIO_SetupRegisters(true);
+        MSG_RF_EnsureFskIrqMask();
+    }
+
+    return ok;
+#else
+    (void)packet; (void)count_tx; (void)ignore_self_rx; (void)tx_vfo; (void)repeats;
+    return false;
+#endif
+}
+
 static void clamp_rf_text(char *dst, const char *src)
 {
     uint8_t i = 0;
@@ -1141,36 +1215,57 @@ static void clamp_rf_text(char *dst, const char *src)
 static bool parse_aircopy_native_packet(MSG_Packet_t *pkt)
 {
 #ifdef ENABLE_AIRCOPY
-    if (g_FSK_Buffer[0] != 0xABCDu || g_FSK_Buffer[MSG_RF_WORDS - 1u] != 0xDCBAu) return false;
+    /*
+     * 1.0.1e RX alignment hotfix:
+     * Do not require the Aircopy header to be exactly at g_FSK_Buffer[0].
+     * If a stale word or an early FIFO timing difference shifts the frame,
+     * short packets (PING/PONG/ACK) never reach their handlers.  Scan the
+     * captured words for the 0xABCD header and validate the native GGFW packet
+     * magic/version/type/CRC before accepting it.
+     */
+    const uint8_t data_words = (uint8_t)(MSG_RF_BYTES_CARRIED / 2u);
+    const uint8_t words_available = (s_rx_words > 0u && s_rx_words <= MSG_RF_WORDS) ? s_rx_words : MSG_RF_WORDS;
 
-    uint8_t bytes[MSG_RF_BYTES_CARRIED];
-    for (uint8_t i = 0; i < (MSG_RF_BYTES_CARRIED / 2u); i++) {
-        const uint16_t w = g_FSK_Buffer[1u + i];
-        bytes[i * 2u] = (uint8_t)(w & 0xFFu);
-        bytes[i * 2u + 1u] = (uint8_t)(w >> 8);
+    for (uint8_t off = 0u; off + 1u + data_words <= words_available; off++) {
+        if (g_FSK_Buffer[off] != 0xABCDu) continue;
+
+        uint8_t bytes[MSG_RF_BYTES_CARRIED];
+        for (uint8_t i = 0u; i < data_words; i++) {
+            const uint16_t w = g_FSK_Buffer[off + 1u + i];
+            bytes[i * 2u] = (uint8_t)(w & 0xFFu);
+            bytes[i * 2u + 1u] = (uint8_t)(w >> 8);
+        }
+
+        if (bytes[0] != MSG_PKT_MAGIC0 || bytes[1] != MSG_PKT_MAGIC1 ||
+            bytes[2] != MSG_PKT_MAGIC2 || bytes[3] != MSG_PKT_MAGIC3) continue;
+        if (bytes[4] != MSG_PKT_VERSION) continue;
+        if (bytes[5] != MSG_PKT_TYPE_TEXT && bytes[5] != MSG_PKT_TYPE_ACK &&
+            bytes[5] != MSG_PKT_TYPE_PING && bytes[5] != MSG_PKT_TYPE_PONG) continue;
+        if (bytes[27] > MSG_RF_TEXT_LIMIT) continue;
+
+        const uint16_t got = (uint16_t)bytes[MSG_PKT_WIRE_LEN - 2u] |
+                             ((uint16_t)bytes[MSG_PKT_WIRE_LEN - 1u] << 8);
+        const uint16_t want = MSG_PACKET_Crc16(bytes, MSG_PKT_WIRE_LEN - 2u);
+        if (got != want) continue;
+
+        memset(pkt, 0, sizeof(*pkt));
+        pkt->type = bytes[5];
+        pkt->flags = bytes[6];
+        pkt->id = (uint16_t)bytes[7] | ((uint16_t)bytes[8] << 8);
+        pkt->ttl_init = bytes[9];
+        pkt->ttl_remain = bytes[10];
+        memcpy(pkt->from, &bytes[11], MSG_CALLSIGN_LEN);
+        pkt->from[MSG_CALLSIGN_LEN] = 0;
+        memcpy(pkt->to, &bytes[19], MSG_CALLSIGN_LEN);
+        pkt->to[MSG_CALLSIGN_LEN] = 0;
+        pkt->payload_len = bytes[27];
+        memcpy(pkt->payload, &bytes[28], pkt->payload_len);
+        pkt->payload[pkt->payload_len] = 0;
+        if (pkt->type == MSG_PKT_TYPE_ACK || pkt->type == MSG_PKT_TYPE_PING || pkt->type == MSG_PKT_TYPE_PONG) return true;
+        return pkt->payload[0] != 0;
     }
 
-    if (bytes[0] != MSG_PKT_MAGIC0 || bytes[1] != MSG_PKT_MAGIC1 ||
-        bytes[2] != MSG_PKT_MAGIC2 || bytes[3] != MSG_PKT_MAGIC3) return false;
-    if (bytes[4] != MSG_PKT_VERSION) return false;
-    if (bytes[5] != MSG_PKT_TYPE_TEXT && bytes[5] != MSG_PKT_TYPE_ACK && bytes[5] != MSG_PKT_TYPE_PING && bytes[5] != MSG_PKT_TYPE_PONG) return false;
-    if (bytes[27] > MSG_RF_TEXT_LIMIT) return false;
-
-    memset(pkt, 0, sizeof(*pkt));
-    pkt->type = bytes[5];
-    pkt->flags = bytes[6];
-    pkt->id = (uint16_t)bytes[7] | ((uint16_t)bytes[8] << 8);
-    pkt->ttl_init = bytes[9];
-    pkt->ttl_remain = bytes[10];
-    memcpy(pkt->from, &bytes[11], MSG_CALLSIGN_LEN);
-    pkt->from[MSG_CALLSIGN_LEN] = 0;
-    memcpy(pkt->to, &bytes[19], MSG_CALLSIGN_LEN);
-    pkt->to[MSG_CALLSIGN_LEN] = 0;
-    pkt->payload_len = bytes[27];
-    memcpy(pkt->payload, &bytes[28], pkt->payload_len);
-    pkt->payload[pkt->payload_len] = 0;
-    if (pkt->type == MSG_PKT_TYPE_ACK || pkt->type == MSG_PKT_TYPE_PING || pkt->type == MSG_PKT_TYPE_PONG) return true;
-    return pkt->payload[0] != 0;
+    return false;
 #else
     (void)pkt;
     return false;
@@ -1193,11 +1288,18 @@ static void MSG_RF_QueueRangePong(uint16_t id, const char *to, uint8_t rx_vfo)
     s_store_initialized = true;
     if (!gMessengerConfig.rng_rsp) return;
 
+    /* 1.0.1c: With Range PING reduced to x1, a permanent same id/from
+     * duplicate filter can suppress later manual Range Check attempts if the
+     * sender reuses an id.  Keep the old burst protection only for a short
+     * window: suppress repeated same-id PINGs from the same station for 2s,
+     * then allow a new PONG even if the id is reused. */
     if (s_last_range_ping_id == id &&
-        strncmp(s_last_range_ping_from, to ? to : "", MSG_CALLSIGN_LEN) == 0) {
+        strncmp(s_last_range_ping_from, to ? to : "", MSG_CALLSIGN_LEN) == 0 &&
+        s_last_range_ping_age_ticks < MSG_RF_RANGE_PING_DUP_WINDOW_TICKS) {
         return;
     }
     s_last_range_ping_id = id;
+    s_last_range_ping_age_ticks = 0u;
     memset(s_last_range_ping_from, 0, sizeof(s_last_range_ping_from));
     if (to && to[0]) strncpy(s_last_range_ping_from, to, MSG_CALLSIGN_LEN);
 
@@ -1409,6 +1511,19 @@ void MSG_RF_OnRadioInterrupt(uint16_t status)
 
     if (fsk_sync || (BK4819_ReadRegister(BK4819_REG_0B) & ((1u << 6) | (1u << 7)))) {
         s_sync_count++;
+        /*
+         * 1.0.1e RX alignment hotfix:
+         * A new FSK sync means a new Aircopy frame is starting.  If the local
+         * word buffer still contains a stale/partial previous frame, short
+         * packets such as PING/PONG/ACK can be shifted and then rejected before
+         * they ever reach the packet-type handler.  Reset the capture buffer at
+         * the beginning of a new capture, but do not wipe an already active one.
+         */
+        if (!s_rx_capture_active) {
+            s_rx_words = 0;
+            gFSKWriteIndex = 0;
+            memset(g_FSK_Buffer, 0, sizeof(g_FSK_Buffer));
+        }
         s_rx_capture_active = true;
         s_rx_stale_ticks = MSG_RF_RX_STALE_TICKS;
         MSG_RF_NarrowLockBegin();
@@ -1489,14 +1604,14 @@ bool MSG_RF_SendRangePing(void)
     if (MSG_PACKET_BuildPing(packet, sizeof(packet), id, gMessengerConfig.callsign) != MSG_PKT_WIRE_LEN) {
         return false;
     }
-    bool ping_sent = MSG_RF_SendPacketFrameRepeated(packet, true, true, MSG_RF_RANGE_PING_REPEATS);
+    bool ping_sent = MSG_RF_SendRangePacketFrameRepeatedOnVfo(packet, true, true, gEeprom.TX_VFO, MSG_RF_RANGE_PING_REPEATS);
     if (!ping_sent) {
         /* 1.0.1 follow-up: Range Check is user-triggered; if the first TX attempt
          * is refused by a stale FSK/RX state, force the same voice-path recovery
          * and try once more instead of silently entering an empty wait screen. */
         MSG_RF_HardRestoreVoicePath();
         SYSTEM_DelayMs(80u);
-        ping_sent = MSG_RF_SendPacketFrameRepeated(packet, true, true, MSG_RF_RANGE_PING_REPEATS);
+        ping_sent = MSG_RF_SendRangePacketFrameRepeatedOnVfo(packet, true, true, gEeprom.TX_VFO, MSG_RF_RANGE_PING_REPEATS);
     }
     if (!ping_sent) return false;
     SYSTEM_DelayMs(50u);
