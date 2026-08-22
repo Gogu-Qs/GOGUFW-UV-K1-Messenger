@@ -150,25 +150,6 @@ static void draw_rssi_bars(uint8_t x, uint8_t y, int8_t rssi)
     }
 }
 
-static void draw_rssi_bars_compact(uint8_t x, uint8_t y, int8_t rssi)
-{
-    uint8_t bars = range_rssi_bars(rssi);
-    if (bars > 5u) bars = 5u;
-
-    /* Compact variant for Range Check rows.  The text row must fit:
-     * ID(6 chars) + RSSI(4 chars) + 5-bar meter + voltage(4 chars).
-     * Keep the five UV-K5-like baseline ticks, but use a 3 px pitch so the
-     * bar block ends before the right-aligned voltage column. */
-    for (uint8_t i = 0u; i < 5u; i++) {
-        const uint8_t h = (uint8_t)(2u + i);
-        const uint8_t bx = (uint8_t)(x + i * 3u);
-        const uint8_t base = (uint8_t)(y + 6u);
-        const uint8_t y0 = (uint8_t)(base - h);
-        if (i < bars) msg_fill_rect(bx, y0, (uint8_t)(bx + 1u), base, true);
-        else UI_DrawLineBuffer(gFrameBuffer, bx, base, (uint8_t)(bx + 1u), base, 1);
-    }
-}
-
 static void msg_draw_small_at_y(const char *s, uint8_t x, uint8_t y, bool inverted)
 {
     const uint8_t pitch = 7U;
