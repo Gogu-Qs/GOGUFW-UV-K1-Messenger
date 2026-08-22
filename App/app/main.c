@@ -149,39 +149,10 @@ static uint16_t MAIN_ScaleToneFreq(uint16_t freq)
 
 static uint8_t MAIN_GetCallToneTxGain(void)
 {
-    /* Keep tone-generator gain fixed. CllVol must not affect local sidetone;
-     * RF volume is tested only through a small temporary REG_40 deviation trim. */
-    return 96;
-}
-
-static uint16_t MAIN_CallToneApplyDeviationForVolume(void)
-{
-    uint16_t saved = BK4819_ReadRegister(0x40);
-    uint8_t vol = 1;
-#ifdef ENABLE_MESSENGER
-    vol = gMessengerConfig.call_vol;
-#endif
-    if (vol > 1u) vol = 1u;
-
-    /* BK4829 REG_40 deviation trim only. Keep PA bias/RF power untouched.
-     * LOW  = slightly below stock tone deviation for nearby/quiet use
-     * HIGH = previous successful MID test level
-     * Always restore immediately after CALLTX. */
-    uint16_t tuning = saved & 0x0FFFu;
-    if (vol == 0u) {
-        tuning = (tuning > 0x0080u) ? (uint16_t)(tuning - 0x0080u) : 0u;
-    } else {
-        tuning = (uint16_t)((tuning + 0x0080u > 0x0FFFu) ? 0x0FFFu : tuning + 0x0080u);
-    }
-
-    const uint16_t patched = (uint16_t)((saved & 0xE000u) | 0x1000u | tuning);
-    BK4819_WriteRegister(0x40, patched);
-    return saved;
-}
-
-static void MAIN_CallToneRestoreDeviation(uint16_t saved)
-{
-    BK4819_WriteRegister(0x40, saved);
+    /* Use the established BK4829 transmit-tone gain.  The previous gain of
+     * 96 plus a temporary REG_40 deviation lift could overdrive the receiver
+     * and make its squelch cycle as if the RF carrier were dropping. */
+    return 66;
 }
 
 static void MAIN_SetQuietLocalMonitor(void)
@@ -216,7 +187,8 @@ static void MAIN_SendCallToneNote(uint16_t hz, uint8_t on_10ms, uint8_t off_10ms
         BK4819_REG_70_ENABLE_TONE1 | ((uint16_t)(gain & 0x7fu) << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
     BK4819_ExitTxMute();
     SYSTEM_DelayMs((uint16_t)on_10ms * 10u);
-    BK4819_EnterTxMute();
+
+    /* Keep tone modulation and the TX link continuous between notes. */
     if (off_10ms) {
         SYSTEM_DelayMs((uint16_t)off_10ms * 10u);
     }
@@ -266,8 +238,6 @@ static void MAIN_SendPmrCallTone(void)
     BK4819_EnableTXLink();
     SYSTEM_DelayMs(80); // let TX/tone path settle before first tone
 
-    const uint16_t saved_reg40 = MAIN_CallToneApplyDeviationForVolume();
-
     /* Send for a full ~3 seconds. A single melody pass can be only around
      * 1.5-2.0s depending on the selected tone, so repeat the melody until the
      * requested call-tone duration is reached. */
@@ -283,8 +253,6 @@ static void MAIN_SendPmrCallTone(void)
         }
         if (!played_any) break;
     }
-
-    MAIN_CallToneRestoreDeviation(saved_reg40);
 
     AUDIO_AudioPathOff();
     gEnableSpeaker = false;
