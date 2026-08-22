@@ -2261,6 +2261,11 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
                  * BK4829's local tone path.  The melody itself is the feedback
                  * for this menu item, so do not let that beep cancel it. */
                 gBeepToPlay = BEEP_NONE;
+                /* The preview is intentionally synchronous.  Render the new
+                 * selection first so the screen never appears stuck on the
+                 * previous tone while its 1.2 s sample is playing. */
+                gRequestDisplayScreen = DISPLAY_MENU;
+                GUI_DisplayScreen();
                 MAIN_PlayCallTonePreview((uint8_t)gSubMenuSelection);
             }
 #endif
