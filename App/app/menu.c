@@ -2255,11 +2255,36 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
             MENU_ClampSelection(Direction);
 #ifdef ENABLE_MESSENGER
             if (m == MENU_CALL_TONE) {
-                /* GGFW 0.6.3 final: CllTon preview was removed.  The menu now
-                 * behaves like a normal setting; users can hear the selected
-                 * melody with CALLTX after saving. */
-                if (gSubMenuSelection < 0) gSubMenuSelection = 0;
-                if (gSubMenuSelection > 4) gSubMenuSelection = 4;
+                for (;;) {
+                    if (gSubMenuSelection < 0) gSubMenuSelection = 0;
+                    if (gSubMenuSelection > 4) gSubMenuSelection = 4;
+                    /* The melody itself replaces the normal navigation beep. */
+                    gBeepToPlay = BEEP_NONE;
+                    /* Render first; the synchronous sample must never leave
+                     * the previous tone name visible. */
+                    gRequestDisplayScreen = DISPLAY_MENU;
+                    GUI_DisplayScreen();
+
+                    const KEY_Code_t preview_key =
+                        MAIN_PlayCallTonePreview((uint8_t)gSubMenuSelection);
+
+                    if (preview_key == KEY_UP || preview_key == KEY_DOWN) {
+                        int8_t preview_direction = preview_key == KEY_UP ? 1 : -1;
+                        if (!gEeprom.SET_NAV && gIsInSubMenu)
+                            preview_direction = -preview_direction;
+                        MENU_ClampSelection(preview_direction);
+                        continue;
+                    }
+                    if (preview_key == KEY_MENU) {
+                        MENU_Key_MENU(true, false);
+                        return;
+                    }
+                    if (preview_key == KEY_EXIT) {
+                        MENU_Key_EXIT(true, false);
+                        return;
+                    }
+                    break;
+                }
             }
 #endif
             gRequestDisplayScreen = DISPLAY_MENU;

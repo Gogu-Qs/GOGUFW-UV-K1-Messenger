@@ -58,6 +58,7 @@ extern uint8_t gFSKWriteIndex;
 #define MSG_RF_ACK_QUEUE_LEN             4u     /* 1.0.1: queue ACKs so delayed ACKs do not overwrite each other */
 #define MSG_RF_REPEAT_GAP_MS            100u   /* short gap between repeated FSK frames */
 #define MSG_RF_RANGE_WAIT_PONG_TICKS    1200u  /* 12 s same-channel PONG listen lock */
+#define MSG_RF_SQL_CLOSE_CONFIRM_TICKS     3u  /* 30 ms fallback when FSK sidecar masks SQL_FOUND */
 
 #define MSG_RF_REG59_RX_CLEAR        0x4068u
 #define MSG_RF_REG59_RX_ENABLE       0x3068u
@@ -83,6 +84,7 @@ static uint8_t s_sidecar_count;
 static uint8_t s_post_tx_restore_ticks;
 static uint8_t s_rearm_delay_ticks;
 static uint8_t s_rx_stale_ticks;
+static uint8_t s_sql_close_confirm_ticks;
 static uint8_t s_deferred_beep_ticks;
 static uint8_t s_deferred_beep_max_ticks;
 static bool s_deferred_beep_pending;
@@ -804,6 +806,26 @@ void MSG_RF_Tick10ms(void)
     if (gSurvivalMode) return;
     MSG_RF_EnsureStoreInitialized();
     MSG_RF_UpdateDebugSnapshot();
+
+    /* The FSK sidecar can occasionally leave the stock SQL_FOUND interrupt
+     * unseen after an analog/repeater tail.  REG_0C still reports that the
+     * channel is idle.  Confirm that state for 30 ms, outside an FSK capture,
+     * then feed only the missing close state back to the stock receive state
+     * machine.  HandleReceive() remains responsible for closing audio and
+     * rebuilding RX; do not restore speaker state or reset BK4829 here. */
+    if (gCurrentFunction == FUNCTION_RECEIVE &&
+        g_SquelchLost &&
+        !s_rx_capture_active &&
+        s_rx_stale_ticks == 0u &&
+        (s_dbg_0c & (1u << 1)) == 0u) {
+        if (++s_sql_close_confirm_ticks >= MSG_RF_SQL_CLOSE_CONFIRM_TICKS) {
+            s_sql_close_confirm_ticks = 0u;
+            g_SquelchLost = false;
+        }
+    } else {
+        s_sql_close_confirm_ticks = 0u;
+    }
+
     MSG_RF_RxChannelLockTick();
     MSG_RF_RangeBeepTick();
 

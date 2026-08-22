@@ -200,6 +200,22 @@ bool FM_UpdateRssiLevel(void)
     if (level == s_fmRssiLevel)
         return false;
 
+    /* Keep a small dead band around the 10/20/30/40/50 RSSI boundaries.
+     * Two matching samples are insufficient when a steady station repeatedly
+     * alternates across a boundary.  Hysteresis keeps the live meter responsive
+     * while preventing a 2 <-> 3 style redraw loop. */
+    if (s_fmRssiLevel <= 5u) {
+        if (level > s_fmRssiLevel) {
+            const uint8_t rise = (uint8_t)(10u * (s_fmRssiLevel + 1u) + 2u);
+            if (rssi < rise)
+                return false;
+        } else {
+            const uint8_t fall = (uint8_t)(10u * s_fmRssiLevel - 2u);
+            if (rssi > fall)
+                return false;
+        }
+    }
+
     s_fmRssiLevel = level;
     return true;
 }

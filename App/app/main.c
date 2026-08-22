@@ -149,39 +149,12 @@ static uint16_t MAIN_ScaleToneFreq(uint16_t freq)
 
 static uint8_t MAIN_GetCallToneTxGain(void)
 {
-    /* Keep tone-generator gain fixed. CllVol must not affect local sidetone;
-     * RF volume is tested only through a small temporary REG_40 deviation trim. */
-    return 96;
-}
-
-static uint16_t MAIN_CallToneApplyDeviationForVolume(void)
-{
-    uint16_t saved = BK4819_ReadRegister(0x40);
-    uint8_t vol = 1;
+    /* Adjust only the BK4829 tone-generator amplitude.  Both values are used
+     * by existing stable tone paths; do not touch REG_40 deviation or PA power. */
 #ifdef ENABLE_MESSENGER
-    vol = gMessengerConfig.call_vol;
+    if (gMessengerConfig.call_vol == 0u) return 4u;
 #endif
-    if (vol > 1u) vol = 1u;
-
-    /* BK4829 REG_40 deviation trim only. Keep PA bias/RF power untouched.
-     * LOW  = slightly below stock tone deviation for nearby/quiet use
-     * HIGH = previous successful MID test level
-     * Always restore immediately after CALLTX. */
-    uint16_t tuning = saved & 0x0FFFu;
-    if (vol == 0u) {
-        tuning = (tuning > 0x0080u) ? (uint16_t)(tuning - 0x0080u) : 0u;
-    } else {
-        tuning = (uint16_t)((tuning + 0x0080u > 0x0FFFu) ? 0x0FFFu : tuning + 0x0080u);
-    }
-
-    const uint16_t patched = (uint16_t)((saved & 0xE000u) | 0x1000u | tuning);
-    BK4819_WriteRegister(0x40, patched);
-    return saved;
-}
-
-static void MAIN_CallToneRestoreDeviation(uint16_t saved)
-{
-    BK4819_WriteRegister(0x40, saved);
+    return 66;
 }
 
 static void MAIN_SetQuietLocalMonitor(void)
@@ -195,15 +168,144 @@ static void MAIN_SetQuietLocalMonitor(void)
         ( 2u << 0));       /* AF DAC gain */
 }
 
+typedef struct {
+    bool released;
+    KEY_Code_t candidate;
+    uint8_t stable_reads;
+} CallTonePreviewKeys_t;
+
+static KEY_Code_t MAIN_CallTonePreviewDelay(uint16_t delay_ms, CallTonePreviewKeys_t *keys)
+{
+    while (delay_ms > 0u) {
+        const uint16_t slice_ms = delay_ms > 10u ? 10u : delay_ms;
+        SYSTEM_DelayMs(slice_ms);
+        delay_ms -= slice_ms;
+
+        const KEY_Code_t key = KEYBOARD_Poll();
+        if (!keys->released) {
+            if (key == KEY_INVALID) {
+                if (++keys->stable_reads >= 2u) {
+                    keys->released = true;
+                    keys->stable_reads = 0u;
+                }
+            } else {
+                keys->stable_reads = 0u;
+            }
+            continue;
+        }
+
+        if (key != KEY_UP && key != KEY_DOWN &&
+            key != KEY_MENU && key != KEY_EXIT) {
+            keys->candidate = KEY_INVALID;
+            keys->stable_reads = 0u;
+            continue;
+        }
+
+        if (key != keys->candidate) {
+            keys->candidate = key;
+            keys->stable_reads = 1u;
+        } else if (++keys->stable_reads >= 2u) {
+            return key;
+        }
+    }
+
+    return KEY_INVALID;
+}
+
+static void MAIN_CallTonePreviewWaitForRelease(void)
+{
+    uint8_t released_reads = 0u;
+    while (released_reads < 2u) {
+        SYSTEM_DelayMs(10u);
+        if (KEYBOARD_Poll() == KEY_INVALID)
+            ++released_reads;
+        else
+            released_reads = 0u;
+    }
+}
+
+KEY_Code_t MAIN_PlayCallTonePreview(uint8_t tone)
+{
+    if (tone > 4u) tone = 0u;
+    if (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx()) return KEY_INVALID;
+
+#ifdef ENABLE_MESSENGER
+    MSG_RF_HardRestoreVoicePath();
+#endif
+
+    /* Deliberately synchronous and short.  This uses the exact local tone
+     * path proven by AUDIO_PlayBeep(), so no scheduler/FSK task can replace
+     * REG_30/70 while the sample is playing. */
+    AUDIO_AudioPathOff();
+    if (gCurrentFunction == FUNCTION_POWER_SAVE && gRxIdleMode) {
+        BK4819_RX_TurnOn();
+    }
+    SYSTEM_DelayMs(20u);
+
+    const uint16_t saved_reg71 = BK4819_ReadRegister(BK4819_REG_71);
+    BK4819_PrepareToPlayTone(true);
+    SYSTEM_DelayMs(2u);
+    AUDIO_AudioPathOn();
+    SYSTEM_DelayMs(60u);
+
+    uint16_t elapsed_ms = 0u;
+    uint8_t note = 0u;
+    KEY_Code_t interrupted_by = KEY_INVALID;
+    CallTonePreviewKeys_t keys = {
+        .released = false,
+        .candidate = KEY_INVALID,
+        .stable_reads = 0u,
+    };
+    while (elapsed_ms < 1200u) {
+        if (note >= 16u || gCallToneMelodies[tone][note].hz == 0u) {
+            note = 0u;
+            if (gCallToneMelodies[tone][note].hz == 0u) break;
+        }
+        const CallToneNote_t *n = &gCallToneMelodies[tone][note];
+
+        BK4819_WriteRegister(BK4819_REG_71, MAIN_ScaleToneFreq(n->hz));
+        BK4819_ExitTxMute();
+        interrupted_by = MAIN_CallTonePreviewDelay((uint16_t)n->on_10ms * 10u, &keys);
+        BK4819_EnterTxMute();
+        if (interrupted_by != KEY_INVALID) break;
+
+        if (n->off_10ms > 0u)
+            interrupted_by = MAIN_CallTonePreviewDelay((uint16_t)n->off_10ms * 10u, &keys);
+        if (interrupted_by != KEY_INVALID) break;
+
+        elapsed_ms += (uint16_t)((uint16_t)n->on_10ms + n->off_10ms) * 10u;
+        ++note;
+    }
+
+    AUDIO_AudioPathOff();
+    SYSTEM_DelayMs(5u);
+    BK4819_TurnsOffTones_TurnsOnRX();
+    SYSTEM_DelayMs(5u);
+    BK4819_WriteRegister(BK4819_REG_71, saved_reg71);
+
+    /* Rebuild stock RX once, then let the existing Messenger hook perform
+     * its normal controlled sidecar re-arm. */
+    RADIO_SelectVfos();
+    RADIO_SetupRegisters(true);
+
+    /* MENU/EXIT are handled after returning to the menu.  Consume their
+     * physical release here so the normal key scanner cannot deliver them a
+     * second time.  UP/DOWN immediately starts the next preview, which owns
+     * the still-held key until it is released. */
+    if (interrupted_by == KEY_MENU || interrupted_by == KEY_EXIT)
+        MAIN_CallTonePreviewWaitForRelease();
+
+    return interrupted_by;
+}
+
 void MAIN_CancelCallTonePreview(void)
 {
-    /* GGFW 0.6.5: CllTon preview was removed. Keep a safe no-op so
-     * stale menu transitions and tick hooks cannot affect audio/RF paths. */
+    /* Synchronous preview has already stopped before key handling resumes. */
 }
 
 void MAIN_CallToneTick10ms(void)
 {
-    /* No-op: CllTon preview removed. */
+    /* Synchronous preview needs no periodic RF/audio owner. */
 }
 
 static void MAIN_SendCallToneNote(uint16_t hz, uint8_t on_10ms, uint8_t off_10ms)
@@ -216,7 +318,8 @@ static void MAIN_SendCallToneNote(uint16_t hz, uint8_t on_10ms, uint8_t off_10ms
         BK4819_REG_70_ENABLE_TONE1 | ((uint16_t)(gain & 0x7fu) << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
     BK4819_ExitTxMute();
     SYSTEM_DelayMs((uint16_t)on_10ms * 10u);
-    BK4819_EnterTxMute();
+
+    /* Keep tone modulation and the TX link continuous between notes. */
     if (off_10ms) {
         SYSTEM_DelayMs((uint16_t)off_10ms * 10u);
     }
@@ -266,8 +369,6 @@ static void MAIN_SendPmrCallTone(void)
     BK4819_EnableTXLink();
     SYSTEM_DelayMs(80); // let TX/tone path settle before first tone
 
-    const uint16_t saved_reg40 = MAIN_CallToneApplyDeviationForVolume();
-
     /* Send for a full ~3 seconds. A single melody pass can be only around
      * 1.5-2.0s depending on the selected tone, so repeat the melody until the
      * requested call-tone duration is reached. */
@@ -283,8 +384,6 @@ static void MAIN_SendPmrCallTone(void)
         }
         if (!played_any) break;
     }
-
-    MAIN_CallToneRestoreDeviation(saved_reg40);
 
     AUDIO_AudioPathOff();
     gEnableSpeaker = false;

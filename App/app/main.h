@@ -23,10 +23,10 @@
 extern bool gCallToneTxActive;
 
 void MAIN_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
+KEY_Code_t MAIN_PlayCallTonePreview(uint8_t tone);
 void MAIN_CancelCallTonePreview(void);
 void MAIN_CallToneTick10ms(void);
 void MAIN_SendPmrCallToneAction(void);
 void channelMoveSwitch(void);
 
 #endif
-

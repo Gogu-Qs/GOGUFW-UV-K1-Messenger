@@ -143,6 +143,19 @@ static void FM_UI_DrawRssiBars(void)
     }
 }
 
+void UI_UpdateFMRssiBar(void)
+{
+    if (FM_IsNameEditActive() || FM_IsAutoScanConfirmActive())
+        return;
+
+    /* The meter occupies x=106..124 entirely on framebuffer page 6
+     * (LCD page 7, after the status page).  Transfer only those 19 columns;
+     * even a full 128-column page produces an audible pulse in quiet FM audio. */
+    memset(&gFrameBuffer[6][106], 0, 19);
+    FM_UI_DrawRssiBars();
+    ST7565_DrawLine(106, 7, &gFrameBuffer[6][106], 19);
+}
+
 static void FM_UI_DrawEditName(void)
 {
     char buf[20];
