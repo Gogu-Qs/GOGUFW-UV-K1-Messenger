@@ -152,7 +152,7 @@ static uint8_t MAIN_GetCallToneTxGain(void)
     /* Adjust only the BK4829 tone-generator amplitude.  Both values are used
      * by existing stable tone paths; do not touch REG_40 deviation or PA power. */
 #ifdef ENABLE_MESSENGER
-    if (gMessengerConfig.call_vol == 0u) return 16u;
+    if (gMessengerConfig.call_vol == 0u) return 4u;
 #endif
     return 66;
 }
