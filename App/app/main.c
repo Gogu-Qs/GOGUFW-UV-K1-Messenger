@@ -168,122 +168,67 @@ static void MAIN_SetQuietLocalMonitor(void)
         ( 2u << 0));       /* AF DAC gain */
 }
 
-static bool    s_call_preview_active;
-static uint8_t s_call_preview_tone;
-static uint8_t s_call_preview_note;
-static uint8_t s_call_preview_phase_ticks;
-static uint8_t s_call_preview_elapsed_ticks;
-static bool    s_call_preview_on_phase;
-
-static void MAIN_CallToneStopPreview(void)
-{
-    if (!s_call_preview_active) return;
-
-    s_call_preview_active = false;
-    AUDIO_AudioPathOff();
-    gEnableSpeaker = false;
-    BK4819_EnterTxMute();
-    BK4819_WriteRegister(BK4819_REG_70, 0x0000);
-
-    /* Restore the normal radio path through its authoritative setup routine.
-     * Its Messenger hook then performs the existing controlled FSK re-arm. */
-    RADIO_SelectVfos();
-    RADIO_SetupRegisters(true);
-#ifdef ENABLE_MESSENGER
-    MSG_RF_SetLocalTonePreviewActive(false);
-#endif
-}
-
 void MAIN_PlayCallTonePreview(uint8_t tone)
 {
     if (tone > 4u) tone = 0u;
     if (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx()) return;
 
-    /* Moving between tones restarts the melody without repeatedly rebuilding
-     * the radio path.  The final cancel/timeout performs one controlled restore. */
-    if (!s_call_preview_active) {
 #ifdef ENABLE_MESSENGER
-        MSG_RF_HardRestoreVoicePath();
-        MSG_RF_SetLocalTonePreviewActive(true);
+    MSG_RF_HardRestoreVoicePath();
 #endif
-        /* Use the same proven local-audio preparation sequence as the normal
-         * menu beep.  Earlier preview-only REG_48/REG_30 setup was silent on
-         * real UV-K1/BK4829 hardware even though its note timer was running. */
-        AUDIO_AudioPathOff();
-        if (gCurrentFunction == FUNCTION_POWER_SAVE && gRxIdleMode) {
-            BK4819_RX_TurnOn();
+
+    /* Deliberately synchronous and short.  This uses the exact local tone
+     * path proven by AUDIO_PlayBeep(), so no scheduler/FSK task can replace
+     * REG_30/70 while the sample is playing. */
+    AUDIO_AudioPathOff();
+    if (gCurrentFunction == FUNCTION_POWER_SAVE && gRxIdleMode) {
+        BK4819_RX_TurnOn();
+    }
+    SYSTEM_DelayMs(20u);
+
+    const uint16_t saved_reg71 = BK4819_ReadRegister(BK4819_REG_71);
+    BK4819_PrepareToPlayTone(true);
+    SYSTEM_DelayMs(2u);
+    AUDIO_AudioPathOn();
+    SYSTEM_DelayMs(60u);
+
+    uint16_t elapsed_ms = 0u;
+    uint8_t note = 0u;
+    while (elapsed_ms < 450u) {
+        if (note >= 16u || gCallToneMelodies[tone][note].hz == 0u) {
+            note = 0u;
+            if (gCallToneMelodies[tone][note].hz == 0u) break;
         }
-        SYSTEM_DelayMs(20u);
-        BK4819_PrepareToPlayTone(true);
-        SYSTEM_DelayMs(2u);
-        AUDIO_AudioPathOn();
-        s_call_preview_active = true;
-    } else {
-        BK4819_WriteRegister(BK4819_REG_70, 0x0000);
+        const CallToneNote_t *n = &gCallToneMelodies[tone][note];
+
+        BK4819_PlayToneRaw(n->hz, (uint16_t)n->on_10ms * 10u);
+        if (n->off_10ms > 0u) {
+            SYSTEM_DelayMs((uint16_t)n->off_10ms * 10u);
+        }
+        elapsed_ms += (uint16_t)((uint16_t)n->on_10ms + n->off_10ms) * 10u;
+        ++note;
     }
 
-    s_call_preview_tone = tone;
-    s_call_preview_note = 0u;
-    /* Match AUDIO_PlayBeep(): allow the speaker/AF path roughly 60 ms to
-     * settle before unmuting the first tone. */
-    s_call_preview_phase_ticks = 6u;
-    s_call_preview_elapsed_ticks = 0u;
-    s_call_preview_on_phase = false;
+    AUDIO_AudioPathOff();
+    SYSTEM_DelayMs(5u);
+    BK4819_TurnsOffTones_TurnsOnRX();
+    SYSTEM_DelayMs(5u);
+    BK4819_WriteRegister(BK4819_REG_71, saved_reg71);
+
+    /* Rebuild stock RX once, then let the existing Messenger hook perform
+     * its normal controlled sidecar re-arm. */
+    RADIO_SelectVfos();
+    RADIO_SetupRegisters(true);
 }
 
 void MAIN_CancelCallTonePreview(void)
 {
-    MAIN_CallToneStopPreview();
+    /* Synchronous preview has already stopped before key handling resumes. */
 }
 
 void MAIN_CallToneTick10ms(void)
 {
-    if (!s_call_preview_active) return;
-
-    if (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx()) {
-        MAIN_CallToneStopPreview();
-        return;
-    }
-
-    /* A short sample is enough to identify each melody and completes before
-     * Messenger's existing 800 ms delayed re-arm window can expire. */
-    if (++s_call_preview_elapsed_ticks >= 70u) {
-        MAIN_CallToneStopPreview();
-        return;
-    }
-
-    if (s_call_preview_phase_ticks > 0u) {
-        --s_call_preview_phase_ticks;
-        return;
-    }
-
-    if (s_call_preview_note >= 16u) {
-        MAIN_CallToneStopPreview();
-        return;
-    }
-
-    const CallToneNote_t *n = &gCallToneMelodies[s_call_preview_tone][s_call_preview_note];
-    if (n->hz == 0u) {
-        MAIN_CallToneStopPreview();
-        return;
-    }
-
-    if (!s_call_preview_on_phase) {
-        BK4819_WriteRegister(BK4819_REG_71, MAIN_ScaleToneFreq(n->hz));
-        BK4819_WriteRegister(BK4819_REG_70,
-            BK4819_REG_70_ENABLE_TONE1 |
-            ((uint16_t)28u << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
-        BK4819_ExitTxMute();
-        s_call_preview_on_phase = true;
-        s_call_preview_phase_ticks = n->on_10ms;
-    } else {
-        /* Silence only the local tone generator between notes.  Do not cycle
-         * the TX link/mute state as that made earlier previews sound choppy. */
-        BK4819_WriteRegister(BK4819_REG_70, 0x0000);
-        s_call_preview_on_phase = false;
-        s_call_preview_phase_ticks = n->off_10ms;
-        ++s_call_preview_note;
-    }
+    /* Synchronous preview needs no periodic RF/audio owner. */
 }
 
 static void MAIN_SendCallToneNote(uint16_t hz, uint8_t on_10ms, uint8_t off_10ms)
