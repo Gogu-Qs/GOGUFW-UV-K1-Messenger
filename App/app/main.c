@@ -206,16 +206,17 @@ void MAIN_PlayCallTonePreview(uint8_t tone)
         MSG_RF_HardRestoreVoicePath();
         MSG_RF_SetLocalTonePreviewActive(true);
 #endif
-        BK4819_EnterTxMute();
-        BK4819_SetAF(BK4819_AF_BEEP);
-        MAIN_SetQuietLocalMonitor();
-        BK4819_WriteRegister(BK4819_REG_30, 0x0000);
-        BK4819_WriteRegister(BK4819_REG_30,
-            BK4819_REG_30_ENABLE_AF_DAC |
-            BK4819_REG_30_ENABLE_DISC_MODE |
-            BK4819_REG_30_ENABLE_TX_DSP);
+        /* Use the same proven local-audio preparation sequence as the normal
+         * menu beep.  Earlier preview-only REG_48/REG_30 setup was silent on
+         * real UV-K1/BK4829 hardware even though its note timer was running. */
+        AUDIO_AudioPathOff();
+        if (gCurrentFunction == FUNCTION_POWER_SAVE && gRxIdleMode) {
+            BK4819_RX_TurnOn();
+        }
+        SYSTEM_DelayMs(20u);
+        BK4819_PrepareToPlayTone(true);
+        SYSTEM_DelayMs(2u);
         AUDIO_AudioPathOn();
-        gEnableSpeaker = true;
         s_call_preview_active = true;
     } else {
         BK4819_WriteRegister(BK4819_REG_70, 0x0000);
@@ -223,7 +224,9 @@ void MAIN_PlayCallTonePreview(uint8_t tone)
 
     s_call_preview_tone = tone;
     s_call_preview_note = 0u;
-    s_call_preview_phase_ticks = 0u;
+    /* Match AUDIO_PlayBeep(): allow the speaker/AF path roughly 60 ms to
+     * settle before unmuting the first tone. */
+    s_call_preview_phase_ticks = 6u;
     s_call_preview_elapsed_ticks = 0u;
     s_call_preview_on_phase = false;
 }
@@ -269,7 +272,7 @@ void MAIN_CallToneTick10ms(void)
         BK4819_WriteRegister(BK4819_REG_71, MAIN_ScaleToneFreq(n->hz));
         BK4819_WriteRegister(BK4819_REG_70,
             BK4819_REG_70_ENABLE_TONE1 |
-            ((uint16_t)18u << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
+            ((uint16_t)28u << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
         BK4819_ExitTxMute();
         s_call_preview_on_phase = true;
         s_call_preview_phase_ticks = n->on_10ms;
