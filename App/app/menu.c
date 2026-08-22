@@ -2255,11 +2255,9 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
             MENU_ClampSelection(Direction);
 #ifdef ENABLE_MESSENGER
             if (m == MENU_CALL_TONE) {
-                /* GGFW 0.6.3 final: CllTon preview was removed.  The menu now
-                 * behaves like a normal setting; users can hear the selected
-                 * melody with CALLTX after saving. */
                 if (gSubMenuSelection < 0) gSubMenuSelection = 0;
                 if (gSubMenuSelection > 4) gSubMenuSelection = 4;
+                MAIN_PlayCallTonePreview((uint8_t)gSubMenuSelection);
             }
 #endif
             gRequestDisplayScreen = DISPLAY_MENU;
