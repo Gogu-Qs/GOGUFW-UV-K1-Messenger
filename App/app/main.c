@@ -194,7 +194,7 @@ void MAIN_PlayCallTonePreview(uint8_t tone)
 
     uint16_t elapsed_ms = 0u;
     uint8_t note = 0u;
-    while (elapsed_ms < 450u) {
+    while (elapsed_ms < 1200u) {
         if (note >= 16u || gCallToneMelodies[tone][note].hz == 0u) {
             note = 0u;
             if (gCallToneMelodies[tone][note].hz == 0u) break;
