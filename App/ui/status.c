@@ -272,8 +272,17 @@ void UI_DisplayStatus()
         }
     #endif
     else if (gBackLight) {
-        src = gFontLight;
-        size = sizeof(gFontLight);
+        // Distinguish the manual backlight sub-state: BACKLIGHT_TIME == 0
+        // means the light is currently off (hollow bulb), otherwise it is
+        // forced on (bulb with filament).
+        if (gEeprom.BACKLIGHT_TIME == 0) {
+            src = gFontLightOff;
+            size = sizeof(gFontLightOff);
+        }
+        else {
+            src = gFontLight;
+            size = sizeof(gFontLight);
+        }
     }
     #ifdef ENABLE_FEAT_F4HWN_CHARGING_C
     else if (gChargingWithTypeC) {
@@ -292,36 +301,32 @@ void UI_DisplayStatus()
 
     UI_DrawBattery(line + x2, gBatteryDisplayLevel, gLowBatteryBlink);
 
-    bool BatTxt = true;
-
     switch (gSetting_battery_text) {
         default:
         case 0:
-            BatTxt = false;
             break;
 
         case 1:    // voltage
-            const uint16_t voltage = (gBatteryVoltageAverage <= 999) ? gBatteryVoltageAverage : 999; // limit to 9.99V
-            sprintf(str, "%u.%02u", voltage / 100, voltage % 100);
+        case 2:    // percentage
+            if (gSetting_battery_text == 1) {
+                const uint16_t voltage = (gBatteryVoltageAverage <= 999) ? gBatteryVoltageAverage : 999; // limit to 9.99V
+                sprintf(str, "%u.%02u", voltage / 100, voltage % 100);
+            } else {
+                //gBatteryVoltageAverage = 999;
+                sprintf(str, "%02u%%", BATTERY_VoltsToPercent(gBatteryVoltageAverage));
+            }
+
+            x2 -= (7 * strlen(str));
+            UI_PrintStringSmallBufferNormal(str, line + x2);
+            /*
+            uint8_t shift = (strlen(str) < 5) ? 92 : 88;
+            GUI_DisplaySmallest(str, shift, 1, true, true);
+
+            for (uint8_t i = shift - 2; i < 110; i++) {
+                gStatusLine[i] ^= 0x7F; // invert
+            }
+            */
             break;
-
-        case 2:     // percentage
-            //gBatteryVoltageAverage = 999;
-            sprintf(str, "%02u%%", BATTERY_VoltsToPercent(gBatteryVoltageAverage));
-            break;
-    }
-
-    if (BatTxt) {
-        x2 -= (7 * strlen(str));
-        UI_PrintStringSmallBufferNormal(str, line + x2);
-        /*
-        uint8_t shift = (strlen(str) < 5) ? 92 : 88;
-        GUI_DisplaySmallest(str, shift, 1, true, true);
-
-        for (uint8_t i = shift - 2; i < 110; i++) {
-            gStatusLine[i] ^= 0x7F; // invert
-        }
-        */
     }
 
     // **************

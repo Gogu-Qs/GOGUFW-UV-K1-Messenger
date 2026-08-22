@@ -248,6 +248,9 @@ static bool ScreenSaverCanDisplay(void)
         gEeprom.BACKLIGHT_TIME == 0 ||
         gEeprom.BACKLIGHT_TIME >= 61 ||
         gScreenSaverDisplayed ||
+#ifdef ENABLE_FEAT_F4HWN_SLEEP
+        gWakeUp ||
+#endif
         gCurrentFunction == FUNCTION_TRANSMIT ||
         FUNCTION_IsRx() ||
         gPttIsPressed ||
@@ -319,6 +322,12 @@ static void CheckForIncoming(void)
 {
     if (!g_SquelchLost)
         return;          // squelch is closed
+
+#ifdef ENABLE_FMRADIO
+    // Upstream 5.9: FM scan in progress must not be interrupted by main-channel RX.
+    if (gFmRadioMode && gFM_ScanState != FM_SCAN_OFF)
+        return;
+#endif
 
 #ifdef ENABLE_FEAT_F4HWN_LOGO_SAV
     ScreenSaverExit();
@@ -450,6 +459,12 @@ static void HandleIncoming(void)
             return;
         }
     }
+#endif
+
+#ifdef ENABLE_FMRADIO
+    // Upstream 5.9 defensive guard: stay in FM scan instead of opening main RX audio.
+    if (gFmRadioMode && gFM_ScanState != FM_SCAN_OFF)
+        return;
 #endif
 
     APP_StartListening(gMonitor ? FUNCTION_MONITOR : FUNCTION_RECEIVE);
@@ -991,6 +1006,19 @@ static void CheckRadioInterrupts(void)
 
         if (interrupts.sqlLost) {
             g_SquelchLost = true;
+#ifdef ENABLE_FEAT_F4HWN_SLEEP
+            if (gWakeUp) {
+                ST7565_FixInterfGlitch();
+#ifdef ENABLE_FEAT_F4HWN_LOGO_SAV
+                ScreenSaverExit();
+#endif
+                BACKLIGHT_TurnOn();
+                gWakeUp = false;
+                gSleepModeCountdown_500ms = gSetting_set_off * 120;
+                gUpdateDisplay = true;
+                gUpdateStatus = true;
+            }
+#endif
             BK4819_ToggleGpioOut(BK4819_GPIO6_PIN2_GREEN, true);
             #ifdef ENABLE_FEAT_F4HWN_RX_TX_TIMER
                 gRxTimerCountdown_500ms = 7200;
@@ -1387,7 +1415,7 @@ void APP_Update(void)
             // go back to sleep
 
 #ifdef ENABLE_FEAT_F4HWN_SLEEP
-            gPowerSave_10ms = gEeprom.BATTERY_SAVE * (gWakeUp ? 200 : 10); // deep sleep now indexed on BatSav
+            gPowerSave_10ms = gEeprom.BATTERY_SAVE * 10; // GOGUFW: screen-off must not deepen RF sleep; keep RX wake cadence for Messenger/Range Check
 #else
             gPowerSave_10ms = gEeprom.BATTERY_SAVE * 10;
 #endif
@@ -1688,6 +1716,8 @@ void APP_TimeSlice10ms(void)
 #endif
         ) {
         SCREENSHOT_Update(false);
+    } else if (SCREENSHOT_HasPendingStateChange()) {
+        SCREENSHOT_Update(false);
     }
     #endif
 
@@ -1829,6 +1859,11 @@ void APP_TimeSlice500ms(void)
         if (--gKeypadLocked == 0)
             gUpdateDisplay = true;
 
+#ifdef ENABLE_FMRADIO
+    if (gFmRadioMode && gScreenToDisplay == DISPLAY_FM && FM_UpdateRssiLevel())
+        gUpdateDisplay = true;
+#endif
+
 #ifdef ENABLE_FEAT_F4HWN_RX_TX_TIMER
     if (gSetting_set_tmr && (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx())) {
         const uint16_t timerCountdown = (gCurrentFunction == FUNCTION_TRANSMIT)
@@ -1943,6 +1978,9 @@ void APP_TimeSlice500ms(void)
             gBacklightCountdown_500ms = 0;
             gPowerSave_10ms = 1;
             gWakeUp = true;
+#ifdef ENABLE_FEAT_F4HWN_LOGO_SAV
+            ScreenSaverExit();
+#endif
             // TODO:
             // PWM_PLUS0_CH0_COMP = 0;
             BACKLIGHT_SetBrightness(0);

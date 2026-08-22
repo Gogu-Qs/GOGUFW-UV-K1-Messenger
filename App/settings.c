@@ -455,15 +455,16 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
         // TODO: address TBD
         PY25Q16_ReadBuffer(0x00A158, Data, 8);
         const uint8_t set_ptt_scn_sav = Data[7] & 0x0F;
+        const bool set_ptt_scn_sav_erased = Data[7] == 0xFF;
 #ifdef ENABLE_FEAT_F4HWN_LOGO_SAV
-        const bool set_ptt_scn_sav_valid = set_ptt_scn_sav < (SET_SAV_LEN << 2);
+        const bool set_ptt_scn_sav_valid = !set_ptt_scn_sav_erased && set_ptt_scn_sav < (SET_SAV_LEN << 2);
 #else
-        const bool set_ptt_scn_sav_valid = set_ptt_scn_sav < 4;
+        const bool set_ptt_scn_sav_valid = !set_ptt_scn_sav_erased && set_ptt_scn_sav < 4;
 #endif
         gSetting_set_pwr = (((Data[7] & 0xF0) >> 4) < 7) ? ((Data[7] & 0xF0) >> 4) : 0;
         gSetting_set_ptt = set_ptt_scn_sav_valid ? (set_ptt_scn_sav & 0x01) : 0;
 #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
-        gSetting_set_scn = set_ptt_scn_sav_valid ? ((set_ptt_scn_sav & 0x02) == 0) : 1;
+        gSetting_set_scn = set_ptt_scn_sav_valid ? ((set_ptt_scn_sav & 0x02) == 0) : 0;
 #endif
 #ifdef ENABLE_FEAT_F4HWN_LOGO_SAV
         gSetting_set_sav = set_ptt_scn_sav_valid ? ((set_ptt_scn_sav >> 2) & 0x03) : SET_SAV_OFF;

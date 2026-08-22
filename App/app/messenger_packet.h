@@ -14,6 +14,7 @@
 #define MSG_PKT_TYPE_ACK        2u
 #define MSG_PKT_TYPE_PING       3u
 #define MSG_PKT_TYPE_PONG       4u
+#define MSG_PKT_TYPE_WAKE       5u
 #define MSG_PKT_TO_ALL          "ALL"
 #define MSG_PKT_WIRE_LEN        94u
 #define MSG_PKT_MAX_PAYLOAD     MSG_TEXT_LEN
@@ -35,6 +36,7 @@ uint8_t MSG_PACKET_BuildText(uint8_t *out, uint8_t out_len, uint16_t id, const c
 uint8_t MSG_PACKET_BuildAck(uint8_t *out, uint8_t out_len, uint16_t id, const char *from, const char *to);
 uint8_t MSG_PACKET_BuildPing(uint8_t *out, uint8_t out_len, uint16_t id, const char *from);
 uint8_t MSG_PACKET_BuildPong(uint8_t *out, uint8_t out_len, uint16_t id, const char *from, const char *to, uint16_t battery_cv);
+uint8_t MSG_PACKET_BuildWake(uint8_t *out, uint8_t out_len, uint16_t id, const char *from);
 bool MSG_PACKET_Parse(const uint8_t *data, uint8_t len, MSG_Packet_t *pkt);
 bool MSG_PACKET_SelfTest(void);
 

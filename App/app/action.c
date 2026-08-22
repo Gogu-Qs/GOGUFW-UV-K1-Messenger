@@ -21,6 +21,7 @@
 #ifdef ENABLE_MESSENGER
 #include "app/messenger.h"
 #include "app/main.h"
+#include "app/messenger_rf.h"
 #endif
 #include "app/app.h"
 #include "app/chFrScanner.h"
@@ -470,6 +471,12 @@ void ACTION_FM(void)
 
         gMonitor = false;
 
+        if (gScanStateDir != SCAN_OFF) {
+            // Upstream 5.9: do not carry an active channel/frequency scan into FM radio.
+            gScanKeepResult = false;
+            CHFRSCANNER_Stop();
+        }
+
         RADIO_SelectVfos();
         RADIO_SetupRegisters(true);
 
@@ -565,6 +572,9 @@ void ACTION_Vox(void)
     gRequestSaveSettings = true;
     gFlagReconfigureVfos = true;
     gUpdateStatus        = true;
+#ifdef ENABLE_MESSENGER
+    MSG_RF_OnVoxModeChanged(gEeprom.VOX_SWITCH);
+#endif
 
     #ifdef ENABLE_VOICE
         gAnotherVoiceID  = VOICE_ID_VOX;

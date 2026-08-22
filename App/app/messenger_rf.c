@@ -28,7 +28,7 @@ extern uint8_t gFSKWriteIndex;
  * - No RX-start PrepareFSKReceive() call. That caused voice ticks and cut FSK bursts.
  * - Sidecar FSK RX is armed only while the radio is idle, with exact Aircopy RX values.
  * - A valid voice snapshot is captured before any sidecar/TX register write.
- * - PTT and message-TX both run the 8G-style hard restore before normal voice TX.
+ * - Voice restore is only used on explicit TX/PTT transitions.
  */
 
 #define MSG_RF_WORDS                 50u
@@ -58,8 +58,6 @@ extern uint8_t gFSKWriteIndex;
 #define MSG_RF_ACK_QUEUE_LEN             4u     /* 1.0.1: queue ACKs so delayed ACKs do not overwrite each other */
 #define MSG_RF_REPEAT_GAP_MS            100u   /* short gap between repeated FSK frames */
 #define MSG_RF_RANGE_WAIT_PONG_TICKS    1200u  /* 12 s same-channel PONG listen lock */
-#define MSG_RF_SAFE_KEEPALIVE_TICKS      500u   /* 5 s safe Messenger/Range RX keepalive */
-#define MSG_RF_SAFE_KEEPALIVE_RETRY_TICKS 50u   /* retry in 0.5 s if channel busy */
 
 #define MSG_RF_REG59_RX_CLEAR        0x4068u
 #define MSG_RF_REG59_RX_ENABLE       0x3068u
@@ -93,13 +91,11 @@ static bool s_ack_success_beep_pending;
 static bool s_store_initialized;
 static uint8_t s_reprime_delay_ticks;
 static uint16_t s_idle_reprime_ticks;
-static uint16_t s_safe_keepalive_ticks;
 static bool s_boot_prime_done;
 static bool s_sidecar_armed;
 static bool s_rx_capture_active;
 static bool s_ignore_next_self_rx;
 static bool s_fsk_audio_muted;
-static bool s_fsk_audio_prev_speaker;
 static uint16_t s_fsk_audio_prev_reg48;
 static uint16_t s_unread_led_ticks;
 static bool s_unread_led_owner;
@@ -316,7 +312,6 @@ static void MSG_RF_RxChannelLockStart(uint8_t vfo, uint16_t ticks)
         gEeprom.RX_VFO = vfo;
         gRxVfo = &gEeprom.VfoInfo[gEeprom.RX_VFO];
         RADIO_SetupRegisters(false);
-        MSG_RF_EnsureFskIrqMask();
     }
     gScheduleDualWatch = false;
     gDualWatchCountdown_10ms = ticks ? ticks : 1u;
@@ -333,7 +328,6 @@ static void MSG_RF_RxChannelLockStop(void)
         gEeprom.RX_VFO = s_rx_channel_lock_old_rx_vfo & 1u;
         gRxVfo = &gEeprom.VfoInfo[gEeprom.RX_VFO];
         RADIO_SetupRegisters(false);
-        MSG_RF_EnsureFskIrqMask();
     }
     gDualWatchActive = s_rx_channel_lock_old_dw_active;
     gScheduleDualWatch = false;
@@ -347,7 +341,6 @@ static void MSG_RF_RxChannelLockTick(void)
         gEeprom.RX_VFO = s_rx_channel_lock_vfo & 1u;
         gRxVfo = &gEeprom.VfoInfo[gEeprom.RX_VFO];
         RADIO_SetupRegisters(false);
-        MSG_RF_EnsureFskIrqMask();
     }
     gScheduleDualWatch = false;
     gDualWatchCountdown_10ms = s_rx_channel_lock_ticks ? s_rx_channel_lock_ticks : 1u;
@@ -394,7 +387,6 @@ static void MSG_RF_MuteFskAudio(void)
      * path.  GPIO audio-path on/off produced audible "kist" clicks on the
      * UV-K1.  Saving/restoring REG_48 keeps the normal voice path structure
      * intact and avoids fighting the existing RX/TX speaker logic. */
-    s_fsk_audio_prev_speaker = gEnableSpeaker;
     s_fsk_audio_prev_reg48 = BK4819_ReadRegister(BK4819_REG_48);
     BK4819_WriteRegister(BK4819_REG_48, (uint16_t)(s_fsk_audio_prev_reg48 & ~(0x3Fu << 4)));
     s_fsk_audio_muted = true;
@@ -405,7 +397,6 @@ static void MSG_RF_RestoreFskAudioMute(void)
     if (!s_fsk_audio_muted) return;
     s_fsk_audio_muted = false;
     BK4819_WriteRegister(BK4819_REG_48, s_fsk_audio_prev_reg48);
-    gEnableSpeaker = s_fsk_audio_prev_speaker;
 }
 
 static bool MSG_RF_LedBlinkAllowed(void)
@@ -584,9 +575,6 @@ static void MSG_RF_RestoreVoiceSnapshot(void)
     BK4819_WriteRegister(BK4819_REG_47, s_voice_snapshot.r47); /* must remain normal AF */
     BK4819_WriteRegister(BK4819_REG_30, s_voice_snapshot.r30);
     BK4819_WriteRegister(BK4819_REG_3F, s_voice_snapshot.r3f);
-    if (gMessengerConfig.msg_rx && gCurrentFunction != FUNCTION_TRANSMIT && !MSG_RF_ChannelBusy()) {
-        MSG_RF_EnsureFskIrqMask();
-    }
 }
 
 static void MSG_RF_DisarmSidecarNoRadioReset(void)
@@ -606,8 +594,7 @@ static void MSG_RF_KeepFskRxEnabled(void)
 #ifdef ENABLE_AIRCOPY
     /* Keep the proven working RX state: REG_59<12> FSK RX enable stays set.
      * Clear RX FIFO with a one-shot pulse, then immediately return to 0x3068.
-     * Do not touch REG_47 or normal AF output. */
-    MSG_RF_EnsureFskIrqMask();
+     * Do not refresh REG_3F here; IRQ mask is written only when FSK RX is armed. */
     BK4819_WriteRegister(BK4819_REG_59, MSG_RF_REG59_RX_CLEAR);
     BK4819_WriteRegister(BK4819_REG_59, MSG_RF_REG59_RX_ENABLE);
 #endif
@@ -629,14 +616,62 @@ void MSG_RF_OnRadioSetupRegisters(void)
     s_rx_capture_active = false;
     s_rx_stale_ticks = 0u;
     s_reprime_delay_ticks = 1u;
-    s_safe_keepalive_ticks = MSG_RF_SAFE_KEEPALIVE_RETRY_TICKS;
-    MSG_RF_EnsureFskIrqMask();
 #endif
 }
 
 
 void MSG_RF_Open(void) { MSG_RF_EnsureStoreInitialized(); }
 void MSG_RF_Close(void) {}
+
+
+void MSG_RF_PrepareVoxVoiceTx(void)
+{
+#ifdef ENABLE_AIRCOPY
+    /* VOX-sensitive release path. Do not re-run RADIO_SetupRegisters() here
+     * and do not force AF routing after RADIO_PrepareTX(). VOX has already
+     * detected audio; just release the FSK sidecar so the following stock
+     * RADIO_PrepareTX() call owns the TX microphone/modulation setup. */
+    MSG_RF_RestoreFskAudioMute();
+    MSG_RF_NarrowLockEnd();
+    if (s_sidecar_armed || s_rx_capture_active) {
+        MSG_RF_DisarmSidecarNoRadioReset();
+        BK4819_ResetFSK();
+    }
+    s_post_tx_restore_ticks = 0u;
+    s_rearm_delay_ticks = 0u;
+    s_reprime_delay_ticks = 0u;
+#endif
+}
+
+void MSG_RF_OnVoxModeChanged(bool enabled)
+{
+#ifdef ENABLE_AIRCOPY
+    if (enabled) {
+        /* Entering VOX: completely leave Messenger FSK/data mode and restore
+         * the stock voice/VOX receive path once. Do not re-arm Messenger while
+         * VOX remains enabled. */
+        MSG_RF_RestoreFskAudioMute();
+        MSG_RF_NarrowLockEnd();
+        MSG_RF_DisarmSidecarNoRadioReset();
+        BK4819_ResetFSK();
+        MSG_RF_RestoreVoiceSnapshot();
+        RADIO_SelectVfos();
+        RADIO_SetupRegisters(true);
+        MSG_RF_RestoreVoiceSnapshot();
+        s_post_tx_restore_ticks = 0u;
+        s_rearm_delay_ticks = 0u;
+        s_reprime_delay_ticks = 0u;
+    } else {
+        /* Leaving VOX: allow the normal idle path to arm Messenger again. */
+        s_sidecar_armed = false;
+        s_rx_capture_active = false;
+        s_rx_stale_ticks = 0u;
+        s_reprime_delay_ticks = 2u;
+    }
+#else
+    (void)enabled;
+#endif
+}
 
 void MSG_RF_HardRestoreVoicePath(void)
 {
@@ -663,21 +698,18 @@ static void MSG_RF_ArmSidecarIfIdle(void)
 {
 #ifdef ENABLE_AIRCOPY
     if (!gMessengerConfig.msg_rx) return;
+#ifdef ENABLE_VOX
+    /* VOX mode owns the microphone/voice RX path. While VOX is ON, do not arm
+     * the Messenger FSK sidecar at all; message RX may be unavailable in VOX
+     * mode by design, but VOX audio remains stock/stable. */
+    if (gEeprom.VOX_SWITCH) return;
+#endif
     if (s_sidecar_armed) {
-        /* If another path (dual-watch, scan, AM/FM retune, voice restore)
-         * touched BK4829 while we still believed the sidecar was armed, do
-         * not just set REG_59.  UV-K5 is robust because it re-applies the FSK
-         * RX path after radio setup.  Do the same here, but only while idle. */
-        if (!MSG_RF_ChannelBusy()) {
-            const uint16_t r3f = BK4819_ReadRegister(BK4819_REG_3F);
-            const uint16_t r59 = BK4819_ReadRegister(BK4819_REG_59);
-            if ((r59 & 0x1000u) == 0u || (r3f & MSG_RF_FSK_IRQ_MASK) != MSG_RF_FSK_IRQ_MASK) {
-                s_sidecar_armed = false;
-            } else {
-                MSG_RF_EnsureFskIrqMask();
-            }
-        }
-        if (s_sidecar_armed) return;
+        /* Minimal sidecar: do not poll/refresh IRQ mask while armed. If
+         * RADIO_SetupRegisters() changes chip state it calls
+         * MSG_RF_OnRadioSetupRegisters(), marks the sidecar stale and schedules
+         * an idle re-arm. */
+        return;
     }
     if (gCurrentFunction == FUNCTION_TRANSMIT) return;
     if (MSG_RF_ChannelBusy()) return;
@@ -718,6 +750,9 @@ static void MSG_RF_RequestControlledReprime(uint8_t delay_ticks)
 static bool MSG_RF_CanControlledReprimeNow(void)
 {
     if (!gMessengerConfig.msg_rx) return false;
+#ifdef ENABLE_VOX
+    if (gEeprom.VOX_SWITCH) return false;
+#endif
     if (gCurrentFunction == FUNCTION_TRANSMIT) return false;
     if (MSG_RF_ChannelBusy()) return false;
     if (s_rx_capture_active || s_rx_stale_ticks) return false;
@@ -731,17 +766,8 @@ static void MSG_RF_DoControlledReprime(void)
 
     if (!s_sidecar_armed) {
         MSG_RF_ArmSidecarIfIdle();
-    } else {
-        /* Light re-prime: preserve REG_47/voice path, keep FSK RX enabled,
-         * refresh FSK IRQ mask and FIFO only while idle. */
-        s_rx_words = 0;
-        gFSKWriteIndex = 0;
-        s_rx_capture_active = false;
-        s_rx_stale_ticks = 0;
-        MSG_RF_EnsureFskIrqMask();
-        MSG_RF_KeepFskRxEnabled();
-        s_sidecar_count++;
     }
+    /* Event-based re-arm only; no light keepalive/re-prime while already armed. */
     s_idle_reprime_ticks = MSG_RF_IDLE_REPRIME_TICKS;
 #endif
 }
@@ -789,9 +815,6 @@ void MSG_RF_Tick10ms(void)
     /* Keep FSK IRQ enables present before the next burst arrives, but avoid
      * writing while a carrier is already active. This targets the observed
      * 3F:0C0C -> no FIFO/decode vs 3F:3002 -> FIFO/decode condition. */
-    if (gMessengerConfig.msg_rx && gCurrentFunction != FUNCTION_TRANSMIT && !MSG_RF_ChannelBusy()) {
-        MSG_RF_EnsureFskIrqMask();
-    }
 #endif
 
     if (s_post_tx_restore_ticks && --s_post_tx_restore_ticks == 0) {
@@ -830,36 +853,12 @@ void MSG_RF_Tick10ms(void)
         MSG_RF_FinishRxAttempt(false);
     }
 
-    /* RF29: TX-side controlled re-prime only.  RF27's aggressive 8-second
-     * idle keepalive could collide with incoming FSK.  0.5.16 brings back a
-     * much slower and strictly gated safe keepalive so Messenger/Range packet
-     * handling does not passivate after sitting idle, without touching voice
-     * RX or active FSK captures. */
+    /* Event-based re-prime only. No periodic 10 ms IRQ refresh or keepalive. */
     if (s_reprime_delay_ticks > 0u) {
         --s_reprime_delay_ticks;
         if (s_reprime_delay_ticks == 0u) {
             MSG_RF_DoControlledReprime();
-            s_safe_keepalive_ticks = MSG_RF_SAFE_KEEPALIVE_TICKS;
         }
-    }
-
-    if (gMessengerConfig.msg_rx) {
-        if (s_safe_keepalive_ticks == 0u) {
-            s_safe_keepalive_ticks = MSG_RF_SAFE_KEEPALIVE_TICKS;
-        } else {
-            --s_safe_keepalive_ticks;
-        }
-
-        if (s_safe_keepalive_ticks == 0u && s_reprime_delay_ticks == 0u) {
-            if (MSG_RF_CanControlledReprimeNow()) {
-                MSG_RF_DoControlledReprime();
-                s_safe_keepalive_ticks = MSG_RF_SAFE_KEEPALIVE_TICKS;
-            } else {
-                s_safe_keepalive_ticks = MSG_RF_SAFE_KEEPALIVE_RETRY_TICKS;
-            }
-        }
-    } else {
-        s_safe_keepalive_ticks = 0u;
     }
 
 #ifdef ENABLE_AIRCOPY
@@ -976,15 +975,9 @@ void MSG_RF_Tick10ms(void)
         /* RF11: do the one-time RX/FSK prime at boot/global runtime, not only
          * after Messenger UI is opened or after the first sacrificial FSK burst. */
         MSG_RF_ArmSidecarIfIdle();
-        MSG_RF_EnsureFskIrqMask();
         s_idle_reprime_ticks = 0u;
         s_boot_prime_done = true;
-        /* 0.5.15: the first Range Check after a cold boot could TX the PING
-         * but miss the PONG until Messenger had performed a message/ACK cycle.
-         * Do one follow-up safe FSK RX re-prime shortly after boot prime, while
-         * idle, to put the passive PING/PONG listener in the same ready state
-         * Messenger reaches after its first TX/ACK exchange. */
-        MSG_RF_RequestControlledReprime(20u);
+        /* No follow-up boot keepalive/re-prime; delayed re-arm is TX-only. */
     } else if (s_rearm_delay_ticks) {
         --s_rearm_delay_ticks;
     } else {
@@ -1116,7 +1109,6 @@ static bool MSG_RF_SendPacketFrameRepeatedOnVfo(const uint8_t *packet, bool coun
         gEeprom.TX_VFO = tx_vfo;
         RADIO_SelectVfos();
         RADIO_SetupRegisters(true);
-        MSG_RF_EnsureFskIrqMask();
     }
 
     ok = MSG_RF_SendPacketFrameRepeated(packet, count_tx, ignore_self_rx, repeats);
@@ -1125,7 +1117,6 @@ static bool MSG_RF_SendPacketFrameRepeatedOnVfo(const uint8_t *packet, bool coun
         gEeprom.TX_VFO = old_tx_vfo;
         RADIO_SelectVfos();
         RADIO_SetupRegisters(true);
-        MSG_RF_EnsureFskIrqMask();
     }
 
     return ok;
@@ -1157,13 +1148,11 @@ static void MSG_RF_RangeTxWarmupCurrentVfo(void)
     s_rx_stale_ticks = 0u;
     s_rx_words = 0u;
     s_reprime_delay_ticks = 0u;
-    s_safe_keepalive_ticks = MSG_RF_SAFE_KEEPALIVE_TICKS;
     gFSKWriteIndex = 0u;
     memset(g_FSK_Buffer, 0, sizeof(g_FSK_Buffer));
 
     RADIO_SelectVfos();
     RADIO_SetupRegisters(true);
-    MSG_RF_EnsureFskIrqMask();
     MSG_RF_NarrowLockBegin();
     RADIO_SetTxParameters();
     BK4819_SetupAircopy();
@@ -1184,7 +1173,6 @@ static bool MSG_RF_SendRangePacketFrameRepeatedOnVfo(const uint8_t *packet, bool
         gEeprom.TX_VFO = tx_vfo;
         RADIO_SelectVfos();
         RADIO_SetupRegisters(true);
-        MSG_RF_EnsureFskIrqMask();
     }
 
     MSG_RF_RangeTxWarmupCurrentVfo();
@@ -1194,7 +1182,6 @@ static bool MSG_RF_SendRangePacketFrameRepeatedOnVfo(const uint8_t *packet, bool
         gEeprom.TX_VFO = old_tx_vfo;
         RADIO_SelectVfos();
         RADIO_SetupRegisters(true);
-        MSG_RF_EnsureFskIrqMask();
     }
 
     return ok;
@@ -1240,7 +1227,8 @@ static bool parse_aircopy_native_packet(MSG_Packet_t *pkt)
             bytes[2] != MSG_PKT_MAGIC2 || bytes[3] != MSG_PKT_MAGIC3) continue;
         if (bytes[4] != MSG_PKT_VERSION) continue;
         if (bytes[5] != MSG_PKT_TYPE_TEXT && bytes[5] != MSG_PKT_TYPE_ACK &&
-            bytes[5] != MSG_PKT_TYPE_PING && bytes[5] != MSG_PKT_TYPE_PONG) continue;
+            bytes[5] != MSG_PKT_TYPE_PING && bytes[5] != MSG_PKT_TYPE_PONG &&
+            bytes[5] != MSG_PKT_TYPE_WAKE) continue;
         if (bytes[27] > MSG_RF_TEXT_LIMIT) continue;
 
         const uint16_t got = (uint16_t)bytes[MSG_PKT_WIRE_LEN - 2u] |
@@ -1261,7 +1249,8 @@ static bool parse_aircopy_native_packet(MSG_Packet_t *pkt)
         pkt->payload_len = bytes[27];
         memcpy(pkt->payload, &bytes[28], pkt->payload_len);
         pkt->payload[pkt->payload_len] = 0;
-        if (pkt->type == MSG_PKT_TYPE_ACK || pkt->type == MSG_PKT_TYPE_PING || pkt->type == MSG_PKT_TYPE_PONG) return true;
+        if (pkt->type == MSG_PKT_TYPE_ACK || pkt->type == MSG_PKT_TYPE_PING ||
+            pkt->type == MSG_PKT_TYPE_PONG || pkt->type == MSG_PKT_TYPE_WAKE) return true;
         return pkt->payload[0] != 0;
     }
 
@@ -1415,6 +1404,15 @@ static void try_store_rx_packet(void)
 #ifdef ENABLE_AIRCOPY
     MSG_Packet_t pkt;
     if (!parse_aircopy_native_packet(&pkt)) return;
+
+    if (pkt.type == MSG_PKT_TYPE_WAKE) {
+        /* Invisible wake/pre-sync frame for Power Save + Dual Watch.
+         * Do not show in HEARD, do not beep, do not ACK; just finish the FSK
+         * attempt so the following real TEXT frame has a better chance of
+         * being captured after the radio wakes/returns to the TX VFO. */
+        MSG_RF_FinishRxAttempt(false);
+        return;
+    }
 
     if (pkt.type == MSG_PKT_TYPE_PING) {
         MSG_HeardUpdate(pkt.from, MSG_RF_CurrentRSSIdBm(), MSG_PKT_TYPE_PING);
@@ -1584,7 +1582,6 @@ static void MSG_RF_RangeForceRxReprime(void)
     BK4819_WriteRegister(BK4819_REG_59, MSG_RF_REG59_RX_ENABLE);
 
     s_reprime_delay_ticks = 0u;
-    s_safe_keepalive_ticks = MSG_RF_SAFE_KEEPALIVE_TICKS;
     s_sidecar_count++;
 #endif
 }
@@ -1629,6 +1626,27 @@ bool MSG_RF_SendRangePing(void)
 #endif
 }
 
+static void MSG_RF_SendInitialWakeFrame(uint16_t id)
+{
+#ifdef ENABLE_AIRCOPY
+    uint8_t wake[MSG_PKT_WIRE_LEN];
+
+    if (MSG_PACKET_BuildWake(wake, sizeof(wake), id, gMessengerConfig.callsign) != MSG_PKT_WIRE_LEN) {
+        return;
+    }
+
+    /* Send a non-message frame once before the first TEXT attempt only.
+     * Retry frames remain plain TEXT, preserving ACK/retry and duplicate
+     * filtering behavior.  The frame is intentionally invisible to Inbox/HEARD
+     * and exists only to wake Power Save / Dual Watch receivers. */
+    if (MSG_RF_SendPacketFrame(wake, false, true)) {
+        SYSTEM_DelayMs(180u);
+    }
+#else
+    (void)id;
+#endif
+}
+
 bool MSG_RF_SendText(const char *text)
 {
     if (gSurvivalMode) return false;
@@ -1644,6 +1662,8 @@ bool MSG_RF_SendText(const char *text)
     if (MSG_PACKET_BuildText(packet, sizeof(packet), id, gMessengerConfig.callsign, rf_text, ttl) != MSG_PKT_WIRE_LEN) {
         return false;
     }
+
+    MSG_RF_SendInitialWakeFrame(id);
 
     if (!MSG_RF_SendPacketFrame(packet, true, true)) return false;
 
