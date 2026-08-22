@@ -189,6 +189,9 @@ static void MAIN_CallToneStopPreview(void)
      * Its Messenger hook then performs the existing controlled FSK re-arm. */
     RADIO_SelectVfos();
     RADIO_SetupRegisters(true);
+#ifdef ENABLE_MESSENGER
+    MSG_RF_SetLocalTonePreviewActive(false);
+#endif
 }
 
 void MAIN_PlayCallTonePreview(uint8_t tone)
@@ -201,6 +204,7 @@ void MAIN_PlayCallTonePreview(uint8_t tone)
     if (!s_call_preview_active) {
 #ifdef ENABLE_MESSENGER
         MSG_RF_HardRestoreVoicePath();
+        MSG_RF_SetLocalTonePreviewActive(true);
 #endif
         BK4819_EnterTxMute();
         BK4819_SetAF(BK4819_AF_BEEP);

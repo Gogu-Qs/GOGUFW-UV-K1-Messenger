@@ -98,6 +98,7 @@ static bool s_sidecar_armed;
 static bool s_rx_capture_active;
 static bool s_ignore_next_self_rx;
 static bool s_fsk_audio_muted;
+static bool s_local_tone_preview_active;
 static uint16_t s_fsk_audio_prev_reg48;
 static uint16_t s_unread_led_ticks;
 static bool s_unread_led_owner;
@@ -206,7 +207,7 @@ static bool MSG_RF_AutoTxBusy(void)
     /* UV-K5 parity: automatic ACK/PONG/retry must not collide with ordinary
      * channel activity.  Manual SEND still uses MSG_RF_FskBusy(), but all
      * automatic replies defer while squelch/carrier is open. */
-    return MSG_RF_FskBusy() || MSG_RF_ChannelBusy();
+    return s_local_tone_preview_active || MSG_RF_FskBusy() || MSG_RF_ChannelBusy();
 }
 
 static void MSG_RF_EnsureStoreInitialized(void)
@@ -469,6 +470,7 @@ static void MSG_RF_RequestDeferredBeep(void)
 static bool MSG_RF_CanPlayNotifyBeep(void)
 {
     if (!s_deferred_beep_pending) return false;
+    if (s_local_tone_preview_active) return false;
     if (gCurrentFunction == FUNCTION_TRANSMIT) return false;
     if (MSG_RF_ChannelBusy()) return false;
     if (s_rx_capture_active || s_rx_stale_ticks) return false;
@@ -494,6 +496,7 @@ static void MSG_RF_RequestAckSuccessBeep(void)
 static bool MSG_RF_CanPlayAckSuccessBeep(void)
 {
     if (!s_ack_success_beep_pending) return false;
+    if (s_local_tone_preview_active) return false;
     if (gCurrentFunction == FUNCTION_TRANSMIT) return false;
     if (MSG_RF_ChannelBusy()) return false;
     if (s_rx_capture_active || s_rx_stale_ticks) return false;
@@ -696,9 +699,18 @@ void MSG_RF_HardRestoreVoicePath(void)
     s_restore_count++;
 }
 
+void MSG_RF_SetLocalTonePreviewActive(bool active)
+{
+    /* A local-only melody temporarily owns BK4829 REG_30/70/71.  Keep the
+     * existing event-based FSK re-arm request pending until the melody ends;
+     * do not continuously touch any RF register from this guard. */
+    s_local_tone_preview_active = active;
+}
+
 static void MSG_RF_ArmSidecarIfIdle(void)
 {
 #ifdef ENABLE_AIRCOPY
+    if (s_local_tone_preview_active) return;
     if (!gMessengerConfig.msg_rx) return;
 #ifdef ENABLE_VOX
     /* VOX mode owns the microphone/voice RX path. While VOX is ON, do not arm
@@ -751,6 +763,7 @@ static void MSG_RF_RequestControlledReprime(uint8_t delay_ticks)
 
 static bool MSG_RF_CanControlledReprimeNow(void)
 {
+    if (s_local_tone_preview_active) return false;
     if (!gMessengerConfig.msg_rx) return false;
 #ifdef ENABLE_VOX
     if (gEeprom.VOX_SWITCH) return false;
