@@ -1,103 +1,84 @@
-# GOGUFW Messenger 1.2.0
+# GOGUFW 1.2.0
 
-GOGUFW is a messaging-focused firmware for the Quansheng UV-K1 / UV-K5 V3 hardware using the PY32F071 MCU and BK4829 RF IC.
+GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3, built on the F4HWN Fusion firmware and focused on radio-to-radio messaging and practical everyday tools.
 
-The project is derived from F4HWN Fusion and currently incorporates selected changes through F4HWN 5.9.0. It is not a clean upstream tree: Messenger reliability and compatibility with existing GOGUFW radios take priority over broad feature merges.
+Version **1.2.0** combines selected F4HWN 5.9.0 improvements with GOGUFW's Messenger, HEARD, Range Check, CALLTX and FM radio additions.
 
-> `1.2.0` is the current stable release. The preserved pre-development baseline is tagged `v1.1.2-known-good`.
+[Download the latest release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/latest)
 
-## Main features
+## What GOGUFW adds
 
-- On-radio text Messenger with Inbox, Compose, Sent, Drafts, Reply and Resend
-- Screen-independent FSK reception and ACK processing
-- First-attempt wake preamble followed by compatibility-safe TEXT packets
-- ACK queue, retry handling and delivery-source tracking
-- HEARD station list with RSSI and packet type
-- Range Check using PING/PONG, callsign, RSSI and voltage reporting
-- Assignable Messenger, HEARD and CALLTX shortcuts
-- FM broadcast station names and RSSI display
-- Survival Mode and F4HWN Fusion feature set
-- GOGUFW-aware CHIRP support
+- **Messenger:** compose and receive text messages directly on the radio, with Inbox, Sent, Drafts, Reply, Resend and delivery acknowledgements.
+- **HEARD:** view recently heard Messenger stations together with callsign, signal level, packet type and age.
+- **Range Check:** send a PING and receive the other radio's callsign, signal level and battery voltage.
+- **CALLTX:** transmit one of five selectable call melodies, with volume selection and tone preview in the menu.
+- **FM radio tools:** save station names, rename or delete memories, and follow the live FM signal-strength meter.
+- **Custom shortcuts:** open Messenger and HEARD quickly or transmit CALLTX from programmable side keys.
+- **GOGUFW CHIRP module:** configure supported radio settings, custom key actions and FM station names from CHIRP.
 
-## Messenger architecture
+The normal F4HWN Fusion radio features remain available alongside these additions.
 
-Messenger runs as an FSK sidecar to the normal analog radio state machine. Normal voice RX, squelch and audio routing remain authoritative.
+## Shortcuts
 
-Important compatibility rules:
+| Function | Shortcut | What it does |
+| --- | --- | --- |
+| HEARD / Range Check | **F + 7** | Opens the HEARD screen. Press **MENU** there to start a Range Check PING. |
+| CALLTX | **F + 9** | Transmits the selected call melody. |
+| Messenger | Assign **MESSENGER** to a programmable side-key action | Opens Messenger. Pressing the same assigned key on the Messenger home screen closes it. |
+| HEARD | Assign **HEARD** to a programmable side-key action | Opens HEARD / Range Check. Pressing the same assigned key again closes it. |
+| CALLTX | Assign **CALLTX** to a programmable side-key action | Transmits the selected call melody directly. |
 
-- FSK interrupts are armed only when Messenger RX is actually armed.
-- There is no periodic 10 ms IRQ-mask rewrite or continuous FSK keepalive.
-- Normal Messenger TX uses one invisible wake frame before the first TEXT attempt.
-- Retries send only the original TEXT packet.
-- ACK processing is independent of the currently displayed screen.
-- VOX disables the Messenger FSK sidecar while voice operation owns the audio path.
-- Range Check shares the RF transport but retains its own timing and restore behavior.
+The programmable actions can be assigned to the short or long press of the side keys from the radio menu or the included CHIRP module.
 
-Packet framing, message IDs, callsign handling, ACK format, retry behavior and duplicate detection are compatibility-sensitive.
+## Screens
 
-## Hardware
+### Messenger
 
-- Quansheng UV-K1
-- Quansheng UV-K5 V3 variants using PY32F071 and BK4829
+| Messenger home | Compose a message |
+| --- | --- |
+| ![Messenger home screen](uv-k5-screenshot17.png) | ![Messenger compose screen](uv-k5-screenshot19.png) |
 
-This firmware is not intended for unrelated BK4819-based hardware.
+### HEARD and Range Check
 
-## Build on macOS
+| Recently heard stations | Range Check result |
+| --- | --- |
+| ![HEARD station list](heard.png) | ![Range Check result](rangecheck.png) |
 
-Requirements:
+### FM radio
 
-- CMake 3.22 or newer
-- Ninja
-- ARM GNU Embedded toolchain (`arm-none-eabi-gcc`)
+| Live FM signal meter | Named FM station memory |
+| --- | --- |
+| ![FM radio signal meter](radio_vfo.png) | ![Named FM station memory](radio_name.png) |
 
-Clean configure and build:
+### Programmable key actions
 
-```bash
-cmake --fresh --preset Fusion
-cmake --build --preset Fusion --clean-first
-```
+![Selecting a GOGUFW side-key action](f1short.png)
 
-Normal incremental build:
+## Download and compatibility
+
+The current stable release is **GOGUFW 1.2.0**. Its release page includes:
+
+- the Fusion firmware `.bin` file;
+- the matching `Gogufw_1.2.0_chirp_module.py` CHIRP module.
+
+GOGUFW is intended for Quansheng UV-K1 / UV-K5 V3 variants using the **PY32F071 MCU and BK4829 RF IC**. It is not intended for unrelated BK4819-based radios.
+
+[Open the GOGUFW 1.2.0 release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v1.2.0)
+
+## Build from source
+
+The Fusion preset requires CMake, Ninja and the ARM GNU Embedded toolchain (`arm-none-eabi-gcc`):
 
 ```bash
 cmake --preset Fusion
 cmake --build --preset Fusion
 ```
 
-Outputs are generated under `build/Fusion/`:
+For setup instructions, see [BUILD_VSCODE_MAC.md](BUILD_VSCODE_MAC.md) or [BUILD_WITH_VSCODE.md](BUILD_WITH_VSCODE.md).
 
-- `gogufw.bin`
-- `gogufw.hex`
-- `gogufw.elf`
-- `gogufw.map`
+## Credits
 
-See [BUILD_VSCODE_MAC.md](BUILD_VSCODE_MAC.md) for the native VS Code workflow and [BUILD_WITH_VSCODE.md](BUILD_WITH_VSCODE.md) for the Docker workflow.
-
-## Memory limits
-
-The firmware operates close to the PY32F071 memory limits. Every meaningful change should be followed by a clean Fusion build and review of both FLASH and RAM usage. Avoid large static buffers and speculative RF state machines.
-
-## Persistent storage
-
-Messenger configuration uses the dedicated PY25Q16 external-flash sector at `0x012000`. FM station names use `0x013000`, exposed to CHIRP through the compatibility alias at `0x00D000`.
-
-Do not change external-flash offsets or persisted structure layouts without deriving and checking the complete memory map.
-
-## Development policy
-
-The repository-specific reliability rules and regression checklist are documented in [AGENTS.md](AGENTS.md). RF, power-save, dual-watch, scanning, VOX, EEPROM and TX-to-RX changes require explicit Messenger regression review.
-
-## Screens
-
-![Messenger compose screen](uv-k5-screenshot17.png)
-
-![HEARD station list](heard.png)
-
-![Range Check](rangecheck.png)
-
-## Attribution
-
-GOGUFW is based on the F4HWN / UV-K5 custom firmware project and retains the original project attribution and license.
+GOGUFW is based on the F4HWN / UV-K5 custom firmware project and retains the original project attribution and license. Thanks to the F4HWN contributors for the firmware foundation on which these additions were built.
 
 ## Disclaimer
 
