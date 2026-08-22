@@ -149,9 +149,11 @@ static uint16_t MAIN_ScaleToneFreq(uint16_t freq)
 
 static uint8_t MAIN_GetCallToneTxGain(void)
 {
-    /* Use the established BK4829 transmit-tone gain.  The previous gain of
-     * 96 plus a temporary REG_40 deviation lift could overdrive the receiver
-     * and make its squelch cycle as if the RF carrier were dropping. */
+    /* Adjust only the BK4829 tone-generator amplitude.  Both values are used
+     * by existing stable tone paths; do not touch REG_40 deviation or PA power. */
+#ifdef ENABLE_MESSENGER
+    if (gMessengerConfig.call_vol == 0u) return 32u;
+#endif
     return 66;
 }
 

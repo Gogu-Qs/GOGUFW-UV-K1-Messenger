@@ -49,7 +49,7 @@ typedef struct {
     // Added at the END only. Do not insert new fields before next_msg_id/callsign/drafts;
     // older builds store these fields by raw struct offset.
     uint8_t call_tone;   // 0..4, CllTon menu
-    uint8_t call_vol;    // 0=LOW, 1=HIGH, CllVol REG40 deviation trim
+    uint8_t call_vol;    // 0=LOW, 1=HIGH, CALLTX tone-generator gain
     uint8_t rng_rsp;     // 0=OFF, 1=ON automatic Range Check PONG response
 } MSG_Config_t;
 
