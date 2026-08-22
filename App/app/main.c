@@ -128,19 +128,36 @@ typedef struct {
     uint8_t  off_10ms;
 } CallToneNote_t;
 
-// Five clearly different PMR-style melodies.  Total length is ~3.3-3.8 seconds.
-static const CallToneNote_t gCallToneMelodies[5][16] = {
-    // TONE1: classic dili-dili repeated
-    { {1180,7,2},{1580,7,3},{1180,7,2},{1580,7,5}, {1180,7,2},{1580,7,3},{1180,7,2},{1580,7,5}, {1180,7,2},{1580,7,3},{1180,7,2},{1580,7,5}, {0,0,0},{0,0,0},{0,0,0},{0,0,0} },
-    // TONE2: fast double-beep chirp pattern
-    { {1800,4,1},{1800,4,4},{1350,4,1},{1350,4,7}, {1800,4,1},{1800,4,4},{1350,4,1},{1350,4,7}, {1800,4,1},{1800,4,4},{1350,4,1},{1350,4,7}, {1800,4,1},{1800,4,4},{1350,4,1},{1350,4,7} },
-    // TONE3: rising three/four-note melody
-    { {820,8,2},{1080,8,2},{1380,8,2},{1760,12,6}, {820,8,2},{1080,8,2},{1380,8,2},{1760,12,6}, {820,8,2},{1080,8,2},{1380,8,2},{1760,12,6}, {0,0,0},{0,0,0},{0,0,0},{0,0,0} },
-    // TONE4: falling-answer melody
-    { {1850,9,2},{1450,7,2},{1050,9,5},{1450,7,2}, {1850,9,2},{1450,7,2},{1050,9,5},{1450,7,2}, {1850,9,2},{1450,7,2},{1050,9,5},{1450,7,2}, {0,0,0},{0,0,0},{0,0,0},{0,0,0} },
-    // TONE5: urgent long-short-long pattern
-    { {980,16,3},{1650,5,2},{1650,5,8}, {980,16,3},{1650,5,2},{1650,5,8}, {980,16,3},{1650,5,2},{1650,5,8}, {980,16,3},{1650,5,2},{1650,5,8}, {0,0,0},{0,0,0},{0,0,0},{0,0,0} },
+typedef struct {
+    uint8_t note_offset;
+    uint8_t note_count;
+    uint8_t repeat_count;
+} CallToneMelody_t;
+
+/* Store each phrase once; the previous table duplicated the same notes three
+ * or four times per tone.  Offsets avoid pointers and therefore consume no
+ * writable relocation data in RAM. */
+static const CallToneNote_t gCallToneNotes[] = {
+    {1180,7,2}, {1580,7,3}, {1180,7,2}, {1580,7,5},
+    {1800,4,1}, {1800,4,4}, {1350,4,1}, {1350,4,7},
+    { 820,8,2}, {1080,8,2}, {1380,8,2}, {1760,12,6},
+    {1850,9,2}, {1450,7,2}, {1050,9,5}, {1450,7,2},
+    { 980,16,3}, {1650,5,2}, {1650,5,8},
 };
+
+static const CallToneMelody_t gCallToneMelodies[] = {
+    { 0, 4, 3},
+    { 4, 4, 4},
+    { 8, 4, 3},
+    {12, 4, 3},
+    {16, 3, 4},
+};
+
+static const CallToneNote_t *MAIN_GetCallToneNote(const CallToneMelody_t *melody, uint8_t sequence)
+{
+    while (sequence >= melody->note_count) sequence -= melody->note_count;
+    return &gCallToneNotes[melody->note_offset + sequence];
+}
 
 static uint16_t MAIN_ScaleToneFreq(uint16_t freq)
 {
@@ -250,6 +267,8 @@ KEY_Code_t MAIN_PlayCallTonePreview(uint8_t tone)
 
     uint16_t elapsed_ms = 0u;
     uint8_t note = 0u;
+    const CallToneMelody_t *melody = &gCallToneMelodies[tone];
+    const uint8_t total_notes = (uint8_t)(melody->note_count * melody->repeat_count);
     KEY_Code_t interrupted_by = KEY_INVALID;
     CallTonePreviewKeys_t keys = {
         .released = false,
@@ -257,11 +276,8 @@ KEY_Code_t MAIN_PlayCallTonePreview(uint8_t tone)
         .stable_reads = 0u,
     };
     while (elapsed_ms < 1200u) {
-        if (note >= 16u || gCallToneMelodies[tone][note].hz == 0u) {
-            note = 0u;
-            if (gCallToneMelodies[tone][note].hz == 0u) break;
-        }
-        const CallToneNote_t *n = &gCallToneMelodies[tone][note];
+        if (note >= total_notes) note = 0u;
+        const CallToneNote_t *n = MAIN_GetCallToneNote(melody, note);
 
         BK4819_WriteRegister(BK4819_REG_71, MAIN_ScaleToneFreq(n->hz));
         BK4819_ExitTxMute();
@@ -361,11 +377,12 @@ static void MAIN_SendPmrCallTone(void)
      * 1.5-2.0s depending on the selected tone, so repeat the melody until the
      * requested call-tone duration is reached. */
     uint16_t elapsed = 0;
+    const CallToneMelody_t *melody = &gCallToneMelodies[tone];
+    const uint8_t total_notes = (uint8_t)(melody->note_count * melody->repeat_count);
     while (elapsed < 3000u) {
         bool played_any = false;
-        for (uint8_t i = 0; i < 16u && elapsed < 3000u; ++i) {
-            const CallToneNote_t *n = &gCallToneMelodies[tone][i];
-            if (n->hz == 0) break;
+        for (uint8_t i = 0; i < total_notes && elapsed < 3000u; ++i) {
+            const CallToneNote_t *n = MAIN_GetCallToneNote(melody, i);
             MAIN_SendCallToneNote(n->hz, n->on_10ms, n->off_10ms);
             elapsed += (uint16_t)((uint16_t)n->on_10ms + (uint16_t)n->off_10ms) * 10u;
             played_any = true;
