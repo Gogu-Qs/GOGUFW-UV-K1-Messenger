@@ -168,10 +168,66 @@ static void MAIN_SetQuietLocalMonitor(void)
         ( 2u << 0));       /* AF DAC gain */
 }
 
-void MAIN_PlayCallTonePreview(uint8_t tone)
+typedef struct {
+    bool released;
+    KEY_Code_t candidate;
+    uint8_t stable_reads;
+} CallTonePreviewKeys_t;
+
+static KEY_Code_t MAIN_CallTonePreviewDelay(uint16_t delay_ms, CallTonePreviewKeys_t *keys)
+{
+    while (delay_ms > 0u) {
+        const uint16_t slice_ms = delay_ms > 10u ? 10u : delay_ms;
+        SYSTEM_DelayMs(slice_ms);
+        delay_ms -= slice_ms;
+
+        const KEY_Code_t key = KEYBOARD_Poll();
+        if (!keys->released) {
+            if (key == KEY_INVALID) {
+                if (++keys->stable_reads >= 2u) {
+                    keys->released = true;
+                    keys->stable_reads = 0u;
+                }
+            } else {
+                keys->stable_reads = 0u;
+            }
+            continue;
+        }
+
+        if (key != KEY_UP && key != KEY_DOWN &&
+            key != KEY_MENU && key != KEY_EXIT) {
+            keys->candidate = KEY_INVALID;
+            keys->stable_reads = 0u;
+            continue;
+        }
+
+        if (key != keys->candidate) {
+            keys->candidate = key;
+            keys->stable_reads = 1u;
+        } else if (++keys->stable_reads >= 2u) {
+            return key;
+        }
+    }
+
+    return KEY_INVALID;
+}
+
+static void MAIN_CallTonePreviewWaitForRelease(void)
+{
+    uint8_t released_reads = 0u;
+    while (released_reads < 2u) {
+        SYSTEM_DelayMs(10u);
+        if (KEYBOARD_Poll() == KEY_INVALID)
+            ++released_reads;
+        else
+            released_reads = 0u;
+    }
+}
+
+KEY_Code_t MAIN_PlayCallTonePreview(uint8_t tone)
 {
     if (tone > 4u) tone = 0u;
-    if (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx()) return;
+    if (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx()) return KEY_INVALID;
 
 #ifdef ENABLE_MESSENGER
     MSG_RF_HardRestoreVoicePath();
@@ -194,6 +250,12 @@ void MAIN_PlayCallTonePreview(uint8_t tone)
 
     uint16_t elapsed_ms = 0u;
     uint8_t note = 0u;
+    KEY_Code_t interrupted_by = KEY_INVALID;
+    CallTonePreviewKeys_t keys = {
+        .released = false,
+        .candidate = KEY_INVALID,
+        .stable_reads = 0u,
+    };
     while (elapsed_ms < 1200u) {
         if (note >= 16u || gCallToneMelodies[tone][note].hz == 0u) {
             note = 0u;
@@ -201,10 +263,16 @@ void MAIN_PlayCallTonePreview(uint8_t tone)
         }
         const CallToneNote_t *n = &gCallToneMelodies[tone][note];
 
-        BK4819_PlayToneRaw(n->hz, (uint16_t)n->on_10ms * 10u);
-        if (n->off_10ms > 0u) {
-            SYSTEM_DelayMs((uint16_t)n->off_10ms * 10u);
-        }
+        BK4819_WriteRegister(BK4819_REG_71, MAIN_ScaleToneFreq(n->hz));
+        BK4819_ExitTxMute();
+        interrupted_by = MAIN_CallTonePreviewDelay((uint16_t)n->on_10ms * 10u, &keys);
+        BK4819_EnterTxMute();
+        if (interrupted_by != KEY_INVALID) break;
+
+        if (n->off_10ms > 0u)
+            interrupted_by = MAIN_CallTonePreviewDelay((uint16_t)n->off_10ms * 10u, &keys);
+        if (interrupted_by != KEY_INVALID) break;
+
         elapsed_ms += (uint16_t)((uint16_t)n->on_10ms + n->off_10ms) * 10u;
         ++note;
     }
@@ -219,6 +287,15 @@ void MAIN_PlayCallTonePreview(uint8_t tone)
      * its normal controlled sidecar re-arm. */
     RADIO_SelectVfos();
     RADIO_SetupRegisters(true);
+
+    /* MENU/EXIT are handled after returning to the menu.  Consume their
+     * physical release here so the normal key scanner cannot deliver them a
+     * second time.  UP/DOWN immediately starts the next preview, which owns
+     * the still-held key until it is released. */
+    if (interrupted_by == KEY_MENU || interrupted_by == KEY_EXIT)
+        MAIN_CallTonePreviewWaitForRelease();
+
+    return interrupted_by;
 }
 
 void MAIN_CancelCallTonePreview(void)
