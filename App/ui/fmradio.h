@@ -19,7 +19,7 @@
 
 #ifdef ENABLE_FMRADIO
     void UI_DisplayFM(void);
+    void UI_UpdateFMRssiBar(void);
 #endif
 
 #endif
-

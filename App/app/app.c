@@ -35,6 +35,7 @@
 #endif
 #ifdef ENABLE_FMRADIO
     #include "app/fm.h"
+    #include "ui/fmradio.h"
 #endif
 #include "app/generic.h"
 #include "app/main.h"
@@ -1861,7 +1862,7 @@ void APP_TimeSlice500ms(void)
 
 #ifdef ENABLE_FMRADIO
     if (gFmRadioMode && gScreenToDisplay == DISPLAY_FM && FM_UpdateRssiLevel())
-        gUpdateDisplay = true;
+        UI_UpdateFMRssiBar();
 #endif
 
 #ifdef ENABLE_FEAT_F4HWN_RX_TX_TIMER

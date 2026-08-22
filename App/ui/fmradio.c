@@ -143,6 +143,19 @@ static void FM_UI_DrawRssiBars(void)
     }
 }
 
+void UI_UpdateFMRssiBar(void)
+{
+    if (FM_IsNameEditActive() || FM_IsAutoScanConfirmActive())
+        return;
+
+    /* The meter occupies x=106..124 entirely on framebuffer page 6
+     * (display y=48..55).  Update only that page instead of retransmitting
+     * all seven FM pages whenever the visible RSSI level changes. */
+    memset(&gFrameBuffer[6][106], 0, 19);
+    FM_UI_DrawRssiBars();
+    ST7565_BlitLine(6);
+}
+
 static void FM_UI_DrawEditName(void)
 {
     char buf[20];
