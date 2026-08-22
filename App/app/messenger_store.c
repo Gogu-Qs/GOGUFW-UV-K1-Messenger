@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <string.h>
 #include "app/messenger_store.h"
 #include "app/messenger_packet.h"
@@ -14,31 +15,63 @@ MSG_Config_t gMessengerConfig;
 MSG_InboxMessage_t gMessengerInbox[MSG_INBOX_CAPACITY];
 MSG_OutboxMessage_t gMessengerOutbox[MSG_OUTBOX_CAPACITY];
 
+/* Persistent layout shared with older firmware and the GOGUFW CHIRP module.
+ * Keep this private: only active settings stay resident in RAM. */
+typedef struct __attribute__((packed)) {
+    uint8_t magic;
+    uint8_t version;
+    uint8_t msg_rx;
+    uint8_t callsign_tx;
+    uint8_t msg_ack;
+    uint8_t msg_hop;
+    uint8_t msg_beep;
+    uint8_t msg_led;
+    uint8_t msg_debug;
+    uint8_t alignment_pad;
+    uint16_t next_msg_id;
+    char callsign[MSG_CALLSIGN_LEN + 1];
+    char drafts[MSG_DRAFT_CAPACITY][MSG_TEXT_LEN + 1];
+    uint8_t call_tone;
+    uint8_t call_vol;
+    uint8_t rng_rsp;
+} MSG_ConfigFlash_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t magic;
+    uint8_t version;
+    uint8_t msg_rx;
+    uint8_t callsign_tx;
+    uint8_t msg_ack;
+    uint8_t msg_hop;
+    uint8_t msg_beep;
+    uint8_t msg_led;
+    uint8_t msg_debug;
+    uint8_t alignment_pad;
+    uint16_t next_msg_id;
+    char callsign[MSG_CALLSIGN_LEN + 1];
+} MSG_ConfigPrefix_t;
+
+_Static_assert(sizeof(MSG_ConfigFlash_t) == 320u, "Messenger flash layout changed");
+_Static_assert(sizeof(MSG_ConfigPrefix_t) == 21u, "Messenger config prefix changed");
+_Static_assert(offsetof(MSG_ConfigFlash_t, next_msg_id) == 10u, "next_msg_id offset changed");
+_Static_assert(offsetof(MSG_ConfigFlash_t, callsign) == 12u, "callsign offset changed");
+_Static_assert(offsetof(MSG_ConfigFlash_t, drafts) == 21u, "draft offset changed");
+_Static_assert(offsetof(MSG_ConfigFlash_t, call_tone) == 317u, "call_tone offset changed");
+_Static_assert(offsetof(MSG_ConfigFlash_t, call_vol) == 318u, "call_vol offset changed");
+_Static_assert(offsetof(MSG_ConfigFlash_t, rng_rsp) == 319u, "rng_rsp offset changed");
+
 static void MSG_STORE_DefaultConfig(void)
 {
     memset(&gMessengerConfig, 0, sizeof(gMessengerConfig));
-    gMessengerConfig.magic = MSG_CFG_MAGIC;
-    gMessengerConfig.version = MSG_CFG_VERSION;
     gMessengerConfig.msg_rx = 1;
-    gMessengerConfig.callsign_tx = 1;
     gMessengerConfig.msg_ack = 0;
-    gMessengerConfig.msg_hop = 0;
     gMessengerConfig.msg_beep = 1;
     gMessengerConfig.msg_led = 1;
-    gMessengerConfig.msg_debug = 0;
     gMessengerConfig.call_tone = 0;
     gMessengerConfig.call_vol = 1;
     gMessengerConfig.rng_rsp = 1;
     gMessengerConfig.next_msg_id = 1;
     strncpy(gMessengerConfig.callsign, "UVK1", MSG_CALLSIGN_EDIT_LEN);
-    strncpy(gMessengerConfig.drafts[0], "OK", MSG_TEXT_LEN);
-    strncpy(gMessengerConfig.drafts[1], "NEED HELP", MSG_TEXT_LEN);
-    strncpy(gMessengerConfig.drafts[2], "WHERE ARE YOU?", MSG_TEXT_LEN);
-    strncpy(gMessengerConfig.drafts[3], "ON THE WAY", MSG_TEXT_LEN);
-    strncpy(gMessengerConfig.drafts[4], "ARRIVED SAFE", MSG_TEXT_LEN);
-    strncpy(gMessengerConfig.drafts[5], "CALL ME", MSG_TEXT_LEN);
-    strncpy(gMessengerConfig.drafts[6], "NEGATIVE", MSG_TEXT_LEN);
-    strncpy(gMessengerConfig.drafts[7], "BATTERY LOW", MSG_TEXT_LEN);
 }
 
 static void flash_read_struct(uint32_t addr, void *dst, uint16_t size)
@@ -67,22 +100,58 @@ static void MSG_STORE_SanitizeCallsign(void)
 
 void MSG_STORE_SaveConfig(void)
 {
+    MSG_ConfigPrefix_t prefix;
+    const uint8_t tail[3] = {
+        gMessengerConfig.call_tone,
+        gMessengerConfig.call_vol,
+        gMessengerConfig.rng_rsp,
+    };
+
     MSG_STORE_SanitizeCallsign();
-    flash_write_struct(MSG_CFG_FLASH_ADDR, &gMessengerConfig, sizeof(gMessengerConfig));
+    memset(&prefix, 0, sizeof(prefix));
+    prefix.magic = MSG_CFG_MAGIC;
+    prefix.version = MSG_CFG_VERSION;
+    prefix.msg_rx = gMessengerConfig.msg_rx;
+    prefix.callsign_tx = 1u;
+    prefix.msg_ack = gMessengerConfig.msg_ack;
+    prefix.msg_hop = 0u;
+    prefix.msg_beep = gMessengerConfig.msg_beep;
+    prefix.msg_led = gMessengerConfig.msg_led;
+    prefix.msg_debug = 0u;
+    prefix.next_msg_id = gMessengerConfig.next_msg_id;
+    memcpy(prefix.callsign, gMessengerConfig.callsign, sizeof(prefix.callsign));
+
+    flash_write_struct(MSG_CFG_FLASH_ADDR, &prefix, sizeof(prefix));
+    flash_write_struct(MSG_CFG_FLASH_ADDR + offsetof(MSG_ConfigFlash_t, call_tone), tail, sizeof(tail));
 }
 
-static void MSG_STORE_CopyCommonFromLegacyV4(const MSG_Config_t *old)
+static void MSG_STORE_LoadRuntime(const MSG_ConfigFlash_t *stored)
 {
-    gMessengerConfig.msg_rx = old->msg_rx;
-    gMessengerConfig.callsign_tx = old->callsign_tx;
-    gMessengerConfig.msg_ack = old->msg_ack;
-    gMessengerConfig.msg_hop = old->msg_hop;
-    gMessengerConfig.msg_beep = old->msg_beep;
-    gMessengerConfig.msg_led = old->msg_led;
-    gMessengerConfig.msg_debug = old->msg_debug;
-    gMessengerConfig.next_msg_id = old->next_msg_id ? old->next_msg_id : 1;
-    memcpy(gMessengerConfig.callsign, old->callsign, sizeof(gMessengerConfig.callsign));
-    memcpy(gMessengerConfig.drafts, old->drafts, sizeof(gMessengerConfig.drafts));
+    gMessengerConfig.msg_rx = stored->msg_rx;
+    gMessengerConfig.msg_ack = stored->msg_ack;
+    gMessengerConfig.msg_beep = stored->msg_beep;
+    gMessengerConfig.msg_led = stored->msg_led;
+    gMessengerConfig.next_msg_id = stored->next_msg_id ? stored->next_msg_id : 1u;
+    memcpy(gMessengerConfig.callsign, stored->callsign, sizeof(gMessengerConfig.callsign));
+    gMessengerConfig.call_tone = stored->call_tone;
+    gMessengerConfig.call_vol = stored->call_vol;
+    gMessengerConfig.rng_rsp = stored->rng_rsp;
+}
+
+static void MSG_STORE_WriteDefaultDrafts(void)
+{
+    static const char *const defaults[MSG_DRAFT_CAPACITY] = {
+        "OK", "NEED HELP", "WHERE ARE YOU?", "ON THE WAY",
+        "ARRIVED SAFE", "CALL ME", "NEGATIVE", "BATTERY LOW",
+    };
+    char slot[MSG_TEXT_LEN + 1];
+
+    for (uint8_t i = 0u; i < MSG_DRAFT_CAPACITY; i++) {
+        memset(slot, 0, sizeof(slot));
+        strncpy(slot, defaults[i], MSG_TEXT_LEN);
+        flash_write_struct(MSG_CFG_FLASH_ADDR + offsetof(MSG_ConfigFlash_t, drafts) +
+                           (uint32_t)i * sizeof(slot), slot, sizeof(slot));
+    }
 }
 
 // Temporary bad test3/test4 layout inserted call_tone/call_vol before next_msg_id.
@@ -103,7 +172,7 @@ typedef struct __attribute__((packed)) {
     char drafts[MSG_DRAFT_CAPACITY][MSG_TEXT_LEN + 1];
 } MSG_Config_BadV5_t;
 
-static bool MSG_STORE_LooksLikeBadV5(const MSG_Config_t *cfg)
+static bool MSG_STORE_LooksLikeBadV5(const MSG_ConfigFlash_t *cfg)
 {
     return cfg->version == 5u &&
            ((uint8_t)cfg->callsign[0] < 0x20u || (uint8_t)cfg->callsign[1] < 0x20u);
@@ -111,55 +180,56 @@ static bool MSG_STORE_LooksLikeBadV5(const MSG_Config_t *cfg)
 
 void MSG_STORE_Init(void)
 {
-    flash_read_struct(MSG_CFG_FLASH_ADDR, &gMessengerConfig, sizeof(gMessengerConfig));
-    if (gMessengerConfig.magic != MSG_CFG_MAGIC) {
+    MSG_ConfigFlash_t stored;
+    flash_read_struct(MSG_CFG_FLASH_ADDR, &stored, sizeof(stored));
+    if (stored.magic != MSG_CFG_MAGIC) {
         MSG_STORE_DefaultConfig();
         MSG_STORE_SaveConfig();
-    } else if (gMessengerConfig.version == 4u) {
+        MSG_STORE_WriteDefaultDrafts();
+    } else if (stored.version == 4u) {
         // Clean v0.3.12 migration: common fields keep their original offsets;
         // CllTon/CllVol are appended at the end only.
-        MSG_Config_t old = gMessengerConfig;
         MSG_STORE_DefaultConfig();
-        MSG_STORE_CopyCommonFromLegacyV4(&old);
+        MSG_STORE_LoadRuntime(&stored);
         gMessengerConfig.call_tone = 0;
         gMessengerConfig.call_vol = 1;
         gMessengerConfig.rng_rsp = 1;
         MSG_STORE_SaveConfig();
-    } else if (MSG_STORE_LooksLikeBadV5(&gMessengerConfig)) {
+    } else if (MSG_STORE_LooksLikeBadV5(&stored)) {
         // Recover from the bad intermediate layout as much as possible and then
         // rewrite the sector with the fixed v6 layout. Bytes already overwritten
         // by the bad test build cannot always be reconstructed, but this stops
         // further offset damage.
-        MSG_Config_BadV5_t bad;
-        flash_read_struct(MSG_CFG_FLASH_ADDR, &bad, sizeof(bad));
+        const MSG_Config_BadV5_t *bad = (const MSG_Config_BadV5_t *)(const void *)&stored;
         MSG_STORE_DefaultConfig();
-        gMessengerConfig.msg_rx = bad.msg_rx;
-        gMessengerConfig.callsign_tx = bad.callsign_tx;
-        gMessengerConfig.msg_ack = bad.msg_ack;
-        gMessengerConfig.msg_hop = bad.msg_hop;
-        gMessengerConfig.msg_beep = bad.msg_beep;
-        gMessengerConfig.msg_led = bad.msg_led;
-        gMessengerConfig.msg_debug = bad.msg_debug;
-        gMessengerConfig.next_msg_id = bad.next_msg_id ? bad.next_msg_id : 1;
-        memcpy(gMessengerConfig.callsign, bad.callsign, sizeof(gMessengerConfig.callsign));
-        memcpy(gMessengerConfig.drafts, bad.drafts, sizeof(gMessengerConfig.drafts));
-        gMessengerConfig.call_tone = (bad.call_tone <= 4u) ? bad.call_tone : 0;
-        gMessengerConfig.call_vol = (bad.call_vol == 0u) ? 0u : 1u;
+        gMessengerConfig.msg_rx = bad->msg_rx;
+        gMessengerConfig.msg_ack = bad->msg_ack;
+        gMessengerConfig.msg_beep = bad->msg_beep;
+        gMessengerConfig.msg_led = bad->msg_led;
+        gMessengerConfig.next_msg_id = bad->next_msg_id ? bad->next_msg_id : 1u;
+        memcpy(gMessengerConfig.callsign, bad->callsign, sizeof(gMessengerConfig.callsign));
+        gMessengerConfig.call_tone = (bad->call_tone <= 4u) ? bad->call_tone : 0u;
+        gMessengerConfig.call_vol = (bad->call_vol == 0u) ? 0u : 1u;
         gMessengerConfig.rng_rsp = 1;
+        memmove(stored.drafts, bad->drafts, sizeof(stored.drafts));
+        flash_write_struct(MSG_CFG_FLASH_ADDR + offsetof(MSG_ConfigFlash_t, drafts),
+                           stored.drafts, sizeof(stored.drafts));
         MSG_STORE_SanitizeCallsign();
         MSG_STORE_SaveConfig();
-    } else if (gMessengerConfig.version == 6u) {
+    } else if (stored.version == 6u) {
         /* v7 appends RngRsp at the end only; preserve all v6 offsets. */
-        gMessengerConfig.version = MSG_CFG_VERSION;
+        MSG_STORE_LoadRuntime(&stored);
         if (gMessengerConfig.call_tone > 4u) gMessengerConfig.call_tone = 0;
         if (gMessengerConfig.call_vol > 1u) gMessengerConfig.call_vol = 1;
         gMessengerConfig.rng_rsp = 1;
         MSG_STORE_SanitizeCallsign();
         MSG_STORE_SaveConfig();
-    } else if (gMessengerConfig.version != MSG_CFG_VERSION) {
+    } else if (stored.version != MSG_CFG_VERSION) {
         MSG_STORE_DefaultConfig();
         MSG_STORE_SaveConfig();
+        MSG_STORE_WriteDefaultDrafts();
     } else {
+        MSG_STORE_LoadRuntime(&stored);
         if (gMessengerConfig.call_tone > 4u) gMessengerConfig.call_tone = 0;
         if (gMessengerConfig.call_vol > 1u) gMessengerConfig.call_vol = 1;
         if (gMessengerConfig.rng_rsp > 1u) gMessengerConfig.rng_rsp = 1;
@@ -262,12 +332,12 @@ void MSG_STORE_AddOutboxAckSourceById(uint16_t id, const char *from)
 
 void MSG_STORE_AddInboxDemo(const char *text)
 {
-    MSG_STORE_AddInboxMessage(text, "DEMO", "ALL", MSG_STORE_NextMsgId(), gMessengerConfig.msg_hop, gMessengerConfig.msg_hop, true);
+    MSG_STORE_AddInboxMessage(text, "DEMO", "ALL", MSG_STORE_NextMsgId(), 1u, 1u, true);
 }
 
 void MSG_STORE_AddOutboxDemo(const char *text)
 {
-    MSG_STORE_AddOutboxMessage(text, gMessengerConfig.callsign, "ALL", MSG_STORE_NextMsgId(), gMessengerConfig.msg_hop, gMessengerConfig.msg_hop);
+    MSG_STORE_AddOutboxMessage(text, gMessengerConfig.callsign, "ALL", MSG_STORE_NextMsgId(), 1u, 1u);
 }
 
 bool MSG_STORE_InjectNativePacket(const char *text)
@@ -275,7 +345,7 @@ bool MSG_STORE_InjectNativePacket(const char *text)
     uint8_t frame[MSG_PKT_WIRE_LEN];
     MSG_Packet_t pkt;
     uint16_t id = MSG_STORE_NextMsgId();
-    if (!MSG_PACKET_BuildText(frame, sizeof(frame), id, "NODE2", text ? text : "NATIVE TEST", gMessengerConfig.msg_hop)) return false;
+    if (!MSG_PACKET_BuildText(frame, sizeof(frame), id, "NODE2", text ? text : "NATIVE TEST", 1u)) return false;
     if (!MSG_PACKET_Parse(frame, sizeof(frame), &pkt)) return false;
     if (pkt.type != MSG_PKT_TYPE_TEXT) return false;
     MSG_STORE_AddInboxMessage(pkt.payload, pkt.from, pkt.to, pkt.id, pkt.ttl_init, pkt.ttl_remain, true);
@@ -318,15 +388,29 @@ uint8_t MSG_STORE_CountOutbox(void)
 }
 uint8_t MSG_STORE_CountDrafts(void) { return MSG_DRAFT_CAPACITY; }
 
+void MSG_STORE_GetDraft(uint8_t index, char *out)
+{
+    if (!out) return;
+    memset(out, 0, MSG_TEXT_LEN + 1u);
+    if (index >= MSG_DRAFT_CAPACITY) return;
+
+    flash_read_struct(MSG_CFG_FLASH_ADDR + offsetof(MSG_ConfigFlash_t, drafts) +
+                      (uint32_t)index * (MSG_TEXT_LEN + 1u), out, MSG_TEXT_LEN + 1u);
+    if ((uint8_t)out[0] == 0xFFu) out[0] = 0;
+    out[MSG_TEXT_LEN] = 0;
+}
+
 void MSG_STORE_SetDraft(uint8_t index, const char *text)
 {
+    char slot[MSG_TEXT_LEN + 1];
     if (index >= MSG_DRAFT_CAPACITY) return;
-    memset(gMessengerConfig.drafts[index], 0, sizeof(gMessengerConfig.drafts[index]));
+    memset(slot, 0, sizeof(slot));
     if (text && text[0]) {
-        strncpy(gMessengerConfig.drafts[index], text, MSG_TEXT_LEN);
-        gMessengerConfig.drafts[index][MSG_TEXT_LEN] = 0;
+        strncpy(slot, text, MSG_TEXT_LEN);
+        slot[MSG_TEXT_LEN] = 0;
     }
-    MSG_STORE_SaveConfig();
+    flash_write_struct(MSG_CFG_FLASH_ADDR + offsetof(MSG_ConfigFlash_t, drafts) +
+                       (uint32_t)index * sizeof(slot), slot, sizeof(slot));
     gUpdateDisplay = true;
 }
 

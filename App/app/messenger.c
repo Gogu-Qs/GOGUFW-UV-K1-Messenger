@@ -245,9 +245,7 @@ static void open_draft_edit(uint8_t index)
     if (index >= MSG_DRAFT_CAPACITY) index = 0;
     gMsgComposeIsDraftEdit = true;
     gMsgComposeDraftIndex = index;
-    memset(gMsgComposeBuf, 0, sizeof(gMsgComposeBuf));
-    strncpy(gMsgComposeBuf, gMessengerConfig.drafts[index], MSG_TEXT_LEN);
-    gMsgComposeBuf[MSG_TEXT_LEN] = 0;
+    MSG_STORE_GetDraft(index, gMsgComposeBuf);
     MSG_T9_Start(&gMsgEditor, gMsgComposeBuf, MSG_TEXT_LEN);
     gMsgScreen = MSG_SCREEN_COMPOSE;
 }
