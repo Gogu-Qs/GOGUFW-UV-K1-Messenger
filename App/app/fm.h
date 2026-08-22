@@ -54,6 +54,8 @@ void    FM_SetChannelName(uint8_t Channel, const char *Name);
 void    FM_SetChannelDefaultName(uint8_t Channel);
 const char *FM_GetChannelName(uint8_t Channel);
 void    FM_Tick(void);
+bool    FM_UpdateRssiLevel(void);
+uint8_t FM_GetRssiLevel(void);
 bool    FM_IsNameEditActive(void);
 bool    FM_IsAutoScanConfirmActive(void);
 uint8_t FM_GetMenuMode(void);

@@ -807,13 +807,9 @@ void RADIO_SetupRegisters(bool switchToForeground)
         Frequency = gRxVfo->pRX->Frequency;
     #endif
     BK4819_SetFrequency(Frequency);
-    // GOGUFW 0.6.6 / F4HWN 5.6.0: after dual-watch retune, force the
-    // BK4829 demodulator back to the active VFO modulation. Without this,
-    // AM<->FM VFO combinations can leave the RX path in the previous mode,
-    // breaking Messenger FSK decode and ACK reception.
-    RADIO_SetModulation(gRxVfo->Modulation);
-
     // Keep the demodulator in sync when retuning without entering RX audio.
+    // One write is sufficient; this is the upstream 5.9 behavior and still
+    // preserves the GGFW AM/FM dual-watch + Messenger requirement.
     RADIO_SetModulation(gRxVfo->Modulation);
 
     BK4819_SetupSquelch(
@@ -1340,7 +1336,15 @@ void RADIO_SendCssTail(void)
 
 void RADIO_SendEndOfTransmission(void)
 {
-    BK4819_PlayRoger();
+    BK4819_FilterBandwidth_t Bandwidth = gCurrentVfo->CHANNEL_BANDWIDTH;
+
+#ifdef ENABLE_FEAT_F4HWN_NARROWER
+    if (Bandwidth == BK4819_FILTER_BW_NARROW && gSetting_set_nfm == 1) {
+        Bandwidth = BK4819_FILTER_BW_NARROWER;
+    }
+#endif
+
+    BK4819_PlayRoger(Bandwidth);
     DTMF_SendEndOfTransmission();
 
     // send the CTCSS/DCS tail tone - allows the receivers to mute the usual FM squelch tail/crash

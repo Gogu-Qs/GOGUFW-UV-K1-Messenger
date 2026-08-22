@@ -68,7 +68,7 @@ static void FM_UI_DrawVfoScale(uint16_t freq10)
 {
     const uint8_t x1 = 12U;
     const uint8_t x2 = 116U;
-    const uint8_t y = 36U;
+    const uint8_t y = 32U;
     uint8_t x;
     uint8_t i;
     char loText[8];
@@ -88,8 +88,10 @@ static void FM_UI_DrawVfoScale(uint16_t freq10)
     snprintf(loText, sizeof(loText), "%u.%u", BK1080_GetFreqLoLimit(gEeprom.FM_Band) / 10U, BK1080_GetFreqLoLimit(gEeprom.FM_Band) % 10U);
     snprintf(hiText, sizeof(hiText), "%u", BK1080_GetFreqHiLimit(gEeprom.FM_Band) / 10U);
 #ifdef ENABLE_FEAT_F4HWN
-    GUI_DisplaySmallest(loText, x1, 42, false, true);
-    GUI_DisplaySmallest(hiText, (uint8_t)(x2 - text_width_3x5(hiText) + 1U), 42, false, true);
+    /* VFO ruler and its lower labels are both shifted up by the same 4 px
+       from the original F4HWN positions (ruler 36->32, labels 42->38). */
+    GUI_DisplaySmallest(loText, x1, 38, false, true);
+    GUI_DisplaySmallest(hiText, (uint8_t)(x2 - text_width_3x5(hiText) + 1U), 38, false, true);
 #else
     UI_PrintStringSmallNormal(loText, x1, 0, 5);
     UI_PrintStringSmallNormal(hiText, (uint8_t)(x2 - text_width_small(hiText) + 1U), 0, 5);
@@ -111,6 +113,34 @@ static void FM_UI_PrintBandLimitTiny(const char *text)
 #else
     UI_PrintStringSmallNormal(text, 1, 0, 6);
 #endif
+}
+
+static uint8_t FM_UI_ReadRssiLevel(void)
+{
+    return FM_GetRssiLevel();
+}
+
+static void FM_UI_DrawRssiBars(void)
+{
+    const uint8_t level = FM_UI_ReadRssiLevel();
+    /* Pixel-identical to the HEARD RSSI meter geometry, but using the FM
+       BK1080 RSSI level mapping above.  Baseline is aligned with the bottom
+       of the left "87.5-108M" text (GUI_DisplaySmallest at y=50 => bottom y=54). */
+    const uint8_t x0 = 106U;
+    const uint8_t yBase = 54U;
+
+    for (uint8_t i = 0U; i < 5U; i++) {
+        const uint8_t h = (uint8_t)(2U + i);
+        const uint8_t x = (uint8_t)(x0 + i * 4U);
+        const uint8_t yTop = (uint8_t)(yBase - h);
+
+        if (level > i) {
+            for (uint8_t xx = x; xx <= (uint8_t)(x + 2U); xx++)
+                UI_DrawLineBuffer(gFrameBuffer, xx, yTop, xx, yBase, 1);
+        } else {
+            UI_DrawLineBuffer(gFrameBuffer, x, yBase, (uint8_t)(x + 2U), yBase, 1);
+        }
+    }
 }
 
 static void FM_UI_DrawEditName(void)
@@ -247,6 +277,7 @@ void UI_DisplayFM(void)
             gEeprom.FM_Band == 0 ? ".5" : "",
             BK1080_GetFreqHiLimit(gEeprom.FM_Band) / 10);
     FM_UI_PrintBandLimitTiny(bandText);
+    FM_UI_DrawRssiBars();
 
     ST7565_BlitFullScreen();
 }

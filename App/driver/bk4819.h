@@ -77,6 +77,7 @@ void     BK4819_SetAGC(bool enable);
 void     BK4819_InitAGC(bool amModulation);
 
 void     BK4819_ToggleGpioOut(BK4819_GPIO_PIN_t Pin, bool bSet);
+bool     BK4819_IsGpioOutSet(BK4819_GPIO_PIN_t Pin);
 
 void     BK4819_SetCDCSSCodeWord(uint32_t CodeWord);
 void     BK4819_SetCTCSSFrequency(uint32_t BaudRate);
@@ -169,7 +170,7 @@ uint8_t  BK4819_GetCTCType(void);
 void     BK4819_SendFSKData(uint16_t *pData);
 void     BK4819_PrepareFSKReceive(void);
 
-void     BK4819_PlayRoger(void);
+void     BK4819_PlayRoger(BK4819_FilterBandwidth_t Bandwidth);
 
 void     BK4819_Enable_AfDac_DiscMode_TxDsp(void);
 

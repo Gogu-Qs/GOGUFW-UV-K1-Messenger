@@ -22,6 +22,9 @@
 #include "app/dtmf.h"
 #include "app/generic.h"
 #include "app/menu.h"
+#ifdef ENABLE_MESSENGER
+#include "app/messenger_rf.h"
+#endif
 #include "app/main.h"
 #ifdef ENABLE_MESSENGER
     #include "app/messenger_store.h"
@@ -729,6 +732,9 @@ void MENU_AcceptSetting(void)
                 SETTINGS_LoadCalibration();
                 gFlagReconfigureVfos = true;
                 gUpdateStatus        = true;
+#ifdef ENABLE_MESSENGER
+                MSG_RF_OnVoxModeChanged(gEeprom.VOX_SWITCH);
+#endif
                 break;
         #endif
 

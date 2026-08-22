@@ -118,7 +118,7 @@ void FUNCTION_Foreground(const FUNCTION_Type_t PreviousFunction)
 
 void FUNCTION_PowerSave() {
     #ifdef ENABLE_FEAT_F4HWN_SLEEP
-        gPowerSave_10ms = gEeprom.BATTERY_SAVE * (gWakeUp ? 200 : 10); // deep sleep now indexed on BatSav
+        gPowerSave_10ms = gEeprom.BATTERY_SAVE * 10; // GOGUFW: screen-off must not deepen RF sleep; keep RX wake cadence for Messenger/Range Check
     #else
         gPowerSave_10ms = gEeprom.BATTERY_SAVE * 10;
     #endif

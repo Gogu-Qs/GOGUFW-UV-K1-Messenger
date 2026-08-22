@@ -30,7 +30,7 @@ static uint8_t    scanRangeCssCandidate = 0xFF;
 static uint8_t    scanRangeCssHitCount  = 0;
 #endif
 
-#define SCAN_RANGE_SKIP_MAX 32
+#define SCAN_RANGE_SKIP_MAX 64
 #if (SCAN_RANGE_SKIP_MAX & (SCAN_RANGE_SKIP_MAX - 1)) != 0
     #error SCAN_RANGE_SKIP_MAX must be a power of two
 #endif

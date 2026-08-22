@@ -43,6 +43,7 @@ bool              gFM_AutoScan;
 uint8_t           gFM_ChannelPosition;
 bool              gFM_FoundFrequency;
 uint16_t          gFM_RestoreCountdown_10ms;
+static uint8_t     s_fmRssiLevel = 0xFFu;
 
 #define FM_NAMES_FLASH_ADDR 0x013000u
 #define FM_NAMES_MAGIC      0x4747464Du  /* "GGFM" */
@@ -177,6 +178,35 @@ void FM_Tick(void)
 {
     if (s_fmNameEdit)
         MSG_T9_Tick(&s_fmNameEditor);
+}
+
+
+bool FM_UpdateRssiLevel(void)
+{
+    if (!gFmRadioMode || gFM_ScanState != FM_SCAN_OFF)
+        return false;
+
+    const uint16_t status = BK1080_ReadRegister(BK1080_REG_10);
+    const uint8_t rssi = (uint8_t)BK1080_REG_10_GET_RSSI(status);
+    uint8_t level;
+
+    if (rssi < 10U)
+        level = 0U;
+    else if (rssi >= 50U)
+        level = 5U;
+    else
+        level = (uint8_t)(1U + ((uint16_t)(rssi - 10U) * 4U) / 40U);
+
+    if (level == s_fmRssiLevel)
+        return false;
+
+    s_fmRssiLevel = level;
+    return true;
+}
+
+uint8_t FM_GetRssiLevel(void)
+{
+    return (s_fmRssiLevel <= 5U) ? s_fmRssiLevel : 0U;
 }
 
 static void FM_NameEditStart(void)
@@ -885,6 +915,7 @@ void FM_Play(void)
 
 void FM_Start(void)
 {
+    s_fmRssiLevel = 0xFFu;
     gDualWatchActive          = false;
     gFmRadioMode              = true;
     gFM_ScanState             = FM_SCAN_OFF;
