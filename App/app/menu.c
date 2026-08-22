@@ -2257,6 +2257,10 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
             if (m == MENU_CALL_TONE) {
                 if (gSubMenuSelection < 0) gSubMenuSelection = 0;
                 if (gSubMenuSelection > 4) gSubMenuSelection = 4;
+                /* The normal UP/DOWN beep runs after key handling and resets
+                 * BK4829's local tone path.  The melody itself is the feedback
+                 * for this menu item, so do not let that beep cancel it. */
+                gBeepToPlay = BEEP_NONE;
                 MAIN_PlayCallTonePreview((uint8_t)gSubMenuSelection);
             }
 #endif
