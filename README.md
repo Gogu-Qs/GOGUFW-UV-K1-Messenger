@@ -22,6 +22,7 @@ The normal F4HWN Fusion radio features remain available alongside these addition
 
 | Function | Shortcut | What it does |
 | --- | --- | --- |
+| Messenger | **F + MENU** | Opens Messenger directly from the main radio screen. |
 | HEARD / Range Check | **F + 7** | Opens the HEARD screen. Press **MENU** there to start a Range Check PING. |
 | CALLTX | **F + 9** | Transmits the selected call melody. |
 | Messenger | Assign **MESSENGER** to a programmable side-key action | Opens Messenger. Pressing the same assigned key on the Messenger home screen closes it. |
