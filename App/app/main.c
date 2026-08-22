@@ -298,16 +298,6 @@ KEY_Code_t MAIN_PlayCallTonePreview(uint8_t tone)
     return interrupted_by;
 }
 
-void MAIN_CancelCallTonePreview(void)
-{
-    /* Synchronous preview has already stopped before key handling resumes. */
-}
-
-void MAIN_CallToneTick10ms(void)
-{
-    /* Synchronous preview needs no periodic RF/audio owner. */
-}
-
 static void MAIN_SendCallToneNote(uint16_t hz, uint8_t on_10ms, uint8_t off_10ms)
 {
     if (hz == 0 || on_10ms == 0) return;
@@ -339,8 +329,6 @@ static void MAIN_SendPmrCallTone(void)
     tone = gMessengerConfig.call_tone;
 #endif
     if (tone > 4u) tone = 0;
-
-    MAIN_CancelCallTonePreview();
 
 #ifdef ENABLE_MESSENGER
     MSG_RF_HardRestoreVoicePath();

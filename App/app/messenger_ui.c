@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include "app/messenger_store.h"
 #include "app/messenger_t9.h"
-#include "app/messenger_rf.h"
 #include "app/messenger_packet.h"
 #include "driver/st7565.h"
 #include "external/printf/printf.h"
@@ -16,11 +15,8 @@ extern uint8_t gMsgCursor;
 extern uint8_t gMsgScroll;
 extern uint8_t gMsgReadIndex;
 extern uint8_t gMsgReadSource;
-extern uint8_t gMsgSettingsCursor;
 extern char gMsgComposeBuf[];
-extern char gMsgCallsignBuf[];
 extern MSG_T9Editor_t gMsgEditor;
-extern MSG_T9Editor_t gMsgCallsignEditor;
 extern uint8_t gMsgScreen;
 typedef struct {
     bool used;
@@ -38,7 +34,7 @@ extern uint8_t gMsgRangeStatus;
 extern uint16_t gMsgRangeSession;
 #define MSG_RANGE_MAX_FOUND 6u
 
-enum { MSG_SCREEN_HOME = 0, MSG_SCREEN_INBOX, MSG_SCREEN_OUTBOX, MSG_SCREEN_DRAFTS, MSG_SCREEN_COMPOSE, MSG_SCREEN_READ, MSG_SCREEN_SETTINGS, MSG_SCREEN_CALLSIGN, MSG_SCREEN_RANGE };
+enum { MSG_SCREEN_HOME = 0, MSG_SCREEN_INBOX, MSG_SCREEN_OUTBOX, MSG_SCREEN_DRAFTS, MSG_SCREEN_COMPOSE, MSG_SCREEN_READ, MSG_SCREEN_RANGE };
 
 
 static void format_age(uint16_t seconds, char *buf, uint8_t len)
@@ -320,7 +316,6 @@ static void draw_home_icon(uint8_t idx)
 static void draw_home(void)
 {
     static const char *items[] = { "INBOX", "COMPOSE", "SENT", "DRAFTS" };
-    char buf[24];
     draw_title("MESSENGER");
     /* 0.3.0: HOME list shifted 1 px up so SELECT keeps 2 px bottom
      * clearance; right-side icon uses a fixed center shared by all states. */
@@ -332,14 +327,6 @@ static void draw_home(void)
     draw_dotted_separator(46);
     GUI_DisplaySmallest("SELECT", 0, 49, false, true);
 
-    if (gMessengerConfig.msg_debug) {
-        /* RF22 ACK debug replaces old RF counter debug to save screen space.
-         * P=pending MsgID, A=last ACK id heard, R=ACK rx count, M=match count. */
-        snprintf(buf, sizeof(buf), "P%04X A%04X R%u M%u",
-                 MSG_RF_GetAckDbgPendingId(), MSG_RF_GetAckDbgRxId(),
-                 MSG_RF_GetAckDbgRxCount(), MSG_RF_GetAckDbgMatchCount());
-        UI_PrintStringSmallNormal(buf, 0, 0, 6);
-    }
 }
 
 static MSG_Message_t *current_list(uint8_t *count, const char **title)
@@ -389,7 +376,6 @@ static void draw_read(void)
         print_right_small(buf, 0);
     }
 
-    uint8_t used_hops = (m->ttl_init >= m->ttl_remain) ? (uint8_t)(m->ttl_init - m->ttl_remain) : 0;
     char age[5];
     format_age(m->age_seconds, age, sizeof(age));
     if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
@@ -397,8 +383,7 @@ static void draw_read(void)
         if (m->status == MSG_STATUS_ACKED) st = '+';
         else if (m->status == MSG_STATUS_FAILED) st = 'x';
 
-        if (gMessengerConfig.msg_hop == 0U) snprintf(buf, sizeof(buf), "TO:%s HOP:OFF %s", m->to, age);
-        else snprintf(buf, sizeof(buf), "TO:%s HOP:%u %s", m->to, gMessengerConfig.msg_hop, age);
+        snprintf(buf, sizeof(buf), "TO:%s %s", m->to, age);
 
         /* Metadata is pixel-positioned: one pixel lower than 0.2.4 so it
          * visually aligns with the large ACK marker and sits closer to the
@@ -407,8 +392,7 @@ static void draw_read(void)
         char stbuf[2] = { st, 0 };
         UI_PrintStringSmallBold(stbuf, 120, 0, 1);
     } else {
-        if (m->ttl_init == 0U) snprintf(buf, sizeof(buf), "FROM:%s HOP:OFF %s", m->from, age);
-        else snprintf(buf, sizeof(buf), "FROM:%s HOP:%u/%u %s", m->from, used_hops, m->ttl_init, age);
+        snprintf(buf, sizeof(buf), "FROM:%s %s", m->from, age);
         GUI_DisplaySmallest(buf, 0, 9, false, true);
     }
 
@@ -565,57 +549,6 @@ static void draw_range(void)
     GUI_DisplaySmallest("EXIT", 112, 49, false, true);
 }
 
-static void draw_callsign(void)
-{
-    draw_title("MSG CSG");
-    UI_PrintStringSmallNormal("CALLSIGN:", 0, 0, 1);
-    UI_PrintStringSmallBold(gMsgCallsignBuf, 0, 0, 3);
-    UI_PrintStringSmallNormal((gMsgCallsignEditor.mode == 2U) ? "2" : (gMsgCallsignEditor.upper ? "B" : "b"), 118, 0, 6);
-}
-
-static void draw_settings(void)
-{
-    const char *names[] = { "MSG RX", "MSG CSG", "CALLTX", "ACK", "HOP", "BEEP", "LED", "DEBUG", "TESTMSG", "BACK" };
-    char buf[24];
-    draw_title("MSG SET");
-    uint8_t start = 0;
-    if (gMsgSettingsCursor >= 5) start = (uint8_t)(gMsgSettingsCursor - 4U);
-    for (uint8_t row = 0; row < 5; row++) {
-        uint8_t idx = (uint8_t)(start + row);
-        if (idx >= 10) break;
-        switch (idx) {
-            case 0: snprintf(buf, sizeof(buf), "%s:%s", names[idx], gMessengerConfig.msg_rx ? "ON" : "OFF"); break;
-            case 1: snprintf(buf, sizeof(buf), "%s:%s", names[idx], gMessengerConfig.callsign); break;
-            case 2: snprintf(buf, sizeof(buf), "%s:%s", names[idx], gMessengerConfig.callsign_tx ? "ON" : "OFF"); break;
-            case 3: snprintf(buf, sizeof(buf), "%s:%s", names[idx], gMessengerConfig.msg_ack ? "ON" : "OFF"); break;
-            case 4: snprintf(buf, sizeof(buf), "%s:%u", names[idx], gMessengerConfig.msg_hop); break;
-            case 5: snprintf(buf, sizeof(buf), "%s:%s", names[idx], gMessengerConfig.msg_beep ? "ON" : "OFF"); break;
-            case 6: snprintf(buf, sizeof(buf), "%s:%u", names[idx], gMessengerConfig.msg_led); break;
-            case 7: snprintf(buf, sizeof(buf), "%s:%s", names[idx], gMessengerConfig.msg_debug ? "ON" : "OFF"); break;
-            case 8: snprintf(buf, sizeof(buf), "%s", names[idx]); break;
-            case 9: snprintf(buf, sizeof(buf), "%s", names[idx]); break;
-            default: buf[0] = 0; break;
-        }
-        print_line(buf, row + 1, gMsgSettingsCursor == idx);
-    }
-    if (gMessengerConfig.msg_debug) {
-        const uint8_t page = (uint8_t)((gFlashLightBlinkCounter / 64U) & 1U);
-        if (page == 0) {
-            snprintf(buf, sizeof(buf), "P%04X A%04X R%u M%u",
-                     MSG_RF_GetAckDbgPendingId(), MSG_RF_GetAckDbgRxId(),
-                     MSG_RF_GetAckDbgRxCount(), MSG_RF_GetAckDbgMatchCount());
-        } else {
-            snprintf(buf, sizeof(buf), "S%04X W%u T%u X%u",
-                     MSG_RF_GetAckDbgSentId(), MSG_RF_GetAckDbgWaitActive(),
-                     MSG_RF_GetAckDbgRetryCount(), MSG_RF_GetAckDbgMissCount());
-        }
-        UI_PrintStringSmallNormal(buf, 0, 0, 6);
-    } else {
-        snprintf(buf, sizeof(buf), "%u/10", (uint8_t)(gMsgSettingsCursor + 1));
-        print_right_small(buf, 6);
-    }
-}
-
 void UI_DisplayMessenger(void)
 {
     switch (gMsgScreen) {
@@ -625,8 +558,6 @@ void UI_DisplayMessenger(void)
         case MSG_SCREEN_DRAFTS: draw_list(); break;
         case MSG_SCREEN_READ: draw_read(); break;
         case MSG_SCREEN_COMPOSE: draw_compose(); break;
-        case MSG_SCREEN_CALLSIGN: draw_callsign(); break;
-        case MSG_SCREEN_SETTINGS: draw_settings(); break;
         case MSG_SCREEN_RANGE: draw_range(); break;
         default: draw_home(); break;
     }

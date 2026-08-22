@@ -191,10 +191,6 @@ const t_menu_item MenuList[] =
 #endif
     // hidden menu items from here on
     // enabled if pressing both the PTT and upper side button at power-on
-#ifdef ENABLE_MESSENGER
-    {"MsgDbg",      MENU_MSG_DEBUG    },
-    {"MsgHop",      MENU_MSG_HOP      },
-#endif
     {"F Lock",      MENU_F_LOCK        },
 #ifndef ENABLE_FEAT_F4HWN
     {"Tx 200",      MENU_200TX         }, // was "200TX"
@@ -216,11 +212,7 @@ const t_menu_item MenuList[] =
     {"",                              0xff               }  // end of list - DO NOT delete or move this this
 };
 
-#ifdef ENABLE_MESSENGER
-const uint8_t FIRST_HIDDEN_MENU_ITEM = MENU_MSG_DEBUG;
-#else
 const uint8_t FIRST_HIDDEN_MENU_ITEM = MENU_F_LOCK;
-#endif
 
 const char gSubMenu_TXP[][6] =
 {
@@ -1076,11 +1068,9 @@ void UI_DisplayMenu(void)
 #endif
 #ifdef ENABLE_MESSENGER
         case MENU_MSG_RX:
-        case MENU_MSG_CALLTX:
         case MENU_MSG_ACK:
         case MENU_MSG_BEEP:
         case MENU_RNG_RSP:
-        case MENU_MSG_DEBUG:
         {
             uint8_t value = (uint8_t)gSubMenuSelection;
             /* Avoid first-render stale value such as LOW 1 when entering the
@@ -1088,11 +1078,9 @@ void UI_DisplayMenu(void)
             if (!gIsInSubMenu) {
                 MSG_STORE_Init();
                 if (m == MENU_MSG_RX) value = gMessengerConfig.msg_rx;
-                else if (m == MENU_MSG_CALLTX) value = gMessengerConfig.callsign_tx;
                 else if (m == MENU_MSG_ACK) value = gMessengerConfig.msg_ack;
                 else if (m == MENU_MSG_BEEP) value = gMessengerConfig.msg_beep;
                 else if (m == MENU_RNG_RSP) value = gMessengerConfig.rng_rsp;
-                else if (m == MENU_MSG_DEBUG) value = gMessengerConfig.msg_debug;
             }
             if (value > 1u) value = 1u;
             strcpy(String, gSubMenu_OFF_ON[value]);
@@ -1118,14 +1106,6 @@ void UI_DisplayMenu(void)
 #endif
 
         #ifdef ENABLE_MESSENGER
-        case MENU_MSG_HOP:
-        {
-            uint8_t value = (uint8_t)gSubMenuSelection;
-            if (!gIsInSubMenu) { MSG_STORE_Init(); value = gMessengerConfig.msg_hop; }
-            if (value == 0) strcpy(String, "OFF");
-            else sprintf(String, "%u", value);
-            break;
-        }
         case MENU_MSG_LED:
             if (gSubMenuSelection == 0) strcpy(String, "OFF");
             else if (gSubMenuSelection == 1) strcpy(String, "GREEN");

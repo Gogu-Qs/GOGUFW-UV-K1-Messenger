@@ -15,8 +15,6 @@ typedef enum {
     MSG_SCREEN_DRAFTS,
     MSG_SCREEN_COMPOSE,
     MSG_SCREEN_READ,
-    MSG_SCREEN_SETTINGS,
-    MSG_SCREEN_CALLSIGN,
     MSG_SCREEN_RANGE,
 } MSG_Screen_t;
 
@@ -26,11 +24,8 @@ uint8_t gMsgScroll;
 uint8_t gMsgHomeCursor;
 char gMsgComposeBuf[MSG_TEXT_LEN + 1];
 MSG_T9Editor_t gMsgEditor;
-MSG_T9Editor_t gMsgCallsignEditor;
-char gMsgCallsignBuf[MSG_CALLSIGN_EDIT_LEN + 1];
 uint8_t gMsgReadIndex;
 uint8_t gMsgReadSource;
-uint8_t gMsgSettingsCursor;
 
 typedef struct {
     bool used;
@@ -81,7 +76,6 @@ void MSG_Tick(void)
 {
     if (gSurvivalMode) return;
     if (gMsgScreen == MSG_SCREEN_COMPOSE) MSG_T9_Tick(&gMsgEditor);
-    else if (gMsgScreen == MSG_SCREEN_CALLSIGN) MSG_T9_Tick(&gMsgCallsignEditor);
     else if (gMsgScreen == MSG_SCREEN_RANGE && gMsgRangeStatus == 1u) {
         if (s_msgRangeWaitTicks > 0u) --s_msgRangeWaitTicks;
         if (s_msgRangeWaitTicks == 0u) {
@@ -406,16 +400,6 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             }
             break;
 
-        case MSG_SCREEN_CALLSIGN:
-            /* Public 0.2.0: Messenger-local settings screen is hidden.
-             * Callsign editing remains available from the main radio menu. */
-            if (Key == KEY_EXIT || Key == KEY_MENU) go_home();
-            break;
-
-        case MSG_SCREEN_SETTINGS:
-            /* Hidden in public builds; keep a safe escape in case stale state is entered. */
-            go_home();
-            break;
     }
     gUpdateDisplay = true;
 }

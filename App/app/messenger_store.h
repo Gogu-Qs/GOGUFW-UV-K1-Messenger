@@ -37,12 +37,12 @@ typedef struct {
     uint8_t magic;
     uint8_t version;
     uint8_t msg_rx;
-    uint8_t callsign_tx;
+    uint8_t callsign_tx; /* legacy/reserved: retained for flash layout compatibility */
     uint8_t msg_ack;
-    uint8_t msg_hop;
+    uint8_t msg_hop;     /* legacy/reserved: packet relay is not implemented */
     uint8_t msg_beep;
     uint8_t msg_led;
-    uint8_t msg_debug;
+    uint8_t msg_debug;   /* legacy/reserved: retained for flash layout compatibility */
     uint16_t next_msg_id;
     char    callsign[MSG_CALLSIGN_LEN + 1];
     char    drafts[MSG_DRAFT_CAPACITY][MSG_TEXT_LEN + 1];
