@@ -44,6 +44,7 @@ uint8_t           gFM_ChannelPosition;
 bool              gFM_FoundFrequency;
 uint16_t          gFM_RestoreCountdown_10ms;
 static uint8_t     s_fmRssiLevel = 0xFFu;
+static uint8_t     s_fmRssiCandidate = 0xFFu;
 
 #define FM_NAMES_FLASH_ADDR 0x013000u
 #define FM_NAMES_MAGIC      0x4747464Du  /* "GGFM" */
@@ -197,10 +198,28 @@ bool FM_UpdateRssiLevel(void)
     else
         level = (uint8_t)(1U + ((uint16_t)(rssi - 10U) * 4U) / 40U);
 
-    if (level == s_fmRssiLevel)
+    if (s_fmRssiLevel == 0xFFu) {
+        s_fmRssiLevel = level;
+        s_fmRssiCandidate = 0xFFu;
+        return true;
+    }
+
+    if (level == s_fmRssiLevel) {
+        s_fmRssiCandidate = 0xFFu;
         return false;
+    }
+
+    /* A raw RSSI value often jitters around a bar boundary.  Without this
+     * confirmation the visible level can alternate every 500 ms and force a
+     * full LCD redraw, which is audible as a periodic click in FM audio.
+     * Keep sampling live, but accept a new bar only after two matching reads. */
+    if (level != s_fmRssiCandidate) {
+        s_fmRssiCandidate = level;
+        return false;
+    }
 
     s_fmRssiLevel = level;
+    s_fmRssiCandidate = 0xFFu;
     return true;
 }
 
@@ -916,6 +935,7 @@ void FM_Play(void)
 void FM_Start(void)
 {
     s_fmRssiLevel = 0xFFu;
+    s_fmRssiCandidate = 0xFFu;
     gDualWatchActive          = false;
     gFmRadioMode              = true;
     gFM_ScanState             = FM_SCAN_OFF;
