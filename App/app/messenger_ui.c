@@ -329,17 +329,18 @@ static void draw_home(void)
 
 }
 
-static MSG_Message_t *current_list(uint8_t *count, const char **title)
+static void current_list_info(uint8_t *count, const char **title)
 {
-    if (gMsgScreen == MSG_SCREEN_INBOX) { *count = MSG_STORE_CountInbox(); *title = "INBOX"; return gMessengerInbox; }
-    if (gMsgScreen == MSG_SCREEN_OUTBOX) { *count = MSG_STORE_CountOutbox(); *title = "SENT"; return gMessengerOutbox; }
-    *count = MSG_DRAFT_CAPACITY; *title = "DRAFTS"; return 0;
+    if (gMsgScreen == MSG_SCREEN_INBOX) { *count = MSG_STORE_CountInbox(); *title = "INBOX"; return; }
+    if (gMsgScreen == MSG_SCREEN_OUTBOX) { *count = MSG_STORE_CountOutbox(); *title = "SENT"; return; }
+    *count = MSG_DRAFT_CAPACITY;
+    *title = "DRAFTS";
 }
 
 static void draw_list(void)
 {
     uint8_t count; const char *title;
-    MSG_Message_t *list = current_list(&count, &title);
+    current_list_info(&count, &title);
     char buf[24];
     draw_title(title);
     snprintf(buf, sizeof(buf), "%u/%u", count ? (gMsgCursor + 1) : 0, count);
@@ -352,14 +353,14 @@ static void draw_list(void)
         else if (gMsgScreen == MSG_SCREEN_OUTBOX) {
             char st = '?';
             char age[5];
-            format_age(list[idx].age_seconds, age, sizeof(age));
-            if (list[idx].status == MSG_STATUS_ACKED) st = '+';
-            else if (list[idx].status == MSG_STATUS_FAILED) st = 'x';
-            snprintf(buf, sizeof(buf), "%c%-11.11s%4s", st, list[idx].text, age);
+            format_age(gMessengerOutbox[idx].age_seconds, age, sizeof(age));
+            if (gMessengerOutbox[idx].status == MSG_STATUS_ACKED) st = '+';
+            else if (gMessengerOutbox[idx].status == MSG_STATUS_FAILED) st = 'x';
+            snprintf(buf, sizeof(buf), "%c%-11.11s%4s", st, gMessengerOutbox[idx].text, age);
         } else {
             char age[5];
-            format_age(list[idx].age_seconds, age, sizeof(age));
-            snprintf(buf, sizeof(buf), "%c%-11.11s%4s", (list[idx].unread ? '*' : ' '), list[idx].text, age);
+            format_age(gMessengerInbox[idx].age_seconds, age, sizeof(age));
+            snprintf(buf, sizeof(buf), "%c%-11.11s%4s", (gMessengerInbox[idx].unread ? '*' : ' '), gMessengerInbox[idx].text, age);
         }
         print_line(buf, row + 1, idx == gMsgCursor);
     }
@@ -367,23 +368,26 @@ static void draw_list(void)
 
 static void draw_read(void)
 {
-    MSG_Message_t *m = (gMsgReadSource == MSG_SCREEN_OUTBOX) ? &gMessengerOutbox[gMsgReadIndex] : &gMessengerInbox[gMsgReadIndex];
+    const bool sent = gMsgReadSource == MSG_SCREEN_OUTBOX;
+    const MSG_OutboxMessage_t *outbox = sent ? &gMessengerOutbox[gMsgReadIndex] : 0;
+    const MSG_InboxMessage_t *inbox = sent ? 0 : &gMessengerInbox[gMsgReadIndex];
+    const char *text = sent ? outbox->text : inbox->text;
     char buf[32];
-    draw_title((gMsgReadSource == MSG_SCREEN_OUTBOX) ? "SENT" : "READ");
+    draw_title(sent ? "SENT" : "READ");
     {
-        uint8_t total = (gMsgReadSource == MSG_SCREEN_OUTBOX) ? MSG_STORE_CountOutbox() : MSG_STORE_CountInbox();
+        uint8_t total = sent ? MSG_STORE_CountOutbox() : MSG_STORE_CountInbox();
         snprintf(buf, sizeof(buf), "%u/%u", total ? (uint8_t)(gMsgReadIndex + 1U) : 0U, total);
         print_right_small(buf, 0);
     }
 
     char age[5];
-    format_age(m->age_seconds, age, sizeof(age));
-    if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
+    format_age(sent ? outbox->age_seconds : inbox->age_seconds, age, sizeof(age));
+    if (sent) {
         char st = '?';
-        if (m->status == MSG_STATUS_ACKED) st = '+';
-        else if (m->status == MSG_STATUS_FAILED) st = 'x';
+        if (outbox->status == MSG_STATUS_ACKED) st = '+';
+        else if (outbox->status == MSG_STATUS_FAILED) st = 'x';
 
-        snprintf(buf, sizeof(buf), "TO:%s %s", m->to, age);
+        snprintf(buf, sizeof(buf), "TO:%s %s", outbox->to, age);
 
         /* Metadata is pixel-positioned: one pixel lower than 0.2.4 so it
          * visually aligns with the large ACK marker and sits closer to the
@@ -392,7 +396,7 @@ static void draw_read(void)
         char stbuf[2] = { st, 0 };
         UI_PrintStringSmallBold(stbuf, 120, 0, 1);
     } else {
-        snprintf(buf, sizeof(buf), "FROM:%s %s", m->from, age);
+        snprintf(buf, sizeof(buf), "FROM:%s %s", inbox->from, age);
         GUI_DisplaySmallest(buf, 0, 9, false, true);
     }
 
@@ -400,21 +404,21 @@ static void draw_read(void)
      * begins 4 px higher than before, and footer labels move up 1 px while
      * keeping the real-LCD safe area. */
     draw_dotted_separator(17);
-    if (gMsgReadSource == MSG_SCREEN_OUTBOX && m->ack_count > 0u) {
-        print_wrapped_small_y(m->text, 20, 2);
+    if (sent && outbox->ack_count > 0u) {
+        print_wrapped_small_y(text, 20, 2);
         char ackbuf[32];
         uint8_t pos = 0u;
         pos += (uint8_t)snprintf(ackbuf + pos, sizeof(ackbuf) - pos, "ACK:");
-        for (uint8_t i = 0u; i < m->ack_count && i < MSG_ACK_SOURCE_MAX && pos < sizeof(ackbuf); i++) {
-            pos += (uint8_t)snprintf(ackbuf + pos, sizeof(ackbuf) - pos, "%s%.*s", i ? " " : "", MSG_ACK_ID_LEN, m->ack_from[i]);
+        for (uint8_t i = 0u; i < outbox->ack_count && i < MSG_ACK_SOURCE_MAX && pos < sizeof(ackbuf); i++) {
+            pos += (uint8_t)snprintf(ackbuf + pos, sizeof(ackbuf) - pos, "%s%.*s", i ? " " : "", MSG_ACK_ID_LEN, outbox->ack_from[i]);
         }
         GUI_DisplaySmallest(ackbuf, 0, 40, false, true);
     } else {
-        print_wrapped_small_y(m->text, 20, 3);
+        print_wrapped_small_y(text, 20, 3);
     }
     draw_dotted_separator(46);
 
-    if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
+    if (sent) {
         GUI_DisplaySmallest("RESEND", 0, 49, false, true);
     } else {
         GUI_DisplaySmallest("REPLY", 0, 49, false, true);

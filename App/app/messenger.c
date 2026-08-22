@@ -257,14 +257,14 @@ static uint8_t read_count(void)
     return (gMsgReadSource == MSG_SCREEN_OUTBOX) ? MSG_STORE_CountOutbox() : MSG_STORE_CountInbox();
 }
 
-static MSG_Message_t *read_message(void)
+static const char *read_message_text(void)
 {
     if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
         if (gMsgReadIndex >= MSG_STORE_CountOutbox()) return 0;
-        return &gMessengerOutbox[gMsgReadIndex];
+        return gMessengerOutbox[gMsgReadIndex].text;
     }
     if (gMsgReadIndex >= MSG_STORE_CountInbox()) return 0;
-    return &gMessengerInbox[gMsgReadIndex];
+    return gMessengerInbox[gMsgReadIndex].text;
 }
 
 static void read_move(int8_t dir)
@@ -329,9 +329,9 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                 read_move(1);
             } else if (Key == KEY_MENU) {
                 if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
-                    MSG_Message_t *m = read_message();
-                    if (m) {
-                        if (!MSG_RF_SendText(m->text)) MSG_STORE_AddOutboxDemo(m->text);
+                    const char *text = read_message_text();
+                    if (text) {
+                        if (!MSG_RF_SendText(text)) MSG_STORE_AddOutboxDemo(text);
                     }
                     open_sent_after_send();
                 } else {

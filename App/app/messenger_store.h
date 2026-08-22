@@ -22,16 +22,24 @@ typedef struct {
     bool     used;
     bool     unread;
     uint16_t id;
-    uint8_t  ttl_init;
-    uint8_t  ttl_remain;
-    uint8_t  status;
     uint16_t age_seconds;
     char     from[MSG_CALLSIGN_LEN + 1];
+    char     text[MSG_TEXT_LEN + 1];
+} MSG_InboxMessage_t;
+
+typedef struct {
+    bool     used;
+    uint8_t  status;
+    uint16_t id;
+    uint16_t age_seconds;
     char     to[MSG_CALLSIGN_LEN + 1];
     char     text[MSG_TEXT_LEN + 1];
     uint8_t  ack_count;
     char     ack_from[MSG_ACK_SOURCE_MAX][MSG_ACK_ID_LEN];
-} MSG_Message_t;
+} MSG_OutboxMessage_t;
+
+_Static_assert(sizeof(MSG_InboxMessage_t) == 52u, "unexpected inbox record layout");
+_Static_assert(sizeof(MSG_OutboxMessage_t) == 72u, "unexpected outbox record layout");
 
 typedef struct {
     uint8_t magic;
@@ -54,8 +62,8 @@ typedef struct {
 } MSG_Config_t;
 
 extern MSG_Config_t gMessengerConfig;
-extern MSG_Message_t gMessengerInbox[MSG_INBOX_CAPACITY];
-extern MSG_Message_t gMessengerOutbox[MSG_OUTBOX_CAPACITY];
+extern MSG_InboxMessage_t gMessengerInbox[MSG_INBOX_CAPACITY];
+extern MSG_OutboxMessage_t gMessengerOutbox[MSG_OUTBOX_CAPACITY];
 
 void MSG_STORE_Init(void);
 void MSG_STORE_SaveConfig(void);

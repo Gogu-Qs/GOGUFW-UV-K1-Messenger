@@ -11,8 +11,8 @@
 #define MSG_CFG_FLASH_SIZE 0x1000u
 
 MSG_Config_t gMessengerConfig;
-MSG_Message_t gMessengerInbox[MSG_INBOX_CAPACITY];
-MSG_Message_t gMessengerOutbox[MSG_OUTBOX_CAPACITY];
+MSG_InboxMessage_t gMessengerInbox[MSG_INBOX_CAPACITY];
+MSG_OutboxMessage_t gMessengerOutbox[MSG_OUTBOX_CAPACITY];
 
 static void MSG_STORE_DefaultConfig(void)
 {
@@ -167,30 +167,6 @@ void MSG_STORE_Init(void)
     }
 }
 
-static uint8_t count_list(MSG_Message_t *list, uint8_t cap)
-{
-    uint8_t n = 0;
-    for (uint8_t i = 0; i < cap; i++) if (list[i].used) n++;
-    return n;
-}
-
-static void add_to_list(MSG_Message_t *list, uint8_t cap, const char *text, const char *from, const char *to,
-                        uint16_t id, uint8_t ttl_init, uint8_t ttl_remain, bool unread)
-{
-    for (int i = cap - 1; i > 0; i--) list[i] = list[i - 1];
-    memset(&list[0], 0, sizeof(list[0]));
-    list[0].used = true;
-    list[0].unread = unread;
-    list[0].id = id;
-    list[0].ttl_init = ttl_init;
-    list[0].ttl_remain = ttl_remain;
-    list[0].status = MSG_STATUS_NONE;
-    list[0].age_seconds = 0u;
-    strncpy(list[0].from, from && from[0] ? from : "UVK1", MSG_CALLSIGN_LEN);
-    strncpy(list[0].to, to && to[0] ? to : "ALL", MSG_CALLSIGN_LEN);
-    strncpy(list[0].text, text ? text : "TEST", MSG_TEXT_LEN);
-}
-
 uint16_t MSG_STORE_NextMsgId(void)
 {
     uint16_t id = gMessengerConfig.next_msg_id++;
@@ -219,7 +195,16 @@ void MSG_STORE_AddInboxMessage(const char *text, const char *from, const char *t
      * unread/beep state. ACK resend is handled by the RF layer before this call. */
     if (MSG_STORE_IsDuplicateInbox(from, id)) return;
 
-    add_to_list(gMessengerInbox, MSG_INBOX_CAPACITY, text, from, to, id, ttl_init, ttl_remain, unread);
+    for (int i = MSG_INBOX_CAPACITY - 1; i > 0; --i) gMessengerInbox[i] = gMessengerInbox[i - 1];
+    memset(&gMessengerInbox[0], 0, sizeof(gMessengerInbox[0]));
+    gMessengerInbox[0].used = true;
+    gMessengerInbox[0].unread = unread;
+    gMessengerInbox[0].id = id;
+    strncpy(gMessengerInbox[0].from, from && from[0] ? from : "UVK1", MSG_CALLSIGN_LEN);
+    strncpy(gMessengerInbox[0].text, text ? text : "TEST", MSG_TEXT_LEN);
+    (void)to;
+    (void)ttl_init;
+    (void)ttl_remain;
     gUpdateStatus = true;
     gUpdateDisplay = true;
     if (unread && gMessengerConfig.msg_beep) {
@@ -229,8 +214,16 @@ void MSG_STORE_AddInboxMessage(const char *text, const char *from, const char *t
 
 void MSG_STORE_AddOutboxMessage(const char *text, const char *from, const char *to, uint16_t id, uint8_t ttl_init, uint8_t ttl_remain)
 {
-    add_to_list(gMessengerOutbox, MSG_OUTBOX_CAPACITY, text, from, to, id, ttl_init, ttl_remain, false);
+    for (int i = MSG_OUTBOX_CAPACITY - 1; i > 0; --i) gMessengerOutbox[i] = gMessengerOutbox[i - 1];
+    memset(&gMessengerOutbox[0], 0, sizeof(gMessengerOutbox[0]));
+    gMessengerOutbox[0].used = true;
+    gMessengerOutbox[0].id = id;
+    strncpy(gMessengerOutbox[0].to, to && to[0] ? to : "ALL", MSG_CALLSIGN_LEN);
+    strncpy(gMessengerOutbox[0].text, text ? text : "TEST", MSG_TEXT_LEN);
     gMessengerOutbox[0].status = MSG_STATUS_PENDING;
+    (void)from;
+    (void)ttl_init;
+    (void)ttl_remain;
 }
 
 void MSG_STORE_SetOutboxStatusById(uint16_t id, uint8_t status)
@@ -248,7 +241,7 @@ void MSG_STORE_AddOutboxAckSourceById(uint16_t id, const char *from)
 {
     if (!from || !from[0]) return;
     for (uint8_t i = 0; i < MSG_OUTBOX_CAPACITY; i++) {
-        MSG_Message_t *m = &gMessengerOutbox[i];
+        MSG_OutboxMessage_t *m = &gMessengerOutbox[i];
         if (!m->used || m->id != id) continue;
 
         for (uint8_t j = 0; j < m->ack_count && j < MSG_ACK_SOURCE_MAX; j++) {
@@ -289,15 +282,19 @@ bool MSG_STORE_InjectNativePacket(const char *text)
     return true;
 }
 
-static void delete_from_list(MSG_Message_t *list, uint8_t cap, uint8_t index)
+void MSG_STORE_DeleteInbox(uint8_t index)
 {
-    if (index >= cap || !list[index].used) return;
-    for (uint8_t i = index; i + 1 < cap; i++) list[i] = list[i + 1];
-    memset(&list[cap - 1], 0, sizeof(list[cap - 1]));
+    if (index >= MSG_INBOX_CAPACITY || !gMessengerInbox[index].used) return;
+    for (uint8_t i = index; i + 1u < MSG_INBOX_CAPACITY; ++i) gMessengerInbox[i] = gMessengerInbox[i + 1u];
+    memset(&gMessengerInbox[MSG_INBOX_CAPACITY - 1u], 0, sizeof(gMessengerInbox[0]));
 }
 
-void MSG_STORE_DeleteInbox(uint8_t index) { delete_from_list(gMessengerInbox, MSG_INBOX_CAPACITY, index); }
-void MSG_STORE_DeleteOutbox(uint8_t index) { delete_from_list(gMessengerOutbox, MSG_OUTBOX_CAPACITY, index); }
+void MSG_STORE_DeleteOutbox(uint8_t index)
+{
+    if (index >= MSG_OUTBOX_CAPACITY || !gMessengerOutbox[index].used) return;
+    for (uint8_t i = index; i + 1u < MSG_OUTBOX_CAPACITY; ++i) gMessengerOutbox[i] = gMessengerOutbox[i + 1u];
+    memset(&gMessengerOutbox[MSG_OUTBOX_CAPACITY - 1u], 0, sizeof(gMessengerOutbox[0]));
+}
 void MSG_STORE_MarkInboxRead(uint8_t index)
 {
     if (index < MSG_INBOX_CAPACITY) {
@@ -306,8 +303,19 @@ void MSG_STORE_MarkInboxRead(uint8_t index)
         gUpdateDisplay = true;
     }
 }
-uint8_t MSG_STORE_CountInbox(void) { return count_list(gMessengerInbox, MSG_INBOX_CAPACITY); }
-uint8_t MSG_STORE_CountOutbox(void) { return count_list(gMessengerOutbox, MSG_OUTBOX_CAPACITY); }
+uint8_t MSG_STORE_CountInbox(void)
+{
+    uint8_t count = 0u;
+    for (uint8_t i = 0; i < MSG_INBOX_CAPACITY; ++i) if (gMessengerInbox[i].used) ++count;
+    return count;
+}
+
+uint8_t MSG_STORE_CountOutbox(void)
+{
+    uint8_t count = 0u;
+    for (uint8_t i = 0; i < MSG_OUTBOX_CAPACITY; ++i) if (gMessengerOutbox[i].used) ++count;
+    return count;
+}
 uint8_t MSG_STORE_CountDrafts(void) { return MSG_DRAFT_CAPACITY; }
 
 void MSG_STORE_SetDraft(uint8_t index, const char *text)
