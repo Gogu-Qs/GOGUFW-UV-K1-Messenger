@@ -13,5 +13,6 @@ k5_eeprom.raw
 
 /build
 __pycache__/
+/archive/local-development-notes/
 
 .DS_Store
