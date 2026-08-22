@@ -59,7 +59,6 @@ typedef struct {
 
 #define FM_NAMES_HEADER_SIZE ((uint32_t)sizeof(FM_NamesHeader_t))
 #define FM_NAMES_SLOT_ADDR(ch) (FM_NAMES_FLASH_ADDR + FM_NAMES_HEADER_SIZE + ((uint32_t)(ch) * FM_NAME_LEN))
-#define FM_NAMES_USED_SIZE  (FM_NAMES_HEADER_SIZE + ((uint32_t)FM_CHANNELS_MAX * FM_NAME_LEN))
 
 static char s_fmNameReadBuf[FM_NAME_LEN];
 
@@ -128,26 +127,19 @@ const char *FM_GetChannelName(uint8_t Channel)
 
 void FM_SetChannelName(uint8_t Channel, const char *Name)
 {
-    /* Flash cannot reliably change 0 bits back to 1 without erase.
-       Keep only a temporary stack copy of the small FM-name store, update one slot,
-       erase the private 0x013000 sector, then write it back. This avoids a permanent
-       50x16 RAM table and allows renaming the same channel repeatedly. */
-    uint8_t store[FM_NAMES_USED_SIZE];
     char slot[FM_NAME_LEN];
 
     if (Channel >= FM_CHANNELS_MAX) return;
     FM_NamesEnsureStore();
 
-    PY25Q16_ReadBuffer(FM_NAMES_FLASH_ADDR, store, sizeof(store));
-
     memset(slot, 0, sizeof(slot));
     if (Name != NULL) strncpy(slot, Name, FM_NAME_LEN - 1U);
     slot[FM_NAME_LEN - 1U] = 0;
 
-    memcpy(&store[FM_NAMES_HEADER_SIZE + ((uint32_t)Channel * FM_NAME_LEN)], slot, sizeof(slot));
-
-    PY25Q16_SectorErase(FM_NAMES_FLASH_ADDR);
-    PY25Q16_WriteBuffer(FM_NAMES_FLASH_ADDR, store, sizeof(store), false);
+    /* The flash driver already preserves and rewrites the complete 4 KiB
+     * sector when a 0-to-1 bit change requires erase.  Write only this slot
+     * here instead of duplicating an 816-byte sector fragment on the stack. */
+    PY25Q16_WriteBuffer(FM_NAMES_SLOT_ADDR(Channel), slot, sizeof(slot), false);
 }
 
 void FM_SetChannelDefaultName(uint8_t Channel)
