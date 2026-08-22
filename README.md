@@ -4,7 +4,7 @@ GOGUFW is a messaging-focused firmware for the Quansheng UV-K1 / UV-K5 V3 hardwa
 
 The project is derived from F4HWN Fusion and currently incorporates selected changes through F4HWN 5.9.0. It is not a clean upstream tree: Messenger reliability and compatibility with existing GOGUFW radios take priority over broad feature merges.
 
-> The `1.2.0` line is the current development line. The preserved pre-development baseline is tagged `v1.1.2-known-good`.
+> `1.2.0` is the current stable release. The preserved pre-development baseline is tagged `v1.1.2-known-good`.
 
 ## Main features
 
