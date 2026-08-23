@@ -56,21 +56,6 @@ static const char *packet_type_short(uint8_t type)
     }
 }
 
-static void print_line(const char *s, uint8_t line, bool sel)
-{
-    // Keep all Messenger menu/list rows left-aligned and use the same
-    // inverted selector style everywhere.  Important: do NOT pass a non-zero
-    // End value to UI_PrintStringSmallNormalInverse here, because that helper
-    // centers text when End > Start.  That was causing the text to drift
-    // outside the selected capsule.
-    char safe[18];
-    strncpy(safe, s, sizeof(safe) - 1U);
-    safe[sizeof(safe) - 1U] = 0;
-
-    if (sel) UI_PrintStringSmallNormalInverse(safe, 1, 0, line);
-    else UI_PrintStringSmallNormal(safe, 1, 0, line);
-}
-
 static void print_right_small(const char *s, uint8_t line)
 {
     // SmallNormal pitch is 7 px.  Keep a wider right margin because the real
@@ -171,7 +156,7 @@ static void msg_draw_small_at_y(const char *s, uint8_t x, uint8_t y, bool invert
 
 static void print_line_y(const char *s, uint8_t y, bool sel)
 {
-    char safe[18];
+    char safe[19];
     strncpy(safe, s, sizeof(safe) - 1U);
     safe[sizeof(safe) - 1U] = 0;
     msg_draw_small_at_y(safe, 1, y, sel);
@@ -360,13 +345,18 @@ static void draw_list(void)
             format_age(gMessengerOutbox[idx].age_seconds, age, sizeof(age));
             if (gMessengerOutbox[idx].status == MSG_STATUS_ACKED) st = '+';
             else if (gMessengerOutbox[idx].status == MSG_STATUS_FAILED) st = 'x';
-            snprintf(buf, sizeof(buf), "%c%-11.11s%4s", st, gMessengerOutbox[idx].text, age);
+            /* Fill the complete 18-character row so the age column reaches
+             * the LCD's right edge instead of ending two character cells
+             * early. */
+            snprintf(buf, sizeof(buf), "%c%-13.13s%4s", st, gMessengerOutbox[idx].text, age);
         } else {
             char age[5];
             format_age(gMessengerInbox[idx].age_seconds, age, sizeof(age));
-            snprintf(buf, sizeof(buf), "%c%-11.11s%4s", (gMessengerInbox[idx].unread ? '*' : ' '), gMessengerInbox[idx].text, age);
+            snprintf(buf, sizeof(buf), "%c%-13.13s%4s", (gMessengerInbox[idx].unread ? '*' : ' '), gMessengerInbox[idx].text, age);
         }
-        print_line(buf, row + 1, idx == gMsgCursor);
+        /* Pixel-positioned renderer safely supports the complete 18-cell
+         * row and keeps its selection capsule inside x=0..127. */
+        print_line_y(buf, (uint8_t)((row + 1U) * 8U), idx == gMsgCursor);
     }
 }
 

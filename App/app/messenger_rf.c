@@ -27,22 +27,21 @@ extern uint8_t gFSKWriteIndex;
  * - REG_47 is never changed for FSK RX; normal AF output is preserved.
  * - No RX-start PrepareFSKReceive() call. That caused voice ticks and cut FSK bursts.
  * - Sidecar FSK RX is armed only while the radio is idle, with exact Aircopy RX values.
- * - A valid voice snapshot is captured before any sidecar/TX register write.
- * - Voice restore is only used on explicit TX/PTT transitions.
+ * - Normal F4HWN RADIO_SetupRegisters() is authoritative after FSK/TX use.
+ * - FSK re-arm is event-driven and uses one explicit guard timer.
  */
 
 #define MSG_RF_WORDS                 50u
 #define MSG_RF_BYTES_CARRIED         MSG_PKT_WIRE_LEN
 #define MSG_RF_TEXT_LIMIT            MSG_TEXT_LEN
-#define MSG_RF_POST_TX_RESTORE_TICKS 10u
 #define MSG_RF_REARM_DELAY_TICKS     80u
 #define MSG_RF_RX_STALE_TICKS        120u
-#define MSG_RF_ACK_TIMEOUT_TICKS      400u  /* 4.0s: wait past delayed ACK before retry */
+#define MSG_RF_ACK_TIMEOUT_TICKS      600u  /* 6.0s: include delayed ACK airtime and channel-busy margin */
 #define MSG_RF_ACK_COLLECT_TICKS      250u  /* 2.5s: after first ACK, keep RX locked to collect more ACK sources */
 #define MSG_RF_ACK_RETRY_GAP_TICKS    50u
 #define MSG_RF_ACK_SEND_DELAY_MIN_TICKS  80u   /* 800ms compatibility-safe ACK delay min */
 #define MSG_RF_ACK_SEND_DELAY_JIT_TICKS 220u   /* +0..2200ms random ACK jitter; ACK window = 0.8..3.0s */
-#define MSG_RF_REPRIME_DELAY_TICKS     20u   /* 200ms after TX/RX end */
+#define MSG_RF_POST_TX_REARM_TICKS     20u   /* 200ms TX->RX guard before arming the FSK sidecar */
 #define MSG_RF_UNREAD_LED_PERIOD_TICKS 300u   /* 3 seconds */
 #define MSG_RF_UNREAD_LED_FLASH_TICKS  8u     /* 80 ms */
 #define MSG_RF_UNREAD_LED_GAP_TICKS    14u    /* 140 ms between double flashes */
@@ -74,7 +73,6 @@ extern uint8_t gFSKWriteIndex;
 #define MSG_RF_REG59_TX_START_LONG_PRE 0x28F8u
 #define MSG_RF_REG5D_LEN_100_BYTES    0x6300u
 
-static uint8_t s_post_tx_restore_ticks;
 static uint8_t s_rearm_delay_ticks;
 static uint8_t s_rx_stale_ticks;
 static uint8_t s_sql_close_confirm_ticks;
@@ -84,7 +82,6 @@ static bool s_deferred_beep_pending;
 static uint8_t s_ack_success_beep_ticks;
 static bool s_ack_success_beep_pending;
 static bool s_store_initialized;
-static uint8_t s_reprime_delay_ticks;
 static bool s_boot_prime_done;
 static bool s_sidecar_armed;
 static bool s_rx_capture_active;
@@ -107,7 +104,7 @@ static uint8_t s_range_beep_ticks;
 
 typedef struct {
     bool active;
-    uint8_t delay_ticks;
+    uint16_t delay_ticks;
     uint16_t id;
     char to[MSG_CALLSIGN_LEN + 1];
     uint8_t vfo;
@@ -140,23 +137,24 @@ static uint16_t s_ack_collect_ticks;
 static uint16_t s_ack_jitter_seed;
 static uint32_t s_range_jitter_seed;
 
+/* Only registers that stock RADIO_SetupRegisters() does not rebuild are kept
+ * here. Dynamic voice/RX state (REG_19/2B/30/3F/47) is deliberately excluded
+ * so an old VFO/modulation/squelch state can never overwrite F4HWN's setup. */
+typedef struct {
+    uint16_t r58, r59, r5c, r5d, r5e, r70, r72;
+    bool valid;
+} MSG_RF_FskCleanupSnapshot_t;
+
+static MSG_RF_FskCleanupSnapshot_t s_fsk_cleanup_snapshot;
+
 #ifdef ENABLE_AIRCOPY
 static uint8_t s_rx_words;
 #endif
-
-typedef struct {
-    uint16_t r19, r2b, r30, r3f, r47, r58, r59, r5c, r5d, r5e, r70, r72;
-    bool valid;
-} MSG_RF_RegSnapshot_t;
-
-static MSG_RF_RegSnapshot_t s_voice_snapshot;
 
 static bool MSG_RF_SendPacketFrame(const uint8_t *packet, bool count_tx, bool ignore_self_rx);
 static bool MSG_RF_SendPacketFrameRepeated(const uint8_t *packet, bool count_tx, bool ignore_self_rx, uint8_t repeats);
 static bool MSG_RF_SendPacketFrameRepeatedOnVfo(const uint8_t *packet, bool count_tx, bool ignore_self_rx, uint8_t tx_vfo, uint8_t repeats);
 static bool MSG_RF_SendRangePacketFrameRepeatedOnVfo(const uint8_t *packet, bool count_tx, bool ignore_self_rx, uint8_t tx_vfo, uint8_t repeats);
-static void MSG_RF_RequestControlledReprime(uint8_t delay_ticks);
-static void MSG_RF_DoControlledReprime(void);
 static void MSG_RF_EnsureFskIrqMask(void);
 static bool MSG_RF_AutoTxBusy(void);
 
@@ -215,16 +213,13 @@ static void MSG_RF_NarrowLockEnd(void)
 
 static bool MSG_RF_AckEnabledNow(void)
 {
-    /* Safety-critical public setting: re-read the persisted config at the
-     * point where an automatic ACK/retry TX decision is made.  This prevents
-     * stale in-RAM state from causing an unintended automatic transmission
-     * after the user has switched MSG ACK to OFF in the main menu. */
-    MSG_STORE_Init();
-    s_store_initialized = true;
+    /* The menu updates gMessengerConfig before persisting it.  Use that live
+     * value here; re-reading the 320-byte flash record several times per 10ms
+     * tick delays RF servicing and needlessly consumes stack/DMA bandwidth. */
     return gMessengerConfig.msg_ack != 0u;
 }
 
-static uint8_t MSG_RF_RandomAckDelayTicks(uint16_t msg_id)
+static uint16_t MSG_RF_RandomAckDelayTicks(uint16_t msg_id)
 {
     /* 0.2.4: multi-radio ACK collision reduction with legacy compatibility.
      * Minimum delay stays near the old 800ms ACK window so older builds have
@@ -237,7 +232,7 @@ static uint8_t MSG_RF_RandomAckDelayTicks(uint16_t msg_id)
         if (s_ack_jitter_seed == 0u) s_ack_jitter_seed = 0x5A3Cu;
     }
     s_ack_jitter_seed = (uint16_t)(s_ack_jitter_seed * 109u + 89u + msg_id);
-    return (uint8_t)(MSG_RF_ACK_SEND_DELAY_MIN_TICKS + (s_ack_jitter_seed % (MSG_RF_ACK_SEND_DELAY_JIT_TICKS + 1u)));
+    return (uint16_t)(MSG_RF_ACK_SEND_DELAY_MIN_TICKS + (s_ack_jitter_seed % (MSG_RF_ACK_SEND_DELAY_JIT_TICKS + 1u)));
 }
 
 static uint16_t MSG_RF_RandomRangeDelayTicks(uint16_t msg_id)
@@ -377,7 +372,10 @@ static void MSG_RF_RestoreFskAudioMute(void)
 static bool MSG_RF_LedBlinkAllowed(void)
 {
     if (gCurrentFunction == FUNCTION_TRANSMIT) return false;
-    // if (MSG_RF_ChannelBusy()) return false;
+    /* The stock RX indicator owns green for the complete carrier interval.
+     * CheckRadioInterrupts() updates g_SquelchLost before this 10 ms task, so
+     * no extra BK4829 register read is needed in the LED-only path. */
+    if (gCurrentFunction == FUNCTION_RECEIVE || g_SquelchLost) return false;
     if (s_rx_capture_active || s_rx_stale_ticks) return false;
     return true;
 }
@@ -408,11 +406,16 @@ static void MSG_RF_UpdateUnreadLed(void)
         if (s_unread_led_owner) {
             if (gCurrentFunction == FUNCTION_TRANSMIT) {
                 BK4819_ToggleGpioOut(BK4819_GPIO6_PIN2_GREEN, false);
-            } else if (MSG_RF_ChannelBusy() && gMessengerConfig.msg_led == 2u) {
+            } else if (gMessengerConfig.msg_led == 2u) {
+                /* During every kind of RX, preserve green and release only
+                 * the Messenger-owned red half of the dual-colour alert. */
                 BK4819_ToggleGpioOut(BK4819_GPIO5_PIN1_RED, false);
             }
         }
         s_unread_led_owner = false;
+        /* Resume unread indication immediately after RX/TX releases the LED,
+         * rather than continuing from an arbitrary point in the old blink. */
+        s_unread_led_ticks = 0u;
         return;
     }
 
@@ -497,40 +500,29 @@ static void MSG_RF_EnsureFskIrqMask(void)
 #endif
 }
 
-static void MSG_RF_CaptureVoiceSnapshot(void)
+static void MSG_RF_CaptureFskCleanupSnapshot(void)
 {
-    s_voice_snapshot.r19 = BK4819_ReadRegister(BK4819_REG_19);
-    s_voice_snapshot.r2b = BK4819_ReadRegister(BK4819_REG_2B);
-    s_voice_snapshot.r30 = BK4819_ReadRegister(BK4819_REG_30);
-    s_voice_snapshot.r3f = BK4819_ReadRegister(BK4819_REG_3F);
-    s_voice_snapshot.r47 = BK4819_ReadRegister(BK4819_REG_47);
-    s_voice_snapshot.r58 = BK4819_ReadRegister(BK4819_REG_58);
-    s_voice_snapshot.r59 = BK4819_ReadRegister(BK4819_REG_59);
-    s_voice_snapshot.r5c = BK4819_ReadRegister(BK4819_REG_5C);
-    s_voice_snapshot.r5d = BK4819_ReadRegister(BK4819_REG_5D);
-    s_voice_snapshot.r5e = BK4819_ReadRegister((BK4819_REGISTER_t)0x5E);
-    s_voice_snapshot.r70 = BK4819_ReadRegister(BK4819_REG_70);
-    s_voice_snapshot.r72 = BK4819_ReadRegister(BK4819_REG_72);
-    s_voice_snapshot.valid = true;
+    if (s_fsk_cleanup_snapshot.valid) return;
+    s_fsk_cleanup_snapshot.r58 = BK4819_ReadRegister(BK4819_REG_58);
+    s_fsk_cleanup_snapshot.r59 = BK4819_ReadRegister(BK4819_REG_59);
+    s_fsk_cleanup_snapshot.r5c = BK4819_ReadRegister(BK4819_REG_5C);
+    s_fsk_cleanup_snapshot.r5d = BK4819_ReadRegister(BK4819_REG_5D);
+    s_fsk_cleanup_snapshot.r5e = BK4819_ReadRegister((BK4819_REGISTER_t)0x5E);
+    s_fsk_cleanup_snapshot.r70 = BK4819_ReadRegister(BK4819_REG_70);
+    s_fsk_cleanup_snapshot.r72 = BK4819_ReadRegister(BK4819_REG_72);
+    s_fsk_cleanup_snapshot.valid = true;
 }
 
-static void MSG_RF_RestoreVoiceSnapshot(void)
+static void MSG_RF_RestoreFskCleanupSnapshot(void)
 {
-    if (!s_voice_snapshot.valid) return;
-
-    BK4819_WriteRegister(BK4819_REG_3F, 0x0000);
-    BK4819_WriteRegister(BK4819_REG_58, s_voice_snapshot.r58);
-    BK4819_WriteRegister(BK4819_REG_59, s_voice_snapshot.r59);
-    BK4819_WriteRegister(BK4819_REG_5C, s_voice_snapshot.r5c);
-    BK4819_WriteRegister(BK4819_REG_5D, s_voice_snapshot.r5d);
-    BK4819_WriteRegister((BK4819_REGISTER_t)0x5E, s_voice_snapshot.r5e);
-    BK4819_WriteRegister(BK4819_REG_70, s_voice_snapshot.r70);
-    BK4819_WriteRegister(BK4819_REG_72, s_voice_snapshot.r72);
-    BK4819_WriteRegister(BK4819_REG_2B, s_voice_snapshot.r2b);
-    BK4819_WriteRegister(BK4819_REG_19, s_voice_snapshot.r19);
-    BK4819_WriteRegister(BK4819_REG_47, s_voice_snapshot.r47); /* must remain normal AF */
-    BK4819_WriteRegister(BK4819_REG_30, s_voice_snapshot.r30);
-    BK4819_WriteRegister(BK4819_REG_3F, s_voice_snapshot.r3f);
+    if (!s_fsk_cleanup_snapshot.valid) return;
+    BK4819_WriteRegister(BK4819_REG_58, s_fsk_cleanup_snapshot.r58);
+    BK4819_WriteRegister(BK4819_REG_59, s_fsk_cleanup_snapshot.r59);
+    BK4819_WriteRegister(BK4819_REG_5C, s_fsk_cleanup_snapshot.r5c);
+    BK4819_WriteRegister(BK4819_REG_5D, s_fsk_cleanup_snapshot.r5d);
+    BK4819_WriteRegister((BK4819_REGISTER_t)0x5E, s_fsk_cleanup_snapshot.r5e);
+    BK4819_WriteRegister(BK4819_REG_70, s_fsk_cleanup_snapshot.r70);
+    BK4819_WriteRegister(BK4819_REG_72, s_fsk_cleanup_snapshot.r72);
 }
 
 static void MSG_RF_DisarmSidecarNoRadioReset(void)
@@ -560,18 +552,19 @@ static void MSG_RF_KeepFskRxEnabled(void)
 void MSG_RF_OnRadioSetupRegisters(void)
 {
 #ifdef ENABLE_AIRCOPY
-    if (gSurvivalMode) return;
-    if (!gMessengerConfig.msg_rx) return;
-    if (gCurrentFunction == FUNCTION_TRANSMIT) return;
-
     /* RADIO_SetupRegisters() rewrites the voice/interrupt/FSK related BK4829
-     * registers.  The old UV-K1 sidecar flag could remain true while the chip
-     * was no longer in the same FSK RX state.  Mark it stale and let the next
-     * idle tick fully re-arm the Aircopy-compatible RX path. */
+     * registers. Always make the software state match that hardware fact.
+     * If Messenger RX is allowed, the single re-arm timer retries on idle; it
+     * never assumes that a previous sidecar setup survived this event. */
+    /* The stock setup has already rebuilt audio/filter registers. Drop any
+     * temporary Messenger ownership without restoring pre-setup values. */
+    s_fsk_audio_muted = false;
+    MSG_RF_NarrowLockEnd();
     s_sidecar_armed = false;
     s_rx_capture_active = false;
     s_rx_stale_ticks = 0u;
-    s_reprime_delay_ticks = 1u;
+    s_rearm_delay_ticks = (!gSurvivalMode && gMessengerConfig.msg_rx &&
+                           gCurrentFunction != FUNCTION_TRANSMIT) ? 1u : 0u;
 #endif
 }
 
@@ -592,10 +585,9 @@ void MSG_RF_PrepareVoxVoiceTx(void)
     if (s_sidecar_armed || s_rx_capture_active) {
         MSG_RF_DisarmSidecarNoRadioReset();
         BK4819_ResetFSK();
+        MSG_RF_RestoreFskCleanupSnapshot();
     }
-    s_post_tx_restore_ticks = 0u;
     s_rearm_delay_ticks = 0u;
-    s_reprime_delay_ticks = 0u;
 #endif
 }
 
@@ -610,19 +602,16 @@ void MSG_RF_OnVoxModeChanged(bool enabled)
         MSG_RF_NarrowLockEnd();
         MSG_RF_DisarmSidecarNoRadioReset();
         BK4819_ResetFSK();
-        MSG_RF_RestoreVoiceSnapshot();
+        MSG_RF_RestoreFskCleanupSnapshot();
         RADIO_SelectVfos();
         RADIO_SetupRegisters(true);
-        MSG_RF_RestoreVoiceSnapshot();
-        s_post_tx_restore_ticks = 0u;
         s_rearm_delay_ticks = 0u;
-        s_reprime_delay_ticks = 0u;
     } else {
         /* Leaving VOX: allow the normal idle path to arm Messenger again. */
         s_sidecar_armed = false;
         s_rx_capture_active = false;
         s_rx_stale_ticks = 0u;
-        s_reprime_delay_ticks = 2u;
+        s_rearm_delay_ticks = 2u;
     }
 #else
     (void)enabled;
@@ -633,19 +622,16 @@ void MSG_RF_HardRestoreVoicePath(void)
 {
     MSG_RF_RestoreFskAudioMute();
     MSG_RF_NarrowLockEnd();
-    if (!s_voice_snapshot.valid && !s_sidecar_armed) {
-        return;
-    }
     MSG_RF_DisarmSidecarNoRadioReset();
     BK4819_ResetFSK();
-    MSG_RF_RestoreVoiceSnapshot();
+    MSG_RF_RestoreFskCleanupSnapshot();
     BK4819_SetupPowerAmplifier(0, 0);
     BK4819_ToggleGpioOut(BK4819_GPIO1_PIN29_PA_ENABLE, false);
     BK4819_ToggleGpioOut(BK4819_GPIO5_PIN1_RED, false);
     RADIO_SelectVfos();
     RADIO_SetupRegisters(true);
-    MSG_RF_RestoreVoiceSnapshot();
-    s_post_tx_restore_ticks = 0;
+    /* RADIO_SetupRegisters() is the sole owner of the restored analog state.
+     * Do not overwrite it with a snapshot captured on an older VFO/mode. */
     s_rearm_delay_ticks = MSG_RF_REARM_DELAY_TICKS;
 }
 
@@ -669,8 +655,7 @@ static void MSG_RF_ArmSidecarIfIdle(void)
     if (gCurrentFunction == FUNCTION_TRANSMIT) return;
     if (MSG_RF_ChannelBusy()) return;
 
-    if (!s_voice_snapshot.valid) MSG_RF_CaptureVoiceSnapshot();
-
+    MSG_RF_CaptureFskCleanupSnapshot();
     memset(g_FSK_Buffer, 0, sizeof(g_FSK_Buffer));
     gFSKWriteIndex = 0;
     s_rx_words = 0;
@@ -690,44 +675,14 @@ static void MSG_RF_ArmSidecarIfIdle(void)
 }
 
 
-static void MSG_RF_RequestControlledReprime(uint8_t delay_ticks)
-{
-    /* RF27: schedule a safe RX/FSK re-prime after TX/RX/scan-like state changes.
-     * This is intentionally delayed and only executes while the channel is idle,
-     * so it must not create the old voice-RX tick/cut problem. */
-    if (delay_ticks == 0u) delay_ticks = 1u;
-    if (s_reprime_delay_ticks == 0u || delay_ticks < s_reprime_delay_ticks) {
-        s_reprime_delay_ticks = delay_ticks;
-    }
-}
-
-static bool MSG_RF_CanControlledReprimeNow(void)
-{
-    if (!gMessengerConfig.msg_rx) return false;
-#ifdef ENABLE_VOX
-    if (gEeprom.VOX_SWITCH) return false;
-#endif
-    if (gCurrentFunction == FUNCTION_TRANSMIT) return false;
-    if (MSG_RF_ChannelBusy()) return false;
-    if (s_rx_capture_active || s_rx_stale_ticks) return false;
-    return true;
-}
-
-static void MSG_RF_DoControlledReprime(void)
-{
-#ifdef ENABLE_AIRCOPY
-    if (!MSG_RF_CanControlledReprimeNow()) return;
-
-    if (!s_sidecar_armed) {
-        MSG_RF_ArmSidecarIfIdle();
-    }
-    /* Event-based re-arm only; no light keepalive/re-prime while already armed. */
-#endif
-}
-
 static void MSG_RF_FinishRxAttempt(bool parsed)
 {
-    MSG_RF_RestoreFskAudioMute();
+    /* Keep the local AF gain muted until the FSK carrier itself is gone.
+     * RX_FINISHED means the modem frame is complete, but the transmitter can
+     * still be sending a short data/tail segment. Restoring REG_48 here lets
+     * that tail escape through the speaker. The 10 ms task releases the mute
+     * only after REG_0C reports an idle channel; normal squelch and speaker
+     * ownership remain entirely with the stock radio state machine. */
     MSG_RF_NarrowLockEnd();
     /* RF7 showed that dropping REG_59 to 0x0068 kills FIFO/decode even though
      * sync keeps increasing. Keep FSK RX enabled and just reset our local
@@ -742,9 +697,8 @@ static void MSG_RF_FinishRxAttempt(bool parsed)
 #endif
     MSG_RF_KeepFskRxEnabled();
     s_rearm_delay_ticks = 0;
-    /* RF29: do not schedule a controlled re-prime after RX.  RF28 showed
-     * RX-side/event re-prime can reduce normal message reception by colliding
-     * with the start of the next burst.  Keep TX-after re-prime only. */
+    /* Do not reset/re-prime the radio after a completed RX frame. Keeping the
+     * already-armed modem avoids colliding with the start of the next burst. */
     if (parsed) {
         MSG_RF_RequestDeferredBeep();
     }
@@ -755,6 +709,13 @@ void MSG_RF_Tick10ms(void)
     if (s_last_range_ping_age_ticks < MSG_RF_RANGE_PING_DUP_WINDOW_TICKS) ++s_last_range_ping_age_ticks;
     if (gSurvivalMode) return;
     MSG_RF_EnsureStoreInitialized();
+
+    if (!gMessengerConfig.msg_rx && (s_sidecar_armed || s_rx_capture_active)) {
+        /* MsgRx OFF must also stop an already-armed modem. Restore the stock
+         * radio once, then leave re-arm disabled until the setting is enabled. */
+        MSG_RF_HardRestoreVoicePath();
+        s_rearm_delay_ticks = 0u;
+    }
 
     /* The FSK sidecar can occasionally leave the stock SQL_FOUND interrupt
      * unseen after an analog/repeater tail.  REG_0C still reports that the
@@ -788,10 +749,6 @@ void MSG_RF_Tick10ms(void)
      * 3F:0C0C -> no FIFO/decode vs 3F:3002 -> FIFO/decode condition. */
 #endif
 
-    if (s_post_tx_restore_ticks && --s_post_tx_restore_ticks == 0) {
-        MSG_RF_HardRestoreVoicePath();
-    }
-
     if (s_deferred_beep_pending) {
         if (s_deferred_beep_ticks > 0u) {
             --s_deferred_beep_ticks;
@@ -824,12 +781,14 @@ void MSG_RF_Tick10ms(void)
         MSG_RF_FinishRxAttempt(false);
     }
 
-    /* Event-based re-prime only. No periodic 10 ms IRQ refresh or keepalive. */
-    if (s_reprime_delay_ticks > 0u) {
-        --s_reprime_delay_ticks;
-        if (s_reprime_delay_ticks == 0u) {
-            MSG_RF_DoControlledReprime();
-        }
+    /* A completed/aborted FSK frame may outlive the modem's RX_FINISHED flag.
+     * Wait for actual carrier loss before restoring only the saved AF gain.
+     * Do not touch gEnableSpeaker or the GPIO audio path here. */
+    if (s_fsk_audio_muted &&
+        !s_rx_capture_active &&
+        s_rx_stale_ticks == 0u &&
+        !MSG_RF_ChannelBusy()) {
+        MSG_RF_RestoreFskAudioMute();
     }
 
 #ifdef ENABLE_AIRCOPY
@@ -921,6 +880,7 @@ void MSG_RF_Tick10ms(void)
                     s_wait_ack_retries = 1u;
                     s_wait_ack_ticks = MSG_RF_ACK_TIMEOUT_TICKS;
                     MSG_RF_RxChannelLockStart(gEeprom.TX_VFO, MSG_RF_ACK_TIMEOUT_TICKS);
+                    s_rearm_delay_ticks = MSG_RF_POST_TX_REARM_TICKS;
                 }
             } else if (s_wait_ack_retries != 0u) {
                 MSG_STORE_SetOutboxStatusById(s_wait_ack_id, MSG_STATUS_FAILED);
@@ -937,6 +897,7 @@ void MSG_RF_Tick10ms(void)
     MSG_RF_UpdateUnreadLed();
 
     if (!s_boot_prime_done && gMessengerConfig.msg_rx &&
+        s_rearm_delay_ticks == 0u &&
         gCurrentFunction != FUNCTION_TRANSMIT && !MSG_RF_ChannelBusy()) {
         /* RF11: do the one-time RX/FSK prime at boot/global runtime, not only
          * after Messenger UI is opened or after the first sacrificial FSK burst. */
@@ -1008,7 +969,7 @@ static bool MSG_RF_SendPacketFrame(const uint8_t *packet, bool count_tx, bool ig
     if (!packet) return false;
     if (MSG_RF_FskBusy()) return false;
 
-    if (!s_voice_snapshot.valid) MSG_RF_CaptureVoiceSnapshot();
+    MSG_RF_CaptureFskCleanupSnapshot();
     MSG_RF_DisarmSidecarNoRadioReset();
     BK4819_ResetFSK();
     gFSKWriteIndex = 0;
@@ -1023,8 +984,9 @@ static bool MSG_RF_SendPacketFrame(const uint8_t *packet, bool count_tx, bool ig
     MSG_RF_NarrowLockEnd();
 
     MSG_RF_HardRestoreVoicePath();
-    s_post_tx_restore_ticks = MSG_RF_POST_TX_RESTORE_TICKS;
-    MSG_RF_RequestControlledReprime(MSG_RF_REPRIME_DELAY_TICKS);
+    /* One TX->RX transition only. HardRestore performs the stock analog
+     * restore; this guard then arms FSK once the hardware is settled. */
+    s_rearm_delay_ticks = MSG_RF_POST_TX_REARM_TICKS;
     (void)count_tx;
     if (ignore_self_rx) s_ignore_next_self_rx = true;
     gUpdateDisplay = true;
@@ -1084,6 +1046,8 @@ static bool MSG_RF_SendPacketFrameRepeatedOnVfo(const uint8_t *packet, bool coun
         RADIO_SetupRegisters(true);
     }
 
+    if (ok) s_rearm_delay_ticks = MSG_RF_POST_TX_REARM_TICKS;
+
     return ok;
 #else
     (void)packet; (void)count_tx; (void)ignore_self_rx; (void)tx_vfo; (void)repeats;
@@ -1103,8 +1067,7 @@ static void MSG_RF_RangeTxWarmupCurrentVfo(void)
      * the radio back into a clean TX-ready state, clear local FSK RX state and
      * give the BK4829 a short settling time.  This is Range-only; normal
      * Messenger SEND/ACK path remains unchanged. */
-    if (!s_voice_snapshot.valid) MSG_RF_CaptureVoiceSnapshot();
-
+    MSG_RF_CaptureFskCleanupSnapshot();
     MSG_RF_DisarmSidecarNoRadioReset();
     MSG_RF_NarrowLockEnd();
     BK4819_ResetFSK();
@@ -1112,7 +1075,7 @@ static void MSG_RF_RangeTxWarmupCurrentVfo(void)
     s_rx_capture_active = false;
     s_rx_stale_ticks = 0u;
     s_rx_words = 0u;
-    s_reprime_delay_ticks = 0u;
+    s_rearm_delay_ticks = 0u;
     gFSKWriteIndex = 0u;
     memset(g_FSK_Buffer, 0, sizeof(g_FSK_Buffer));
 
@@ -1148,6 +1111,8 @@ static bool MSG_RF_SendRangePacketFrameRepeatedOnVfo(const uint8_t *packet, bool
         RADIO_SelectVfos();
         RADIO_SetupRegisters(true);
     }
+
+    if (ok) s_rearm_delay_ticks = MSG_RF_POST_TX_REARM_TICKS;
 
     return ok;
 #else
@@ -1238,8 +1203,7 @@ static int8_t MSG_RF_CurrentRSSIdBm(void)
 
 static void MSG_RF_QueueRangePong(uint16_t id, const char *to, uint8_t rx_vfo)
 {
-    MSG_STORE_Init();
-    s_store_initialized = true;
+    MSG_RF_EnsureStoreInitialized();
     if (!gMessengerConfig.rng_rsp) return;
 
     /* 1.0.1c: With Range PING reduced to x1, a permanent same id/from
@@ -1384,16 +1348,20 @@ static void try_store_rx_packet(void)
     }
 
     if (pkt.type == MSG_PKT_TYPE_PONG) {
-        if (strncmp(pkt.from, gMessengerConfig.callsign, MSG_CALLSIGN_LEN) != 0) {
+        const bool remote_pong = strncmp(pkt.from, gMessengerConfig.callsign, MSG_CALLSIGN_LEN) != 0;
+        if (remote_pong) {
             uint16_t remote_battery = 0u;
             if (pkt.payload_len >= 2u) {
                 remote_battery = (uint16_t)(uint8_t)pkt.payload[0] | ((uint16_t)(uint8_t)pkt.payload[1] << 8);
             }
             MSG_RangeOnPong(pkt.from, MSG_RF_CurrentRSSIdBm(), remote_battery);
-            MSG_RF_RxChannelLockStop();
             MSG_RF_RequestRangeBeep();
         }
+        /* Finish the current FSK capture before restoring a previous VFO.
+         * If lock-stop calls RADIO_SetupRegisters(), its sidecar=false state
+         * must be the final state rather than being overwritten here. */
         MSG_RF_FinishRxAttempt(false);
+        if (remote_pong) MSG_RF_RxChannelLockStop();
         gUpdateDisplay = true;
         return;
     }
@@ -1464,16 +1432,22 @@ void MSG_RF_OnRadioInterrupt(uint16_t status)
 
     if (!s_sidecar_armed) return;
 
-    if (fsk_sync || (BK4819_ReadRegister(BK4819_REG_0B) & ((1u << 6) | (1u << 7)))) {
+    const bool modem_sync = fsk_sync ||
+        (BK4819_ReadRegister(BK4819_REG_0B) & ((1u << 6) | (1u << 7)));
+
+    if (modem_sync) {
         /*
-         * 1.0.1e RX alignment hotfix:
-         * A new FSK sync means a new Aircopy frame is starting.  If the local
-         * word buffer still contains a stale/partial previous frame, short
-         * packets such as PING/PONG/ACK can be shifted and then rejected before
-         * they ever reach the packet-type handler.  Reset the capture buffer at
-         * the beginning of a new capture, but do not wipe an already active one.
+         * A latched FSK_RX_SYNC IRQ is an explicit new frame boundary. This is
+         * especially important after power-save wake-up: the radio can catch
+         * only the tail of the wake frame, leaving a partial capture active
+         * when the real TEXT frame starts 180 ms later. Reset that partial data
+         * on the new IRQ so the real packet starts at word zero.
+         *
+         * REG_0B modem bits are level-like fallback indicators and may remain
+         * set during FIFO IRQs, so they may start an idle capture but must not
+         * repeatedly clear one that is already in progress.
          */
-        if (!s_rx_capture_active) {
+        if (fsk_sync || !s_rx_capture_active) {
             s_rx_words = 0;
             gFSKWriteIndex = 0;
             memset(g_FSK_Buffer, 0, sizeof(g_FSK_Buffer));
@@ -1520,7 +1494,7 @@ static void MSG_RF_RangeForceRxReprime(void)
     if (!gMessengerConfig.msg_rx) return;
     if (gCurrentFunction == FUNCTION_TRANSMIT) return;
 
-    if (!s_voice_snapshot.valid) MSG_RF_CaptureVoiceSnapshot();
+    MSG_RF_CaptureFskCleanupSnapshot();
     s_sidecar_armed = true;
     s_rx_capture_active = false;
     s_rx_stale_ticks = 0u;
@@ -1535,7 +1509,7 @@ static void MSG_RF_RangeForceRxReprime(void)
     BK4819_WriteRegister(BK4819_REG_59, MSG_RF_REG59_RX_CLEAR);
     BK4819_WriteRegister(BK4819_REG_59, MSG_RF_REG59_RX_ENABLE);
 
-    s_reprime_delay_ticks = 0u;
+    s_rearm_delay_ticks = 0u;
 #endif
 }
 
@@ -1571,7 +1545,6 @@ bool MSG_RF_SendRangePing(void)
      * possible after the PING TX restore.  The generic post-TX re-prime delay
      * is fine for normal Messenger, but the first cold-boot range test needs
      * the RX sidecar refreshed immediately so the early PONG is not missed. */
-    MSG_RF_RequestControlledReprime(1u);
     gUpdateDisplay = true;
     return true;
 #else
@@ -1630,19 +1603,12 @@ bool MSG_RF_SendText(const char *text)
         memset(s_wait_ack_text, 0, sizeof(s_wait_ack_text));
         strncpy(s_wait_ack_text, rf_text, MSG_TEXT_LEN);
         MSG_RF_RxChannelLockStart(gEeprom.TX_VFO, MSG_RF_ACK_TIMEOUT_TICKS);
-        MSG_RF_RequestControlledReprime(1u);
+        s_rearm_delay_ticks = MSG_RF_POST_TX_REARM_TICKS;
     } else {
         MSG_STORE_SetOutboxStatusById(id, MSG_STATUS_NONE);
         s_wait_ack_active = false;
         MSG_RF_RxChannelLockStop();
     }
-
-#ifdef ENABLE_AIRCOPY
-    /* RF27: do not immediately poke FSK registers right after TX.
-     * Schedule the same safe controlled re-prime used globally; ACK is delayed
-     * long enough to arrive after this window. */
-    MSG_RF_RequestControlledReprime(MSG_RF_REPRIME_DELAY_TICKS);
-#endif
 
     gUpdateDisplay = true;
     return true;

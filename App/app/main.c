@@ -314,6 +314,80 @@ KEY_Code_t MAIN_PlayCallTonePreview(uint8_t tone)
     return interrupted_by;
 }
 
+KEY_Code_t MAIN_PlayRogerPreview(uint8_t mode)
+{
+    if (mode > ROGER_MODE_MDC) mode = ROGER_MODE_OFF;
+
+    /* OFF is intentionally silent, but consume the navigation key release so
+     * a single press cannot advance the menu twice. */
+    if (mode == ROGER_MODE_OFF) {
+        MAIN_CallTonePreviewWaitForRelease();
+        return KEY_INVALID;
+    }
+    if (gCurrentFunction == FUNCTION_TRANSMIT || FUNCTION_IsRx()) return KEY_INVALID;
+
+#ifdef ENABLE_MESSENGER
+    MSG_RF_HardRestoreVoicePath();
+#endif
+
+    /* Preview through the local speaker only. In particular, do not call
+     * BK4819_PlayRogerMDC(): that routine enables the FSK transmitter. */
+    AUDIO_AudioPathOff();
+    if (gCurrentFunction == FUNCTION_POWER_SAVE && gRxIdleMode)
+        BK4819_RX_TurnOn();
+    SYSTEM_DelayMs(20u);
+
+    const uint16_t saved_reg71 = BK4819_ReadRegister(BK4819_REG_71);
+    BK4819_PrepareToPlayTone(true);
+    SYSTEM_DelayMs(2u);
+    AUDIO_AudioPathOn();
+    SYSTEM_DelayMs(60u);
+
+    KEY_Code_t interrupted_by = KEY_INVALID;
+    CallTonePreviewKeys_t keys = {
+        .released = false,
+        .candidate = KEY_INVALID,
+        .stable_reads = 0u,
+    };
+
+    if (mode == ROGER_MODE_ROGER) {
+        BK4819_WriteRegister(BK4819_REG_71, MAIN_ScaleToneFreq(1540u));
+        BK4819_ExitTxMute();
+        interrupted_by = MAIN_CallTonePreviewDelay(80u, &keys);
+        if (interrupted_by == KEY_INVALID) {
+            BK4819_WriteRegister(BK4819_REG_71, MAIN_ScaleToneFreq(1310u));
+            interrupted_by = MAIN_CallTonePreviewDelay(80u, &keys);
+        }
+    } else {
+        /* The real MDC roger is an RF FFSK frame. Reproduce its audible
+         * 1200/1800 Hz character locally without touching FSK registers or
+         * keying the transmitter. */
+        const uint32_t pattern = 0x2D6B5u;
+        BK4819_ExitTxMute();
+        for (uint8_t i = 0u; i < 18u; ++i) {
+            const uint16_t hz = (pattern & (1u << i)) ? 1800u : 1200u;
+            BK4819_WriteRegister(BK4819_REG_71, MAIN_ScaleToneFreq(hz));
+            interrupted_by = MAIN_CallTonePreviewDelay(10u, &keys);
+            if (interrupted_by != KEY_INVALID) break;
+        }
+    }
+
+    BK4819_EnterTxMute();
+    AUDIO_AudioPathOff();
+    SYSTEM_DelayMs(5u);
+    BK4819_TurnsOffTones_TurnsOnRX();
+    SYSTEM_DelayMs(5u);
+    BK4819_WriteRegister(BK4819_REG_71, saved_reg71);
+
+    RADIO_SelectVfos();
+    RADIO_SetupRegisters(true);
+
+    if (interrupted_by == KEY_MENU || interrupted_by == KEY_EXIT)
+        MAIN_CallTonePreviewWaitForRelease();
+
+    return interrupted_by;
+}
+
 static void MAIN_SendCallToneNote(uint16_t hz, uint8_t on_10ms, uint8_t off_10ms)
 {
     if (hz == 0 || on_10ms == 0) return;

@@ -24,6 +24,7 @@ extern bool gCallToneTxActive;
 
 void MAIN_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
 KEY_Code_t MAIN_PlayCallTonePreview(uint8_t tone);
+KEY_Code_t MAIN_PlayRogerPreview(uint8_t mode);
 void MAIN_SendPmrCallToneAction(void);
 void channelMoveSwitch(void);
 

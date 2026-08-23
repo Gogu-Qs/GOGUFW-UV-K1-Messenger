@@ -2227,10 +2227,11 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
         default:
             MENU_ClampSelection(Direction);
 #ifdef ENABLE_MESSENGER
-            if (m == MENU_CALL_TONE) {
+            if (m == MENU_CALL_TONE || m == MENU_ROGER) {
                 for (;;) {
                     if (gSubMenuSelection < 0) gSubMenuSelection = 0;
-                    if (gSubMenuSelection > 4) gSubMenuSelection = 4;
+                    const int8_t preview_max = (m == MENU_CALL_TONE) ? 4 : 2;
+                    if (gSubMenuSelection > preview_max) gSubMenuSelection = preview_max;
                     /* The melody itself replaces the normal navigation beep. */
                     gBeepToPlay = BEEP_NONE;
                     /* Render first; the synchronous sample must never leave
@@ -2238,8 +2239,9 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
                     gRequestDisplayScreen = DISPLAY_MENU;
                     GUI_DisplayScreen();
 
-                    const KEY_Code_t preview_key =
-                        MAIN_PlayCallTonePreview((uint8_t)gSubMenuSelection);
+                    const KEY_Code_t preview_key = (m == MENU_CALL_TONE)
+                        ? MAIN_PlayCallTonePreview((uint8_t)gSubMenuSelection)
+                        : MAIN_PlayRogerPreview((uint8_t)gSubMenuSelection);
 
                     if (preview_key == KEY_UP || preview_key == KEY_DOWN) {
                         int8_t preview_direction = preview_key == KEY_UP ? 1 : -1;

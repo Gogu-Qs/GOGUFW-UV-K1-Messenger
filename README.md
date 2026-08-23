@@ -1,8 +1,8 @@
-# GOGUFW 1.2.1
+# GOGUFW 1.2.2
 
 GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3, built on the F4HWN Fusion firmware and focused on radio-to-radio messaging and practical everyday tools.
 
-Version **1.2.1** combines selected F4HWN 5.9.0 improvements with GOGUFW's Messenger, HEARD, Range Check, CALLTX and FM radio additions. This maintenance release reduces FLASH/RAM use while preserving the tested 1.2.0 behavior.
+Version **1.2.2** improves first-message reception across normal Battery Save wake cycles, keeps FSK packet audio out of the speaker, and adds small Messenger, FM and Roger-preview UI refinements.
 
 [Download the latest release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/latest)
 
@@ -57,14 +57,14 @@ The programmable actions can be assigned to the short or long press of the side 
 
 ## Download and compatibility
 
-The current stable release is **GOGUFW 1.2.1**. Its release page includes:
+The current stable release is **GOGUFW 1.2.2**. Its release page includes:
 
 - the Fusion firmware `.bin` file;
-- the matching `Gogufw_1.2.1_chirp_module.py` CHIRP module.
+- the matching `Gogufw_1.2.2_chirp_module.py` CHIRP module.
 
 GOGUFW is intended for Quansheng UV-K1 / UV-K5 V3 variants using the **PY32F071 MCU and BK4829 RF IC**. It is not intended for unrelated BK4819-based radios.
 
-[Open the GOGUFW 1.2.1 release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v1.2.1)
+[Open the GOGUFW 1.2.2 release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v1.2.2)
 
 ## Build from source
 

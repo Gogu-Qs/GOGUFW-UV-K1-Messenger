@@ -22,7 +22,7 @@ jobs:
     - name: Upload firmware artifact
       uses: actions/upload-artifact@v4
       with:
-        name: gogufw-1.2.0-firmware
+        name: gogufw-1.2.2-firmware
         path: |
           build/Fusion/gogufw.bin
           build/Fusion/gogufw.hex

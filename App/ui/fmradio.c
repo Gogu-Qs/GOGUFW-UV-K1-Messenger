@@ -277,6 +277,11 @@ void UI_DisplayFM(void)
         UI_DrawLineBuffer(gFrameBuffer, 119, 29, 119, 43, 1);
         if (centerLabel != NULL) {
             UI_PrintStringSmallBold(centerLabel, 10, 117, 4);
+            /* Small-font rendering is page based. Shift only the label's
+             * columns down one pixel inside the panel; leave its border and
+             * the rest of the FM screen untouched. */
+            for (uint8_t x = 10U; x <= 117U; ++x)
+                gFrameBuffer[4][x] <<= 1;
         }
     } else {
         /* VFO mode: no rectangle; show a real frequency ruler. The marker is
