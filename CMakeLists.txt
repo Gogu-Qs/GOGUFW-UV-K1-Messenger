@@ -45,7 +45,7 @@ if(ENABLE_FEAT_F4HWN)
         set(VERSION_STRING_1 "v0.22")
     endif()
     if(NOT VERSION_STRING_2)
-        set(VERSION_STRING_2 "1.2.2")
+        set(VERSION_STRING_2 "1.3.0")
     endif()
     if(NOT EDITION_STRING)
         set(EDITION_STRING "GGFW")
@@ -80,6 +80,16 @@ add_subdirectory(Middlewares)
 add_subdirectory(Core)
 add_subdirectory(App)
 
+# This source is contributed through App's INTERFACE library but compiled by
+# the root executable, so the non-LTO property must be set in this directory.
+# A concrete object is required for relocation auditing of the RAM stub.
+if(ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY)
+    set_source_files_properties(
+        "${CMAKE_SOURCE_DIR}/App/driver/mb_flash.c"
+        PROPERTIES COMPILE_OPTIONS "-fno-lto"
+    )
+endif()
+
 target_link_libraries(${EXE_NAME} Core App)
 
 target_compile_definitions(${EXE_NAME} PRIVATE $<$<CONFIG:Debug>:DEBUG>)
@@ -101,6 +111,23 @@ target_link_options(${EXE_NAME} PRIVATE -Wl,--no-warn-rwx-segment)
 # -----------------------------------
 #  Post build processing
 #
+
+# Internal Flash is unavailable while the multiboot restore stub executes.
+# Reject the build if any branch/reference escapes its RAM-resident section.
+if(ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY)
+    add_custom_command(
+        TARGET ${EXE_NAME}
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+                "-DOBJDUMP=${CMAKE_OBJDUMP}"
+                "-DELF=$<TARGET_FILE:${EXE_NAME}>"
+                "-DMAP=${CMAKE_CURRENT_BINARY_DIR}/${EXE_NAME}.map"
+                "-DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+                -P "${CMAKE_SOURCE_DIR}/cmake/check_mb_ramfunc.cmake"
+        COMMENT "Checking multiboot RAM stub isolation"
+        VERBATIM
+    )
+endif()
 
 # Generate .bin file
 add_custom_command(

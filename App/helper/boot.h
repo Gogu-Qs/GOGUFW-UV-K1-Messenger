@@ -24,11 +24,14 @@ enum BOOT_Mode_t
 {
     BOOT_MODE_NORMAL = 0,
     BOOT_MODE_F_LOCK,
+    #ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+        BOOT_MODE_MULTIBOOT,
+    #endif
     #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
         BOOT_MODE_RESCUE_OPS,
     #endif
     #ifdef ENABLE_AIRCOPY
-        BOOT_MODE_AIRCOPY
+        BOOT_MODE_AIRCOPY,
     #endif
 };
 
@@ -38,4 +41,3 @@ BOOT_Mode_t BOOT_GetMode(void);
 void BOOT_ProcessMode(BOOT_Mode_t Mode);
 
 #endif
-

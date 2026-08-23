@@ -29,19 +29,39 @@
 #include "settings.h"
 #include "ui/menu.h"
 #include "ui/ui.h"
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+    #include "ui/multiboot.h"
+#endif
 
 BOOT_Mode_t BOOT_GetMode(void)
 {
-    unsigned int i;
-    KEY_Code_t   Keys[2];
+    KEY_Code_t Keys[2];
+    bool Ptt[2];
 
-    for (i = 0; i < 2; i++)
+    for (unsigned int i = 0; i < 2; i++)
     {
-        if (!GPIO_IsPttPressed())
-            return BOOT_MODE_NORMAL;   // PTT not pressed
         Keys[i] = KEYBOARD_Poll();
+        Ptt[i] = GPIO_IsPttPressed();
         SYSTEM_DelayMs(20);
     }
+
+    if (Keys[0] != Keys[1])
+        return BOOT_MODE_NORMAL;
+
+    #ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+    /* MENU alone at power-on enters the guest slot selector. Existing PTT boot
+     * combinations remain unchanged. */
+    if (!Ptt[0] && !Ptt[1] && Keys[0] == KEY_MENU)
+    {
+        gKeyReading0 = KEY_MENU;
+        gKeyReading1 = KEY_MENU;
+        gDebounceCounter = 2;
+        return BOOT_MODE_MULTIBOOT;
+    }
+    #endif
+
+    if (!Ptt[0] || !Ptt[1])
+        return BOOT_MODE_NORMAL;
 
     #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
     if (Keys[0] == (10 + gEeprom.SET_KEY))
@@ -74,6 +94,15 @@ BOOT_Mode_t BOOT_GetMode(void)
 void BOOT_ProcessMode(BOOT_Mode_t Mode)
 {
     GUI_DisplayType_t display = DISPLAY_MAIN;
+
+    #ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+    if (Mode == BOOT_MODE_MULTIBOOT)
+    {
+        UI_MultibootSelector();
+        GUI_SelectNextDisplay(DISPLAY_MAIN);
+        return;
+    }
+    #endif
 
     if (Mode == BOOT_MODE_F_LOCK)
     {

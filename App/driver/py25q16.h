@@ -25,4 +25,17 @@ void PY25Q16_ReadBuffer(uint32_t Address, void *pBuffer, uint32_t Size);
 void PY25Q16_WriteBuffer(uint32_t Address, const void *pBuffer, uint32_t Size, bool Append);
 void PY25Q16_SectorErase(uint32_t Address);
 
+void PY25Q16_InvalidateCache(void);
+
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+/* Standard F4HWN profile bank plus two GOGUFW-private sectors. Profile 0 keeps
+ * the legacy physical addresses; profiles 1..4 redirect them into unused
+ * offsets 0xB000 and 0xC000 of their private 64 KiB banks. */
+#define PY25Q16_PROFILE_SHARED_FROM       0x00010000u
+#define PY25Q16_GOGU_PRIVATE_FROM         0x00012000u
+#define PY25Q16_GOGU_PRIVATE_TO           0x00014000u
+#define PY25Q16_GOGU_PROFILE_OFFSET       0x0000B000u
+void PY25Q16_SetProfileBase(uint32_t Base);
+#endif
+
 #endif
