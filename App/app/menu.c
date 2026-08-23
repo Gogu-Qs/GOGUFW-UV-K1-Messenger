@@ -482,11 +482,9 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
             *pMax = 0;
             break;
         case MENU_MSG_RX:
-        case MENU_MSG_CALLTX:
         case MENU_MSG_ACK:
         case MENU_MSG_BEEP:
         case MENU_RNG_RSP:
-        case MENU_MSG_DEBUG:
             *pMax = 1;
             break;
         case MENU_CALL_TONE:
@@ -494,9 +492,6 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
             break;
         case MENU_CALL_VOL:
             *pMax = 1;
-            break;
-        case MENU_MSG_HOP:
-            *pMax = 5;
             break;
         case MENU_MSG_LED:
             *pMax = 2;
@@ -571,16 +566,11 @@ void MENU_AcceptSetting(void)
                 MSG_STORE_SaveConfig();
             }
             break;
-        case MENU_MSG_CALLTX:
-            gMessengerConfig.callsign_tx = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
         case MENU_MSG_ACK:
             gMessengerConfig.msg_ack = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
-        case MENU_MSG_HOP:
-            gMessengerConfig.msg_hop = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
         case MENU_MSG_BEEP:
             gMessengerConfig.msg_beep = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
         case MENU_CALL_TONE:
-            MAIN_CancelCallTonePreview();
             gMessengerConfig.call_tone = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
         case MENU_CALL_VOL:
             gMessengerConfig.call_vol = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
@@ -588,8 +578,6 @@ void MENU_AcceptSetting(void)
             gMessengerConfig.msg_led = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
         case MENU_RNG_RSP:
             gMessengerConfig.rng_rsp = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
-        case MENU_MSG_DEBUG:
-            gMessengerConfig.msg_debug = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
 #endif
 
         case MENU_SQL:
@@ -1154,12 +1142,8 @@ void MENU_ShowCurrentSetting(void)
             MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.msg_rx; break;
         case MENU_MSG_CSG:
             MSG_STORE_Init(); gSubMenuSelection = 0; break;
-        case MENU_MSG_CALLTX:
-            MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.callsign_tx; break;
         case MENU_MSG_ACK:
             MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.msg_ack; break;
-        case MENU_MSG_HOP:
-            MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.msg_hop; break;
         case MENU_MSG_BEEP:
             MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.msg_beep; break;
         case MENU_CALL_TONE:
@@ -1170,8 +1154,6 @@ void MENU_ShowCurrentSetting(void)
             MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.msg_led; break;
         case MENU_RNG_RSP:
             MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.rng_rsp; break;
-        case MENU_MSG_DEBUG:
-            MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.msg_debug; break;
 #endif
 
         case MENU_SQL:
@@ -1838,9 +1820,6 @@ static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
 static void MENU_Key_EXIT(bool bKeyPressed, bool bKeyHeld)
 {
-#ifdef ENABLE_MESSENGER
-    if (bKeyPressed && !bKeyHeld) MAIN_CancelCallTonePreview();
-#endif
     if (MENU_IsEditingName())
     {
         if (!bKeyPressed || bKeyHeld)
@@ -1937,9 +1916,6 @@ static void MENU_Key_EXIT(bool bKeyPressed, bool bKeyHeld)
 
 static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
 {
-#ifdef ENABLE_MESSENGER
-    if (bKeyPressed && !bKeyHeld) MAIN_CancelCallTonePreview();
-#endif
     if (!bKeyPressed || (bKeyHeld && (!MENU_IsEditingName() || gAskForConfirmation)))
         return;
     
@@ -2199,9 +2175,6 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
 
     if (!gIsInSubMenu)
     {
-#ifdef ENABLE_MESSENGER
-        MAIN_CancelCallTonePreview();
-#endif
         gMenuCursor = NUMBER_AddWithWraparound(gMenuCursor, -Direction, 0, gMenuListCount - 1);
 
         gFlagRefreshSetting = true;

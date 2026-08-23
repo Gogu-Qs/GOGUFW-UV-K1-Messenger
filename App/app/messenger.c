@@ -15,8 +15,6 @@ typedef enum {
     MSG_SCREEN_DRAFTS,
     MSG_SCREEN_COMPOSE,
     MSG_SCREEN_READ,
-    MSG_SCREEN_SETTINGS,
-    MSG_SCREEN_CALLSIGN,
     MSG_SCREEN_RANGE,
 } MSG_Screen_t;
 
@@ -26,11 +24,8 @@ uint8_t gMsgScroll;
 uint8_t gMsgHomeCursor;
 char gMsgComposeBuf[MSG_TEXT_LEN + 1];
 MSG_T9Editor_t gMsgEditor;
-MSG_T9Editor_t gMsgCallsignEditor;
-char gMsgCallsignBuf[MSG_CALLSIGN_EDIT_LEN + 1];
 uint8_t gMsgReadIndex;
 uint8_t gMsgReadSource;
-uint8_t gMsgSettingsCursor;
 
 typedef struct {
     bool used;
@@ -81,7 +76,6 @@ void MSG_Tick(void)
 {
     if (gSurvivalMode) return;
     if (gMsgScreen == MSG_SCREEN_COMPOSE) MSG_T9_Tick(&gMsgEditor);
-    else if (gMsgScreen == MSG_SCREEN_CALLSIGN) MSG_T9_Tick(&gMsgCallsignEditor);
     else if (gMsgScreen == MSG_SCREEN_RANGE && gMsgRangeStatus == 1u) {
         if (s_msgRangeWaitTicks > 0u) --s_msgRangeWaitTicks;
         if (s_msgRangeWaitTicks == 0u) {
@@ -251,9 +245,7 @@ static void open_draft_edit(uint8_t index)
     if (index >= MSG_DRAFT_CAPACITY) index = 0;
     gMsgComposeIsDraftEdit = true;
     gMsgComposeDraftIndex = index;
-    memset(gMsgComposeBuf, 0, sizeof(gMsgComposeBuf));
-    strncpy(gMsgComposeBuf, gMessengerConfig.drafts[index], MSG_TEXT_LEN);
-    gMsgComposeBuf[MSG_TEXT_LEN] = 0;
+    MSG_STORE_GetDraft(index, gMsgComposeBuf);
     MSG_T9_Start(&gMsgEditor, gMsgComposeBuf, MSG_TEXT_LEN);
     gMsgScreen = MSG_SCREEN_COMPOSE;
 }
@@ -263,14 +255,14 @@ static uint8_t read_count(void)
     return (gMsgReadSource == MSG_SCREEN_OUTBOX) ? MSG_STORE_CountOutbox() : MSG_STORE_CountInbox();
 }
 
-static MSG_Message_t *read_message(void)
+static const char *read_message_text(void)
 {
     if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
         if (gMsgReadIndex >= MSG_STORE_CountOutbox()) return 0;
-        return &gMessengerOutbox[gMsgReadIndex];
+        return gMessengerOutbox[gMsgReadIndex].text;
     }
     if (gMsgReadIndex >= MSG_STORE_CountInbox()) return 0;
-    return &gMessengerInbox[gMsgReadIndex];
+    return gMessengerInbox[gMsgReadIndex].text;
 }
 
 static void read_move(int8_t dir)
@@ -335,9 +327,9 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                 read_move(1);
             } else if (Key == KEY_MENU) {
                 if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
-                    MSG_Message_t *m = read_message();
-                    if (m) {
-                        if (!MSG_RF_SendText(m->text)) MSG_STORE_AddOutboxDemo(m->text);
+                    const char *text = read_message_text();
+                    if (text) {
+                        if (!MSG_RF_SendText(text)) MSG_STORE_AddOutboxDemo(text);
                     }
                     open_sent_after_send();
                 } else {
@@ -406,16 +398,6 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             }
             break;
 
-        case MSG_SCREEN_CALLSIGN:
-            /* Public 0.2.0: Messenger-local settings screen is hidden.
-             * Callsign editing remains available from the main radio menu. */
-            if (Key == KEY_EXIT || Key == KEY_MENU) go_home();
-            break;
-
-        case MSG_SCREEN_SETTINGS:
-            /* Hidden in public builds; keep a safe escape in case stale state is entered. */
-            go_home();
-            break;
     }
     gUpdateDisplay = true;
 }

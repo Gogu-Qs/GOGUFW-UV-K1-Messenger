@@ -59,9 +59,8 @@ typedef struct {
 
 #define FM_NAMES_HEADER_SIZE ((uint32_t)sizeof(FM_NamesHeader_t))
 #define FM_NAMES_SLOT_ADDR(ch) (FM_NAMES_FLASH_ADDR + FM_NAMES_HEADER_SIZE + ((uint32_t)(ch) * FM_NAME_LEN))
-#define FM_NAMES_USED_SIZE  (FM_NAMES_HEADER_SIZE + ((uint32_t)FM_CHANNELS_MAX * FM_NAME_LEN))
 
-static char s_fmNameReadBuf[FM_NAME_LEN];
+static char s_fmNameBuf[FM_NAME_LEN];
 
 typedef enum {
     FM_MENU_NONE = 0,
@@ -72,7 +71,6 @@ typedef enum {
 static FM_MenuMode_t s_fmMenuMode;
 static bool s_fmNameEdit;
 static bool s_fmAutoScanConfirm;
-static char s_fmNameEditBuf[FM_NAME_LEN];
 static MSG_T9Editor_t s_fmNameEditor;
 
 const uint8_t BUTTON_STATE_PRESSED = 1 << 0;
@@ -118,36 +116,30 @@ static void FM_NamesEnsureStore(void)
 
 const char *FM_GetChannelName(uint8_t Channel)
 {
-    if (Channel >= FM_CHANNELS_MAX) return "";
-    if (!FM_NamesHeaderValid()) return "";
-    PY25Q16_ReadBuffer(FM_NAMES_SLOT_ADDR(Channel), s_fmNameReadBuf, FM_NAME_LEN);
-    if ((uint8_t)s_fmNameReadBuf[0] == 0xFFU || s_fmNameReadBuf[0] == 0) return "";
-    s_fmNameReadBuf[FM_NAME_LEN - 1U] = 0;
-    return s_fmNameReadBuf;
+    s_fmNameBuf[0] = 0;
+    if (Channel >= FM_CHANNELS_MAX) return s_fmNameBuf;
+    if (!FM_NamesHeaderValid()) return s_fmNameBuf;
+    PY25Q16_ReadBuffer(FM_NAMES_SLOT_ADDR(Channel), s_fmNameBuf, FM_NAME_LEN);
+    if ((uint8_t)s_fmNameBuf[0] == 0xFFU) s_fmNameBuf[0] = 0;
+    s_fmNameBuf[FM_NAME_LEN - 1U] = 0;
+    return s_fmNameBuf;
 }
 
 void FM_SetChannelName(uint8_t Channel, const char *Name)
 {
-    /* Flash cannot reliably change 0 bits back to 1 without erase.
-       Keep only a temporary stack copy of the small FM-name store, update one slot,
-       erase the private 0x013000 sector, then write it back. This avoids a permanent
-       50x16 RAM table and allows renaming the same channel repeatedly. */
-    uint8_t store[FM_NAMES_USED_SIZE];
     char slot[FM_NAME_LEN];
 
     if (Channel >= FM_CHANNELS_MAX) return;
     FM_NamesEnsureStore();
 
-    PY25Q16_ReadBuffer(FM_NAMES_FLASH_ADDR, store, sizeof(store));
-
     memset(slot, 0, sizeof(slot));
     if (Name != NULL) strncpy(slot, Name, FM_NAME_LEN - 1U);
     slot[FM_NAME_LEN - 1U] = 0;
 
-    memcpy(&store[FM_NAMES_HEADER_SIZE + ((uint32_t)Channel * FM_NAME_LEN)], slot, sizeof(slot));
-
-    PY25Q16_SectorErase(FM_NAMES_FLASH_ADDR);
-    PY25Q16_WriteBuffer(FM_NAMES_FLASH_ADDR, store, sizeof(store), false);
+    /* The flash driver already preserves and rewrites the complete 4 KiB
+     * sector when a 0-to-1 bit change requires erase.  Write only this slot
+     * here instead of duplicating an 816-byte sector fragment on the stack. */
+    PY25Q16_WriteBuffer(FM_NAMES_SLOT_ADDR(Channel), slot, sizeof(slot), false);
 }
 
 void FM_SetChannelDefaultName(uint8_t Channel)
@@ -227,12 +219,10 @@ uint8_t FM_GetRssiLevel(void)
 
 static void FM_NameEditStart(void)
 {
-    memset(s_fmNameEditBuf, 0, sizeof(s_fmNameEditBuf));
     const char *cur = FM_GetChannelName(gEeprom.FM_SelectedChannel);
-    if (cur[0]) strncpy(s_fmNameEditBuf, cur, FM_NAME_LEN - 1U);
-    else FM_MakeDefaultName(gEeprom.FM_SelectedChannel, s_fmNameEditBuf);
-    s_fmNameEditBuf[FM_NAME_LEN - 1U] = 0;
-    MSG_T9_Start(&s_fmNameEditor, s_fmNameEditBuf, FM_NAME_LEN - 1U);
+    if (!cur[0]) FM_MakeDefaultName(gEeprom.FM_SelectedChannel, s_fmNameBuf);
+    s_fmNameBuf[FM_NAME_LEN - 1U] = 0;
+    MSG_T9_Start(&s_fmNameEditor, s_fmNameBuf, FM_NAME_LEN - 1U);
     s_fmNameEdit = true;
     gRequestDisplayScreen = DISPLAY_FM;
 }
@@ -240,7 +230,7 @@ static void FM_NameEditStart(void)
 static void FM_NameEditSave(void)
 {
     MSG_T9_Commit(&s_fmNameEditor);
-    FM_SetChannelName(gEeprom.FM_SelectedChannel, s_fmNameEditBuf);
+    FM_SetChannelName(gEeprom.FM_SelectedChannel, s_fmNameBuf);
     s_fmNameEdit = false;
     s_fmMenuMode = FM_MENU_NONE;
     gRequestDisplayScreen = DISPLAY_FM;
@@ -268,7 +258,7 @@ static void FM_StartAutoScanNow(void)
 bool FM_IsNameEditActive(void) { return s_fmNameEdit; }
 bool FM_IsAutoScanConfirmActive(void) { return s_fmAutoScanConfirm; }
 uint8_t FM_GetMenuMode(void) { return (uint8_t)s_fmMenuMode; }
-const char *FM_GetNameEditBuffer(void) { return s_fmNameEditBuf; }
+const char *FM_GetNameEditBuffer(void) { return s_fmNameBuf; }
 uint8_t FM_GetNameEditorMode(void) { return s_fmNameEditor.mode; }
 bool FM_GetNameEditorUpper(void) { return s_fmNameEditor.upper; }
 

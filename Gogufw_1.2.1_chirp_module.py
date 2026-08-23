@@ -1,9 +1,9 @@
-# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v1.2.0
+# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v1.2.1
 # Based on F4HWN Fusion CHIRP 5.5.0 support.
 # Matches GOGUFW 1.0.1 EEPROM aliases:
 #   FM names: 0x00D000 alias -> firmware flash 0x013000
 #   Messenger/Call config: 0x00E000 alias -> firmware flash 0x012000
-# Includes GGFW settings: MsgRx, CllSgnTx, MsgAck, MsgHop, MsgBeep, MsgLed, MsgDbg, CllTon, CllVol, RngRsp, Callsign, Drafts, FM names.
+# Includes GGFW settings: MsgRx, MsgAck, MsgBeep, MsgLed, CllTon, CllVol, RngRsp, Callsign, Drafts, FM names.
 
 # Quansheng UV-K5 driver (c) 2023 Jacek Lipkowski <sq5bpf@lipkowski.org>
 # Adapted For UV-K5 EGZUMER custom software By EGZUMER, JOC2
@@ -1214,7 +1214,7 @@ def _ggfw_msg_config_ensure(_mem):
 class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
     """Quansheng UV-K5 (egzumer + f4hwn)"""
     VENDOR = "Quansheng"
-    MODEL = "UV-K1 / UV-K5 V3 GOGUFW Messenger 1.2.0"
+    MODEL = "UV-K1 / UV-K5 V3 GOGUFW Messenger 1.2.1"
     BAUD_RATE = 38400
     NEEDS_COMPAT_SERIAL = False
     FIRMWARE_VERSION = ""
@@ -3026,23 +3026,14 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         val = RadioSettingValueList(GGFW_MSG_OFF_ON_LIST, GGFW_MSG_OFF_ON_LIST[int(_mem.ggfw_msg_rx)])
         ggfw.append(RadioSetting("ggfw_msg_rx", "MsgRx", val))
 
-        val = RadioSettingValueList(GGFW_MSG_OFF_ON_LIST, GGFW_MSG_OFF_ON_LIST[int(_mem.ggfw_msg_callsign_tx)])
-        ggfw.append(RadioSetting("ggfw_msg_callsign_tx", "CllSgnTx", val))
-
         val = RadioSettingValueList(GGFW_MSG_OFF_ON_LIST, GGFW_MSG_OFF_ON_LIST[int(_mem.ggfw_msg_ack)])
         ggfw.append(RadioSetting("ggfw_msg_ack", "MsgAck", val))
-
-        val = RadioSettingValueList(GGFW_MSG_HOP_LIST, GGFW_MSG_HOP_LIST[int(_mem.ggfw_msg_hop)])
-        ggfw.append(RadioSetting("ggfw_msg_hop", "MsgHop", val))
 
         val = RadioSettingValueList(GGFW_MSG_OFF_ON_LIST, GGFW_MSG_OFF_ON_LIST[int(_mem.ggfw_msg_beep)])
         ggfw.append(RadioSetting("ggfw_msg_beep", "MsgBeep", val))
 
         val = RadioSettingValueList(GGFW_MSG_LED_LIST, GGFW_MSG_LED_LIST[int(_mem.ggfw_msg_led)])
         ggfw.append(RadioSetting("ggfw_msg_led", "MsgLed", val))
-
-        val = RadioSettingValueList(GGFW_MSG_OFF_ON_LIST, GGFW_MSG_OFF_ON_LIST[int(_mem.ggfw_msg_debug)])
-        ggfw.append(RadioSetting("ggfw_msg_debug", "MsgDbg", val))
 
         val = RadioSettingValueList(GGFW_CALL_TONE_LIST, GGFW_CALL_TONE_LIST[int(_mem.ggfw_call_tone)])
         ggfw.append(RadioSetting("ggfw_call_tone", "CllTon", val))

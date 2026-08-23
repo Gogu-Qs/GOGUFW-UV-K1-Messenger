@@ -43,7 +43,6 @@ extern uint8_t gFSKWriteIndex;
 #define MSG_RF_ACK_SEND_DELAY_MIN_TICKS  80u   /* 800ms compatibility-safe ACK delay min */
 #define MSG_RF_ACK_SEND_DELAY_JIT_TICKS 220u   /* +0..2200ms random ACK jitter; ACK window = 0.8..3.0s */
 #define MSG_RF_REPRIME_DELAY_TICKS     20u   /* 200ms after TX/RX end */
-#define MSG_RF_IDLE_REPRIME_TICKS      0u    /* RF28: periodic idle re-prime disabled; event-based only */
 #define MSG_RF_UNREAD_LED_PERIOD_TICKS 300u   /* 3 seconds */
 #define MSG_RF_UNREAD_LED_FLASH_TICKS  8u     /* 80 ms */
 #define MSG_RF_UNREAD_LED_GAP_TICKS    14u    /* 140 ms between double flashes */
@@ -75,12 +74,6 @@ extern uint8_t gFSKWriteIndex;
 #define MSG_RF_REG59_TX_START_LONG_PRE 0x28F8u
 #define MSG_RF_REG5D_LEN_100_BYTES    0x6300u
 
-static uint8_t s_tx_count;
-static uint8_t s_restore_count;
-static uint8_t s_sync_count;
-static uint8_t s_fifo_count;
-static uint8_t s_decode_count;
-static uint8_t s_sidecar_count;
 static uint8_t s_post_tx_restore_ticks;
 static uint8_t s_rearm_delay_ticks;
 static uint8_t s_rx_stale_ticks;
@@ -92,7 +85,6 @@ static uint8_t s_ack_success_beep_ticks;
 static bool s_ack_success_beep_pending;
 static bool s_store_initialized;
 static uint8_t s_reprime_delay_ticks;
-static uint16_t s_idle_reprime_ticks;
 static bool s_boot_prime_done;
 static bool s_sidecar_armed;
 static bool s_rx_capture_active;
@@ -145,27 +137,8 @@ static bool s_ack_collect_active;
 static uint16_t s_ack_collect_id;
 static uint16_t s_ack_collect_ticks;
 
-/* RF22 ACK debug: replace old RF register debug on-screen with the
- * actual ACK state machine values.  These fields are intentionally tiny
- * so they fit on one Messenger debug line. */
-static uint16_t s_ack_dbg_pending_id;
-static uint16_t s_ack_dbg_sent_id;
-static uint16_t s_ack_dbg_rx_id;
-static uint8_t  s_ack_dbg_sent_count;
-static uint8_t  s_ack_dbg_rx_count;
-static uint8_t  s_ack_dbg_match_count;
-static uint8_t  s_ack_dbg_miss_count;
-static uint8_t  s_ack_dbg_wait_active;
-static uint8_t  s_ack_dbg_retry_count;
 static uint16_t s_ack_jitter_seed;
 static uint32_t s_range_jitter_seed;
-
-/* RF7 diagnostic snapshot: lets us see exactly which BK4829 state
- * corresponds to the "open RX / messages decode perfectly" condition.
- * These are read-only probes; they do not change radio state. */
-static uint16_t s_dbg_02, s_dbg_0b, s_dbg_0c, s_dbg_30, s_dbg_3f, s_dbg_47, s_dbg_58, s_dbg_59, s_dbg_67;
-static uint8_t  s_dbg_open_ticks;
-static uint8_t  s_dbg_last_decode_open;
 
 #ifdef ENABLE_AIRCOPY
 static uint8_t s_rx_words;
@@ -524,25 +497,6 @@ static void MSG_RF_EnsureFskIrqMask(void)
 #endif
 }
 
-static void MSG_RF_UpdateDebugSnapshot(void)
-{
-    s_dbg_0c = BK4819_ReadRegister(BK4819_REG_0C);
-    s_dbg_02 = BK4819_ReadRegister(BK4819_REG_02);
-    s_dbg_0b = BK4819_ReadRegister(BK4819_REG_0B);
-    s_dbg_30 = BK4819_ReadRegister(BK4819_REG_30);
-    s_dbg_3f = BK4819_ReadRegister(BK4819_REG_3F);
-    s_dbg_47 = BK4819_ReadRegister(BK4819_REG_47);
-    s_dbg_58 = BK4819_ReadRegister(BK4819_REG_58);
-    s_dbg_59 = BK4819_ReadRegister(BK4819_REG_59);
-    s_dbg_67 = BK4819_ReadRegister((BK4819_REGISTER_t)0x67);
-
-    if ((s_dbg_0c & (1u << 1)) != 0u) {
-        if (s_dbg_open_ticks < 250u) s_dbg_open_ticks++;
-    } else {
-        s_dbg_open_ticks = 0;
-    }
-}
-
 static void MSG_RF_CaptureVoiceSnapshot(void)
 {
     s_voice_snapshot.r19 = BK4819_ReadRegister(BK4819_REG_19);
@@ -693,7 +647,6 @@ void MSG_RF_HardRestoreVoicePath(void)
     MSG_RF_RestoreVoiceSnapshot();
     s_post_tx_restore_ticks = 0;
     s_rearm_delay_ticks = MSG_RF_REARM_DELAY_TICKS;
-    s_restore_count++;
 }
 
 static void MSG_RF_ArmSidecarIfIdle(void)
@@ -733,7 +686,6 @@ static void MSG_RF_ArmSidecarIfIdle(void)
     BK4819_WriteRegister(BK4819_REG_59, MSG_RF_REG59_RX_ENABLE);
 
     s_sidecar_armed = true;
-    s_sidecar_count++;
 #endif
 }
 
@@ -770,7 +722,6 @@ static void MSG_RF_DoControlledReprime(void)
         MSG_RF_ArmSidecarIfIdle();
     }
     /* Event-based re-arm only; no light keepalive/re-prime while already armed. */
-    s_idle_reprime_ticks = MSG_RF_IDLE_REPRIME_TICKS;
 #endif
 }
 
@@ -795,7 +746,6 @@ static void MSG_RF_FinishRxAttempt(bool parsed)
      * RX-side/event re-prime can reduce normal message reception by colliding
      * with the start of the next burst.  Keep TX-after re-prime only. */
     if (parsed) {
-        s_dbg_last_decode_open = (uint8_t)((s_dbg_0c & (1u << 1)) ? 1u : 0u);
         MSG_RF_RequestDeferredBeep();
     }
 }
@@ -805,7 +755,6 @@ void MSG_RF_Tick10ms(void)
     if (s_last_range_ping_age_ticks < MSG_RF_RANGE_PING_DUP_WINDOW_TICKS) ++s_last_range_ping_age_ticks;
     if (gSurvivalMode) return;
     MSG_RF_EnsureStoreInitialized();
-    MSG_RF_UpdateDebugSnapshot();
 
     /* The FSK sidecar can occasionally leave the stock SQL_FOUND interrupt
      * unseen after an analog/repeater tail.  REG_0C still reports that the
@@ -817,7 +766,7 @@ void MSG_RF_Tick10ms(void)
         g_SquelchLost &&
         !s_rx_capture_active &&
         s_rx_stale_ticks == 0u &&
-        (s_dbg_0c & (1u << 1)) == 0u) {
+        (BK4819_ReadRegister(BK4819_REG_0C) & (1u << 1)) == 0u) {
         if (++s_sql_close_confirm_ticks >= MSG_RF_SQL_CLOSE_CONFIRM_TICKS) {
             s_sql_close_confirm_ticks = 0u;
             g_SquelchLost = false;
@@ -944,8 +893,6 @@ void MSG_RF_Tick10ms(void)
             if (MSG_PACKET_BuildAck(ack_frame, sizeof(ack_frame), s_pending_ack_queue[i].id,
                                     gMessengerConfig.callsign, s_pending_ack_queue[i].to) == MSG_PKT_WIRE_LEN) {
                 if (MSG_RF_SendPacketFrameRepeatedOnVfo(ack_frame, false, true, s_pending_ack_queue[i].vfo, MSG_RF_ACK_REPEATS)) {
-                    s_ack_dbg_sent_id = s_pending_ack_queue[i].id;
-                    s_ack_dbg_sent_count++;
                     s_pending_ack_queue[i].active = false;
                 }
             }
@@ -958,7 +905,6 @@ void MSG_RF_Tick10ms(void)
         s_wait_ack_active = false;
         s_ack_collect_active = false;
         MSG_RF_RxChannelLockStop();
-        s_ack_dbg_wait_active = 0u;
     }
     if (s_wait_ack_active) {
         if (s_wait_ack_ticks > 0u) {
@@ -973,7 +919,6 @@ void MSG_RF_Tick10ms(void)
                                          s_wait_ack_ttl) == MSG_PKT_WIRE_LEN &&
                     MSG_RF_SendPacketFrame(retry_frame, true, true)) {
                     s_wait_ack_retries = 1u;
-                    s_ack_dbg_retry_count = 1u;
                     s_wait_ack_ticks = MSG_RF_ACK_TIMEOUT_TICKS;
                     MSG_RF_RxChannelLockStart(gEeprom.TX_VFO, MSG_RF_ACK_TIMEOUT_TICKS);
                 }
@@ -981,7 +926,6 @@ void MSG_RF_Tick10ms(void)
                 MSG_STORE_SetOutboxStatusById(s_wait_ack_id, MSG_STATUS_FAILED);
                 s_wait_ack_active = false;
                 MSG_RF_RxChannelLockStop();
-                s_ack_dbg_wait_active = 0u;
             } else {
                 /* Active FSK capture or carrier busy: do not collide; retry shortly. */
                 s_wait_ack_ticks = MSG_RF_ACK_RETRY_GAP_TICKS;
@@ -997,7 +941,6 @@ void MSG_RF_Tick10ms(void)
         /* RF11: do the one-time RX/FSK prime at boot/global runtime, not only
          * after Messenger UI is opened or after the first sacrificial FSK burst. */
         MSG_RF_ArmSidecarIfIdle();
-        s_idle_reprime_ticks = 0u;
         s_boot_prime_done = true;
         /* No follow-up boot keepalive/re-prime; delayed re-arm is TX-only. */
     } else if (s_rearm_delay_ticks) {
@@ -1082,7 +1025,7 @@ static bool MSG_RF_SendPacketFrame(const uint8_t *packet, bool count_tx, bool ig
     MSG_RF_HardRestoreVoicePath();
     s_post_tx_restore_ticks = MSG_RF_POST_TX_RESTORE_TICKS;
     MSG_RF_RequestControlledReprime(MSG_RF_REPRIME_DELAY_TICKS);
-    if (count_tx) s_tx_count++;
+    (void)count_tx;
     if (ignore_self_rx) s_ignore_next_self_rx = true;
     gUpdateDisplay = true;
     return true;
@@ -1387,12 +1330,8 @@ static bool MSG_RF_ParseAckText(const char *text, uint16_t *id)
 
 static void MSG_RF_HandleAckFor(uint16_t ack_id, const char *ack_from)
 {
-    s_ack_dbg_rx_id = ack_id;
-    s_ack_dbg_rx_count++;
-
     if (s_wait_ack_active) {
         if (ack_id == s_wait_ack_id) {
-            s_ack_dbg_match_count++;
             MSG_STORE_AddOutboxAckSourceById(s_wait_ack_id, ack_from);
             MSG_STORE_SetOutboxStatusById(s_wait_ack_id, MSG_STATUS_ACKED);
 
@@ -1404,10 +1343,7 @@ static void MSG_RF_HandleAckFor(uint16_t ack_id, const char *ack_from)
             s_ack_collect_id = ack_id;
             s_ack_collect_ticks = MSG_RF_ACK_COLLECT_TICKS;
             MSG_RF_RxChannelLockStart(gEeprom.TX_VFO, MSG_RF_ACK_COLLECT_TICKS);
-            s_ack_dbg_wait_active = 0u;
             MSG_RF_RequestAckSuccessBeep();
-        } else {
-            s_ack_dbg_miss_count++;
         }
     } else if (s_ack_collect_active && ack_id == s_ack_collect_id) {
         MSG_STORE_AddOutboxAckSourceById(ack_id, ack_from);
@@ -1513,7 +1449,6 @@ static void try_store_rx_packet(void)
      * key/UI paths. For real RF messages RF12 uses the global deferred beep
      * handler instead, so clear the UI-local request to avoid delayed Inbox beeps. */
     gBeepToPlay = BEEP_NONE;
-    s_decode_count++;
     MSG_RF_FinishRxAttempt(true);
     gUpdateDisplay = true;
 #endif
@@ -1530,7 +1465,6 @@ void MSG_RF_OnRadioInterrupt(uint16_t status)
     if (!s_sidecar_armed) return;
 
     if (fsk_sync || (BK4819_ReadRegister(BK4819_REG_0B) & ((1u << 6) | (1u << 7)))) {
-        s_sync_count++;
         /*
          * 1.0.1e RX alignment hotfix:
          * A new FSK sync means a new Aircopy frame is starting.  If the local
@@ -1555,7 +1489,6 @@ void MSG_RF_OnRadioInterrupt(uint16_t status)
             g_FSK_Buffer[s_rx_words++] = BK4819_ReadRegister(BK4819_REG_5F);
         }
         gFSKWriteIndex = s_rx_words;
-        s_fifo_count++;
         s_rx_capture_active = true;
         s_rx_stale_ticks = MSG_RF_RX_STALE_TICKS;
         MSG_RF_NarrowLockBegin();
@@ -1567,7 +1500,6 @@ void MSG_RF_OnRadioInterrupt(uint16_t status)
             g_FSK_Buffer[s_rx_words++] = BK4819_ReadRegister(BK4819_REG_5F);
         }
         gFSKWriteIndex = s_rx_words;
-        s_fifo_count++;
         try_store_rx_packet();
         if (s_rx_capture_active) MSG_RF_FinishRxAttempt(false);
     }
@@ -1604,7 +1536,6 @@ static void MSG_RF_RangeForceRxReprime(void)
     BK4819_WriteRegister(BK4819_REG_59, MSG_RF_REG59_RX_ENABLE);
 
     s_reprime_delay_ticks = 0u;
-    s_sidecar_count++;
 #endif
 }
 
@@ -1679,7 +1610,7 @@ bool MSG_RF_SendText(const char *text)
     clamp_rf_text(rf_text, text);
 
     const uint16_t id = MSG_STORE_NextMsgId();
-    const uint8_t ttl = gMessengerConfig.msg_hop ? gMessengerConfig.msg_hop : 1u;
+    const uint8_t ttl = 1u;
 
     if (MSG_PACKET_BuildText(packet, sizeof(packet), id, gMessengerConfig.callsign, rf_text, ttl) != MSG_PKT_WIRE_LEN) {
         return false;
@@ -1693,11 +1624,8 @@ bool MSG_RF_SendText(const char *text)
     if (MSG_RF_AckEnabledNow()) {
         s_wait_ack_active = true;
         s_wait_ack_id = id;
-        s_ack_dbg_pending_id = id;
-        s_ack_dbg_wait_active = 1u;
         s_wait_ack_ticks = MSG_RF_ACK_TIMEOUT_TICKS;
         s_wait_ack_retries = 0u;
-        s_ack_dbg_retry_count = 0u;
         s_wait_ack_ttl = ttl;
         memset(s_wait_ack_text, 0, sizeof(s_wait_ack_text));
         strncpy(s_wait_ack_text, rf_text, MSG_TEXT_LEN);
@@ -1707,8 +1635,6 @@ bool MSG_RF_SendText(const char *text)
         MSG_STORE_SetOutboxStatusById(id, MSG_STATUS_NONE);
         s_wait_ack_active = false;
         MSG_RF_RxChannelLockStop();
-        s_ack_dbg_pending_id = 0u;
-        s_ack_dbg_wait_active = 0u;
     }
 
 #ifdef ENABLE_AIRCOPY
@@ -1725,31 +1651,3 @@ bool MSG_RF_SendText(const char *text)
     return false;
 #endif
 }
-
-uint16_t MSG_RF_GetAckDbgPendingId(void) { return s_ack_dbg_pending_id; }
-uint16_t MSG_RF_GetAckDbgSentId(void) { return s_ack_dbg_sent_id; }
-uint16_t MSG_RF_GetAckDbgRxId(void) { return s_ack_dbg_rx_id; }
-uint8_t MSG_RF_GetAckDbgSentCount(void) { return s_ack_dbg_sent_count; }
-uint8_t MSG_RF_GetAckDbgRxCount(void) { return s_ack_dbg_rx_count; }
-uint8_t MSG_RF_GetAckDbgMatchCount(void) { return s_ack_dbg_match_count; }
-uint8_t MSG_RF_GetAckDbgMissCount(void) { return s_ack_dbg_miss_count; }
-uint8_t MSG_RF_GetAckDbgWaitActive(void) { return s_ack_dbg_wait_active; }
-uint8_t MSG_RF_GetAckDbgRetryCount(void) { return s_ack_dbg_retry_count; }
-
-uint8_t MSG_RF_GetTxCount(void) { return s_tx_count; }
-uint8_t MSG_RF_GetSyncCount(void) { return s_sync_count; }
-uint8_t MSG_RF_GetFifoCount(void) { return s_fifo_count; }
-uint8_t MSG_RF_GetDecodeCount(void) { return s_decode_count; }
-uint8_t MSG_RF_GetRestoreCount(void) { return s_restore_count; }
-uint8_t MSG_RF_GetSidecarCount(void) { return s_sidecar_count; }
-uint8_t MSG_RF_GetOpenTicks(void) { return s_dbg_open_ticks; }
-uint8_t MSG_RF_GetLastDecodeOpen(void) { return s_dbg_last_decode_open; }
-uint16_t MSG_RF_GetDbg02(void) { return s_dbg_02; }
-uint16_t MSG_RF_GetDbg0B(void) { return s_dbg_0b; }
-uint16_t MSG_RF_GetDbg0C(void) { return s_dbg_0c; }
-uint16_t MSG_RF_GetDbg30(void) { return s_dbg_30; }
-uint16_t MSG_RF_GetDbg3F(void) { return s_dbg_3f; }
-uint16_t MSG_RF_GetDbg47(void) { return s_dbg_47; }
-uint16_t MSG_RF_GetDbg58(void) { return s_dbg_58; }
-uint16_t MSG_RF_GetDbg59(void) { return s_dbg_59; }
-uint16_t MSG_RF_GetDbg67(void) { return s_dbg_67; }

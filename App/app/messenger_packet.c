@@ -12,6 +12,9 @@ static uint16_t get_u16_le(const uint8_t *p)
     return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
 }
 
+/* GCC 15 turns this small -Os loop into a 512-byte lookup table.  O1 keeps
+ * the same bitwise CRC-CCITT algorithm in code and is smaller overall. */
+__attribute__((optimize("O1")))
 uint16_t MSG_PACKET_Crc16(const uint8_t *data, uint16_t len)
 {
     uint16_t crc = 0xFFFFu;

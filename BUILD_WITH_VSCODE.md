@@ -1,4 +1,4 @@
-# Build GOGUFW 1.2.0 with VS Code and Docker
+# Build GOGUFW 1.2.1 with VS Code and Docker
 
 Docker is enough for the firmware build. VS Code is only a convenient front-end.
 
@@ -52,4 +52,4 @@ After a successful build, run:
 GGFW: Show output files
 ```
 
-The CMake preset is still internally named `Fusion` because GOGUFW is based on the F4HWN Fusion feature set. The firmware branding/version shown on the radio is `GOGUFW 1.2.0 / GGFW`.
+The CMake preset is still internally named `Fusion` because GOGUFW is based on the F4HWN Fusion feature set. The firmware branding/version shown on the radio is `GOGUFW 1.2.1 / GGFW`.
