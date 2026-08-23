@@ -1,10 +1,69 @@
-# GOGUFW 1.2.2
+# GOGUFW 1.3.0 — Multiboot Adaptation
 
 GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3, built on the F4HWN Fusion firmware and focused on radio-to-radio messaging and practical everyday tools.
 
-Version **1.2.2** improves first-message reception across normal Battery Save wake cycles, keeps FSK packet audio out of the speaker, and adds small Messenger, FM and Roger-preview UI refinements.
+This branch is an **experimental multiboot guest adaptation**. It makes GOGUFW compatible with the F4HWN multiboot slot layout while preserving the Messenger, HEARD, Range Check, CALLTX and FM extensions developed for GOGUFW.
 
-[Download the latest release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/latest)
+The stable release remains [GOGUFW 1.2.2](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v1.2.2). The work on this branch does not modify the `main` branch or the stable release.
+
+## About this multiboot work
+
+The goal is to make GOGUFW a safe **guest firmware**, not to create another multiboot manager.
+
+This adaptation adds:
+
+- compatibility with the standard F4HWN multiboot firmware slots and per-slot settings profiles;
+- a boot-time selector, opened by holding **MENU while powering on**;
+- automatic one-time backup of a normally flashed firmware as the **Main** slot;
+- CRC validation of a complete slot image before internal Flash is erased;
+- a RAM-resident restore routine that continues working while internal Flash is unavailable;
+- redundant active-profile records, so an interrupted marker update does not silently select the wrong settings bank;
+- independent GOGUFW Messenger settings/drafts and FM station names for every user slot.
+
+GOGUFW does **not** include the host-side commands used to upload, erase or manage firmware slots. Slots must be prepared with a compatible F4HWN multiboot manager/tool. GOGUFW only identifies the active profile, displays valid slots and safely restores the selected image.
+
+### Preventing cross-firmware conflicts
+
+Each slot receives its own radio configuration area. Normal channel memories, VFO settings and menu settings therefore do not overwrite the configuration used by another firmware slot.
+
+GOGUFW also keeps its custom persistent data separate:
+
+| Data | Multiboot behavior |
+| --- | --- |
+| Channels, VFOs and radio settings | Stored in the active slot's private profile bank. |
+| Messenger configuration and drafts | Stored in GOGUFW-reserved space inside the active profile bank. |
+| FM station names | Stored in a separate GOGUFW-reserved sector inside the active profile bank. |
+| Main profile data | Keeps the historical GOGUFW addresses, so an existing installation does not require migration. |
+| Calibration and stock voice data | Remain shared and are outside the slot/profile allocation. |
+
+The reserved GOGUFW areas are currently beyond the standard F4HWN 5.9.0 settings footprint. Compile-time boundary checks prevent the build if the known slot, profile, marker or stock voice regions overlap.
+
+No changes were made to Messenger packet framing, ACK/retry logic, the FSK wake preamble, BK4829 RF setup, squelch handling or Battery Save behavior as part of this adaptation.
+
+## First boot and slot selection
+
+Before testing an experimental build, save a complete CHIRP backup of the radio.
+
+1. Flash the Fusion binary normally, or install it into a slot using a compatible multiboot manager.
+2. A normal standalone installation shows **Init Main / DO NOT POWER OFF** once while the running firmware is backed up as Main. Do not switch the radio off during this operation.
+3. For normal use, power on without holding a key.
+4. To open the firmware selector, hold **MENU** while powering on.
+5. Select a valid slot and confirm with **MENU**. Press **EXIT** to return without switching.
+
+Only slots with a valid header, size and full-image CRC are offered for restore. A successful switch rewrites the internal application region and resets the radio.
+
+### Current build status
+
+The Fusion preset builds successfully as **GOGUFW 1.3.0**:
+
+- RAM: **13,496 / 16,384 bytes (82.37%)**;
+- actual FLASH image: **118,860 / 120,832 bytes (98.37%)**;
+- remaining FLASH: **1,972 bytes**;
+- restore stub: **920 bytes**, with all **85 branches** verified to remain inside its RAM section.
+
+The multiboot adaptation adds approximately **5,740 bytes of FLASH** and **16 bytes of RAM** compared with the previous Fusion build. Because the firmware is close to the internal Flash limit, future features must continue to be reviewed carefully.
+
+Recommended radio regression tests include first-message reception after a cold boot and long idle, ACK/retry, Range Check ping/pong, normal RX and squelch, voice TX, Battery Save wake cycles, FM audio/names, and switching away from GOGUFW and back without settings crossing between slots.
 
 ## What GOGUFW adds
 
