@@ -2,6 +2,24 @@
 
 GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3, built on the F4HWN Fusion firmware and focused on radio-to-radio messaging and practical everyday tools.
 
+## Firmware at a glance
+
+| Statistic | Current stable build |
+| --- | --- |
+| 📦 **Release** | [GOGUFW 1.2.2](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v1.2.2) |
+| 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
+| ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
+| ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
+| 🍴 **GitHub forks** | [![GitHub forks](https://img.shields.io/github/forks/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=forks&color=orange)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/forks) |
+| 🧩 **Firmware base** | F4HWN Fusion 5.9.0 |
+| 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
+| ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
+| 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
+| 💾 **FLASH usage** | 113,120 / 120,832 bytes · **93.62%** · 7,712 bytes free |
+| 🧠 **RAM usage** | 13,480 / 16,384 bytes · **82.28%** · 2,904 bytes free |
+| ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · FM names/RSSI |
+| 🔌 **CHIRP support** | Matching GOGUFW 1.2.2 custom module |
+
 Version **1.2.2** improves first-message reception across normal Battery Save wake cycles, keeps FSK packet audio out of the speaker, and adds small Messenger, FM and Roger-preview UI refinements.
 
 [Download the latest release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/latest)
