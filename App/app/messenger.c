@@ -39,7 +39,7 @@ typedef struct {
 
 #define MSG_RANGE_MAX_FOUND 6u
 #define MSG_RANGE_PAGE_SIZE 3u
-#define MSG_RANGE_WAIT_TICKS 1000u
+#define MSG_RANGE_WAIT_TICKS 1200u
 
 MSG_RangeFound_t gMsgRangeFound[MSG_RANGE_MAX_FOUND];
 uint8_t gMsgRangeCount;
@@ -166,7 +166,8 @@ void MSG_RangeOnPong(const char *callsign, int8_t rssi_dbm, uint16_t battery_cv)
             break;
         }
     }
-    if (gMsgRangeStatus == 1u) gMsgRangeStatus = 2u; /* show live result immediately */
+    /* Keep collecting until the original Range Check window expires. The
+     * record update above is enough for the result to appear immediately. */
     gUpdateDisplay = true;
 }
 

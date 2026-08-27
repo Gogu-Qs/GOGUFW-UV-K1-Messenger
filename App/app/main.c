@@ -113,7 +113,7 @@ static void toggle_chan_scanlist(void)
 
         gTxVfo->SCANLIST_PARTICIPATION = scanlist;
 
-        SETTINGS_UpdateChannel(gTxVfo->CHANNEL_SAVE, gTxVfo, true, true, true);
+        SETTINGS_UpdateChannel(gTxVfo->CHANNEL_SAVE, gTxVfo, true);
     }
 
     gVfoConfigureMode = VFO_CONFIGURE;
@@ -596,6 +596,11 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
         case KEY_4:
             HideFKeyIcon();
 
+            if (gScanStateDir != SCAN_OFF) {
+                gScanKeepResult = false;
+                CHFRSCANNER_Stop();
+            }
+
             gBackup_CROSS_BAND_RX_TX  = gEeprom.CROSS_BAND_RX_TX;
             gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;     
 
@@ -691,7 +696,7 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
 
                 if (gScanStateDir != SCAN_OFF) {
                     RADIO_NextValidList(isKeyUp ? 1 : -1);
-                    UI_MAIN_NotifyScanProgressDataChanged();
+                    UI_MAIN_NotifyScanListChanged();
                 } else {
                     // Adjust squelch: UP increments, DOWN decrements
                     if (gSquelchLevelOriginal == 10)
@@ -874,7 +879,7 @@ static void MAIN_Key_DIGITS(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             if (value == 0)
             {
                 gEeprom.SCAN_LIST_DEFAULT = MR_CHANNELS_LIST + 1;
-                UI_MAIN_NotifyScanProgressDataChanged();
+                UI_MAIN_NotifyScanListChanged();
             #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
                 SETTINGS_WriteCurrentState();
             #endif
@@ -1162,7 +1167,7 @@ static void MAIN_Key_MENU(bool bKeyPressed, bool bKeyHeld)
                     att->exclude = true;
 
                     MR_SaveChannelAttributesToFlash(lastFoundFrqOrChan, att);
-                    UI_MAIN_NotifyScanProgressDataChanged();
+                    UI_MAIN_NotifyScanListChanged();
 
                     gVfoConfigureMode = VFO_CONFIGURE;
                     gFlagResetVfos    = true;
@@ -1305,6 +1310,11 @@ static void MAIN_Key_STAR(bool bKeyPressed, bool bKeyHeld)
             return;
         }               
 #endif
+        if (gScanStateDir != SCAN_OFF) {
+            gScanKeepResult = false;
+            CHFRSCANNER_Stop();
+        }
+
         // scan the CTCSS/DCS code
         gBackup_CROSS_BAND_RX_TX  = gEeprom.CROSS_BAND_RX_TX;
         gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;

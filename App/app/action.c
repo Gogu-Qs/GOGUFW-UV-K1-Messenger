@@ -102,7 +102,7 @@ static void ACTION_CallTx(void)
 }
 #endif
 
-void (*action_opt_table[])(void) = {
+void (*const action_opt_table[])(void) = {
     [ACTION_OPT_NONE] = &FUNCTION_NOP,
     [ACTION_OPT_POWER] = &ACTION_Power,
     [ACTION_OPT_MONITOR] = &ACTION_Monitor,
@@ -294,7 +294,7 @@ void ACTION_Scan(bool bRestart)
 
         // channel mode. Keep scanning but toggle between scan lists
         RADIO_NextValidList(1);
-        UI_MAIN_NotifyScanProgressDataChanged();
+        UI_MAIN_NotifyScanListChanged();
 
         #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
             SETTINGS_WriteCurrentState();

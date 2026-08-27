@@ -791,7 +791,7 @@ void MENU_AcceptSetting(void)
 
         case MENU_LIST_CH:
             gTxVfo->SCANLIST_PARTICIPATION = gSubMenuSelection;
-            SETTINGS_UpdateChannel(gTxVfo->CHANNEL_SAVE, gTxVfo, true, false, true);
+            SETTINGS_UpdateChannel(gTxVfo->CHANNEL_SAVE, gTxVfo, true);
             gVfoConfigureMode = VFO_CONFIGURE;
             gFlagResetVfos    = true;
             return;
@@ -818,7 +818,7 @@ void MENU_AcceptSetting(void)
 
         case MENU_COMPAND:
             gTxVfo->Compander = gSubMenuSelection;
-            SETTINGS_UpdateChannel(gTxVfo->CHANNEL_SAVE, gTxVfo, true, false, true);
+            SETTINGS_UpdateChannel(gTxVfo->CHANNEL_SAVE, gTxVfo, true);
             gVfoConfigureMode = VFO_CONFIGURE;
             gFlagResetVfos    = true;
 //          gRequestSaveChannel = 1;
@@ -930,7 +930,7 @@ void MENU_AcceptSetting(void)
         #endif
 
         case MENU_DEL_CH:
-            SETTINGS_UpdateChannel(gSubMenuSelection, NULL, false, false, true);
+            SETTINGS_UpdateChannel(gSubMenuSelection, NULL, false);
             gVfoConfigureMode = VFO_CONFIGURE_RELOAD;
             gFlagResetVfos    = true;
             return;
@@ -2039,8 +2039,7 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
 
         if (m == MENU_RESET  ||
             m == MENU_MEM_CH ||
-            m == MENU_DEL_CH ||
-            m == MENU_MEM_NAME)
+            m == MENU_DEL_CH)
         {
             switch (gAskForConfirmation)
             {

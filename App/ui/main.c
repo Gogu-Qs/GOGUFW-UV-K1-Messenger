@@ -69,6 +69,7 @@ center_line_t center_line = CENTER_LINE_NONE;
 
 #ifdef ENABLE_FEAT_F4HWN_SCAN_PROGRESS
 #define SCAN_PROGRESS_MR_CHANNEL_BYTES ((MR_CHANNELS_MAX + 7u) / 8u)
+#define SCAN_LIST_NAME_HOLD_500MS       (2000u / 500u)
 
 static bool     gScanProgressSessionActive;
 static bool     gScanProgressSessionIsMemory;
@@ -83,6 +84,7 @@ static bool     gScanProgressPrevResetVfosFlag;
 static bool     gScanProgressForceRebuild;
 static uint16_t gScanProgressLastMemoryIndex;
 static uint8_t  gScanProgressPriorityState;
+static uint8_t  gScanListNameCountdown_500ms;
 #define SCAN_PROGRESS_PRIORITY_LABEL_MASK 0x03u
 #define SCAN_PROGRESS_PRIORITY_SEEN_SHIFT 2
 #define SCAN_PROGRESS_PRIORITY_SEEN_MASK  0x1cu
@@ -131,7 +133,7 @@ static void UI_MAIN_DrawBeamLine(void)
 }
 #endif
 
-const char *VfoStateStr[] = {
+const char *const VfoStateStr[] = {
        [VFO_STATE_NORMAL]="",
        [VFO_STATE_BUSY]="BUSY",
        [VFO_STATE_BAT_LOW]="BAT LOW",
@@ -215,12 +217,25 @@ static void ScanProgress_ResetSession(void)
     gScanProgressForceRebuild = false;
     gScanProgressLastMemoryIndex = 0;
     gScanProgressPriorityState = 0;
+    gScanListNameCountdown_500ms = 0;
 }
 
 void UI_MAIN_NotifyScanProgressDataChanged(void)
 {
     gScanProgressForceRebuild = true;
     gUpdateStatus = true;
+}
+
+void UI_MAIN_NotifyScanListChanged(void)
+{
+    UI_MAIN_NotifyScanProgressDataChanged();
+    gScanListNameCountdown_500ms = SCAN_LIST_NAME_HOLD_500MS;
+    gUpdateDisplay = true;
+}
+
+bool UI_MAIN_ShouldHoldScanResume(void)
+{
+    return gScanListNameCountdown_500ms > 0 && IS_MR_CHANNEL(gNextMrChannel);
 }
 
 static inline void ScanProgress_SetBit(uint8_t *map, uint16_t ch)
@@ -242,6 +257,36 @@ static uint8_t ScanProgress_GetActiveScanList(void)
         scan_list = max_scan_list;
 
     return scan_list;
+}
+
+static void UI_MAIN_DrawScanListName(void)
+{
+    const uint8_t scan_list = ScanProgress_GetActiveScanList();
+    const uint8_t line = isMainOnly() ? 5 : 3;
+    char text[16];
+
+    strcpy(text, "SCAN LIST ");
+    char *p = text + 10;
+
+    if (scan_list > MR_CHANNELS_LIST) {
+        *p++ = 'A';
+        *p++ = 'L';
+        *p++ = 'L';
+    } else {
+        const char *name = gListName[scan_list - 1];
+
+        if (IsEmptyName(name, sizeof(gListName[0]))) {
+            *p++ = (char)('0' + scan_list / 10);
+            *p++ = (char)('0' + scan_list % 10);
+        } else {
+            for (uint8_t i = 0; i < 3 && name[i]; i++)
+                *p++ = name[i];
+        }
+    }
+    *p = '\0';
+
+    memset(gFrameBuffer[line], 0, LCD_WIDTH);
+    UI_PrintStringSmallBold(text, 0, LCD_WIDTH - 1, line);
 }
 
 static bool ScanProgress_ChannelBelongsToList(uint16_t channel, const ChannelAttributes_t *att, uint8_t scan_list)
@@ -489,6 +534,11 @@ static bool UI_DrawScanProgress(void)
     if (!show_memory && !show_range) {
         ScanProgress_ResetSession();
         return false;
+    }
+
+    if (show_memory && gScanListNameCountdown_500ms > 0) {
+        UI_MAIN_DrawScanListName();
+        return true;
     }
 
     if (show_memory) {
@@ -1168,6 +1218,10 @@ void UI_MAIN_PrintAGC(bool now)
 void UI_MAIN_TimeSlice500ms(void)
 {
     if(gScreenToDisplay==DISPLAY_MAIN) {
+#ifdef ENABLE_FEAT_F4HWN_SCAN_PROGRESS
+        if (gScanListNameCountdown_500ms > 0 && --gScanListNameCountdown_500ms == 0)
+            gUpdateDisplay = true;
+#endif
 #ifdef ENABLE_AGC_SHOW_DATA
         UI_MAIN_PrintAGC(true);
         return;
@@ -1526,7 +1580,11 @@ void UI_DisplayMain(void)
                 }
             }
             else {
-                if(RxOnVfofrequency == frequency && !isMainOnly()) {
+                if(RxOnVfofrequency == frequency && !isMainOnly()
+#if defined(ENABLE_FEAT_F4HWN_SCAN_FASTER) && defined(ENABLE_FEAT_F4HWN_SCAN_RSSI)
+                    && !CHFRSCANNER_HasScanRssiSparkline()
+#endif
+                ) {
                     //UI_PrintStringSmallNormal(">>", 8, 0, line);
                     //memcpy(p_line0 + 14, BITMAP_VFO_Default, sizeof(BITMAP_VFO_Default));
                     GUI_DisplaySmallest(">>", 8, RxLine == 0 ? 1 : 33, false, true);
@@ -2050,7 +2108,11 @@ void UI_DisplayMain(void)
             #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
                 const char dir_list[][2] = {"", "+", "-", "D"};
 
-                if(gTxVfo->TX_OFFSET_FREQUENCY_DIRECTION != 0 && gTxVfo->pTX == &gTxVfo->freq_config_RX && !vfoInfo->FrequencyReverse)
+                if(gRemoveOffset &&
+                   vfoInfo == gTxVfo &&
+                   gTxVfo->TX_OFFSET_FREQUENCY_DIRECTION != 0 &&
+                   gTxVfo->pTX == &gTxVfo->freq_config_RX &&
+                   !vfoInfo->FrequencyReverse)
                 {
                     i = 3;
                 }

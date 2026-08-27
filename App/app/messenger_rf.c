@@ -57,6 +57,7 @@ extern uint8_t gFSKWriteIndex;
 #define MSG_RF_REPEAT_GAP_MS            100u   /* short gap between repeated FSK frames */
 #define MSG_RF_RANGE_WAIT_PONG_TICKS    1200u  /* 12 s same-channel PONG listen lock */
 #define MSG_RF_SQL_CLOSE_CONFIRM_TICKS     3u  /* 30 ms fallback when FSK sidecar masks SQL_FOUND */
+#define MSG_RF_FSK_SYNC_HOLD_TICKS        200u  /* 2 s Messenger-only DW hold; covers WAKE -> TEXT */
 
 #define MSG_RF_REG59_RX_CLEAR        0x4068u
 #define MSG_RF_REG59_RX_ENABLE       0x3068u
@@ -317,6 +318,23 @@ static void MSG_RF_RxChannelLockTick(void)
     gDualWatchActive = false;
     if (s_rx_channel_lock_ticks > 0u) --s_rx_channel_lock_ticks;
     if (s_rx_channel_lock_ticks == 0u) MSG_RF_RxChannelLockStop();
+}
+
+static void MSG_RF_FskSyncHoldStart(uint8_t vfo)
+{
+    vfo &= 1u;
+
+    if (!s_rx_channel_lock_active) {
+        MSG_RF_RxChannelLockStart(vfo, MSG_RF_FSK_SYNC_HOLD_TICKS);
+        return;
+    }
+
+    /* Never shorten an ACK/Range response lock. A second FSK frame on the
+     * same VFO (normally TEXT after WAKE) only extends a shorter sync hold. */
+    if (s_rx_channel_lock_vfo == vfo &&
+        s_rx_channel_lock_ticks < MSG_RF_FSK_SYNC_HOLD_TICKS) {
+        s_rx_channel_lock_ticks = MSG_RF_FSK_SYNC_HOLD_TICKS;
+    }
 }
 
 bool MSG_RF_RxChannelLockActive(void)
@@ -1357,11 +1375,10 @@ static void try_store_rx_packet(void)
             MSG_RangeOnPong(pkt.from, MSG_RF_CurrentRSSIdBm(), remote_battery);
             MSG_RF_RequestRangeBeep();
         }
-        /* Finish the current FSK capture before restoring a previous VFO.
-         * If lock-stop calls RADIO_SetupRegisters(), its sidecar=false state
-         * must be the final state rather than being overwritten here. */
+        /* Finish this capture but keep the original Range Check channel lock.
+         * Other radios may still send their jittered PONG during the same
+         * collection window. MSG_RangeOnPong() redraws each result live. */
         MSG_RF_FinishRxAttempt(false);
-        if (remote_pong) MSG_RF_RxChannelLockStop();
         gUpdateDisplay = true;
         return;
     }
@@ -1452,6 +1469,7 @@ void MSG_RF_OnRadioInterrupt(uint16_t status)
             gFSKWriteIndex = 0;
             memset(g_FSK_Buffer, 0, sizeof(g_FSK_Buffer));
         }
+        if (fsk_sync) MSG_RF_FskSyncHoldStart(gEeprom.RX_VFO);
         s_rx_capture_active = true;
         s_rx_stale_ticks = MSG_RF_RX_STALE_TICKS;
         MSG_RF_NarrowLockBegin();
@@ -1566,7 +1584,7 @@ static void MSG_RF_SendInitialWakeFrame(uint16_t id)
      * filtering behavior.  The frame is intentionally invisible to Inbox/HEARD
      * and exists only to wake Power Save / Dual Watch receivers. */
     if (MSG_RF_SendPacketFrame(wake, false, true)) {
-        SYSTEM_DelayMs(180u);
+        SYSTEM_DelayMs(120u);
     }
 #else
     (void)id;

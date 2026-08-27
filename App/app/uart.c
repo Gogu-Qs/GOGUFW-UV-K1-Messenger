@@ -867,3 +867,16 @@ void UART_HandleCommand(uint32_t Port)
         gUART_LockScreenshot = 20; // lock screenshot
     #endif
 }
+
+void UART_ServiceCommands(void)
+{
+#ifdef ENABLE_USB
+    if (UART_IsCommandAvailable(UART_PORT_VCP))
+        UART_HandleCommand(UART_PORT_VCP);
+#endif
+
+#ifdef ENABLE_UART
+    if (UART_IsCommandAvailable(UART_PORT_UART))
+        UART_HandleCommand(UART_PORT_UART);
+#endif
+}

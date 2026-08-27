@@ -18,6 +18,10 @@
 #include "audio.h"
 #include "misc.h"
 
+#if defined(ENABLE_UART) || defined(ENABLE_USB)
+#include "app/uart.h"
+#endif
+
 #ifdef ENABLE_SCAN_RANGES
 #include "chFrScanner.h"
 #endif
@@ -67,13 +71,33 @@ ScanInfo scanInfo;
 static KeyboardState kbd = {KEY_INVALID, KEY_INVALID, 0};
 static bool menuKeyPendingShort = false;
 static bool menuKeyLongHandled = false;
+static bool peakPttArmed;
+static bool peakExitPending;
+static uint32_t selectedPeakFrequency;
+static uint16_t selectedPeakIndex;
+
+// MR Spectrum keeps only compact channel/modulation bitmaps in RAM. Channel
+// frequencies and the selected name are fetched on demand; no large channel
+// table or duplicate Spectrum history is retained.
+#define SPECTRUM_MR_BITMAP_SIZE ((MR_CHANNEL_LAST - MR_CHANNEL_FIRST + 8u) / 8u)
+#define SPECTRUM_MR_MANUAL_TRIGGER_RSSI 100
+static bool spectrumChannelMode = false;
+static uint16_t spectrumChannelCount = 0;
+static uint8_t spectrumValidChannels[SPECTRUM_MR_BITMAP_SIZE];
+static uint16_t spectrumDisplayChannel;
+static uint16_t spectrumDisplayOrdinal = 0;
+static uint32_t spectrumDisplayFreq;
+static char spectrumDisplayName[12];
+static uint8_t spectrumDisplayModulation;
+static uint8_t spectrumScanModulation;
+static uint8_t spectrumScanListenBw;
 
 #ifdef ENABLE_SCAN_RANGES
 static uint16_t blacklistFreqs[15];
 static uint8_t blacklistFreqsIdx;
 #endif
 
-const char *bwOptions[] = {"25", "12.5", "6.25"};
+const char *const bwOptions[] = {"25", "12.5", "6.25"};
 const uint8_t modulationTypeTuneSteps[] = {100, 50, 10};
 const uint8_t modTypeReg47Values[] = {1, 7, 5};
 
@@ -176,7 +200,7 @@ char freqInputString[11];
 uint8_t menuState = 0;
 uint16_t listenT = 0;
 
-RegisterSpec registerSpecs[] = {
+const RegisterSpec registerSpecs[] = {
     {},
     {"LNAs", BK4819_REG_13, 8, 0b11, 1},
     {"LNA", BK4819_REG_13, 5, 0b111, 1},
@@ -435,6 +459,8 @@ static void ToggleAFDAC(bool on)
 
 static uint32_t NormalizeScanFrequency(uint32_t f)
 {
+    if (spectrumChannelMode)
+        return f;
     const uint16_t step = scanStepValues[settings.scanStepIndex];
     return (step == 833) ? FREQUENCY_RoundToStep(f, step) : f;
 }
@@ -534,6 +560,8 @@ uint16_t GetScanStep() { return scanStepValues[settings.scanStepIndex]; }
 
 uint16_t GetStepsCount()
 {
+    if (spectrumChannelMode)
+        return spectrumChannelCount;
 #ifdef ENABLE_SCAN_RANGES
     if (gScanRangeStart)
     {
@@ -557,13 +585,77 @@ static uint16_t GetStepsCountDisplay()
 #endif
 
 uint32_t GetBW() { return GetStepsCount() * GetScanStep(); }
+
+static uint16_t SpectrumChannelAt(uint16_t ordinal)
+{
+    for (uint16_t channel = MR_CHANNEL_FIRST; IS_MR_CHANNEL(channel); channel++)
+    {
+        const uint16_t index = channel - MR_CHANNEL_FIRST;
+        if (spectrumValidChannels[index >> 3] & (1u << (index & 7)))
+        {
+            if (ordinal == 0)
+                return channel;
+            ordinal--;
+        }
+    }
+    return 0xFFFF;
+}
+
+static uint32_t SpectrumChannelFrequencyAt(uint16_t ordinal)
+{
+    const uint16_t channel = SpectrumChannelAt(ordinal);
+    return IS_MR_CHANNEL(channel) ? SETTINGS_FetchChannelFrequency(channel) : initialFreq;
+}
+
+static uint16_t SpectrumChannelOrdinal(uint16_t wantedChannel)
+{
+    uint16_t ordinal = 0;
+    for (uint16_t channel = MR_CHANNEL_FIRST; IS_MR_CHANNEL(channel); channel++)
+    {
+        const uint16_t index = channel - MR_CHANNEL_FIRST;
+        if (spectrumValidChannels[index >> 3] & (1u << (index & 7)))
+        {
+            if (channel == wantedChannel)
+                return ordinal;
+            ordinal++;
+        }
+    }
+    return 0;
+}
+
+static void CacheSpectrumChannel(uint16_t ordinal)
+{
+    if (!spectrumChannelMode)
+        return;
+
+    const uint16_t channel = SpectrumChannelAt(ordinal);
+    if (!IS_MR_CHANNEL(channel) || channel == spectrumDisplayChannel)
+        return;
+
+    spectrumDisplayChannel = channel;
+    spectrumDisplayOrdinal = ordinal;
+    spectrumDisplayName[0] = '\0';
+    SETTINGS_FetchChannelName(spectrumDisplayName, channel);
+    if (spectrumDisplayName[0] == '\0')
+        sprintf(spectrumDisplayName, "M:%u", channel + 1);
+
+    ChannelScanDisplayInfo_t info;
+    if (SETTINGS_FetchChannelScanDisplayInfo(channel, &info))
+        spectrumDisplayModulation = info.modulation;
+    redrawStatus = true;
+}
+
 uint32_t GetFStart()
 {
+    if (spectrumChannelMode)
+        return SpectrumChannelFrequencyAt(0);
     return IsCenterMode() ? currentFreq - (GetBW() >> 1) : currentFreq;
 }
 
 uint32_t GetFEnd()
 {
+    if (spectrumChannelMode)
+        return SpectrumChannelFrequencyAt(spectrumChannelCount - 1);
 #ifdef ENABLE_SCAN_RANGES
     if (gScanRangeStart)
     {
@@ -573,12 +665,41 @@ uint32_t GetFEnd()
     return currentFreq + GetBW();
 }
 
+uint8_t GetBWRegValueForScan(void);
+
 static void TuneToPeak()
 {
     scanInfo.f = peak.f;
     scanInfo.rssi = peak.rssi;
     scanInfo.i = peak.i;
+    if (spectrumChannelMode)
+    {
+        ChannelScanDisplayInfo_t info;
+        const uint16_t channel = SpectrumChannelAt(peak.i);
+        if (IS_MR_CHANNEL(channel) &&
+            SETTINGS_FetchChannelScanDisplayInfo(channel, &info))
+        {
+            settings.modulationType = info.modulation;
+            settings.listenBw = info.channelBandwidth;
+            RADIO_SetModulation(settings.modulationType);
+            BK4819_SetFilterBandwidth(settings.listenBw, false);
+        }
+    }
     SetF(scanInfo.f);
+}
+
+static void RestoreSpectrumScanRf(bool applyRadio)
+{
+    if (!spectrumChannelMode)
+        return;
+
+    settings.modulationType = spectrumScanModulation;
+    settings.listenBw = spectrumScanListenBw;
+    if (applyRadio)
+    {
+        RADIO_SetModulation(settings.modulationType);
+        BK4819_WriteRegister(BK4819_REG_43, GetBWRegValueForScan());
+    }
 }
 
 static void DeInitSpectrum()
@@ -671,6 +792,81 @@ static void ToggleRX(bool on)
     }
 }
 
+static STEP_Setting_t SpectrumNearestStep(uint16_t step)
+{
+    STEP_Setting_t best = 0;
+    uint16_t bestDiff = 0xFFFF;
+    for (STEP_Setting_t i = 0; i < STEP_N_ELEM; i++)
+    {
+        const uint16_t candidate = gStepFrequencyTable[i];
+        const uint16_t diff = candidate > step ? candidate - step : step - candidate;
+        if (diff < bestDiff)
+        {
+            best = i;
+            bestDiff = diff;
+        }
+    }
+    return best;
+}
+
+// Called only after the second PTT has physically been released, preventing
+// the main radio screen from interpreting the held key as a transmit request.
+static void ExitToSpectrumPeak()
+{
+    if (selectedPeakFrequency == 0)
+        return;
+
+    const uint8_t targetVfo = gEeprom.TX_VFO;
+    ToggleRX(false);
+    RestoreRegisters();
+
+    if (spectrumChannelMode)
+    {
+        const uint16_t channel = SpectrumChannelAt(selectedPeakIndex);
+        if (!IS_MR_CHANNEL(channel))
+            return;
+        gEeprom.MrChannel[targetVfo] = channel;
+        gEeprom.ScreenChannel[targetVfo] = channel;
+        gRequestSaveVFO = true;
+        gVfoConfigureMode = VFO_CONFIGURE_RELOAD;
+    }
+    else
+    {
+        const uint16_t channel = FREQ_CHANNEL_FIRST + FREQUENCY_GetBand(selectedPeakFrequency);
+        gEeprom.FreqChannel[targetVfo] = channel;
+        gEeprom.ScreenChannel[targetVfo] = channel;
+        RADIO_ConfigureChannel(targetVfo, VFO_CONFIGURE_RELOAD);
+
+        VFO_Info_t *target = &gEeprom.VfoInfo[targetVfo];
+        target->FrequencyReverse = false;
+        target->pRX = &target->freq_config_RX;
+        target->pTX = &target->freq_config_TX;
+        target->freq_config_RX.Frequency = selectedPeakFrequency;
+        target->Modulation = settings.modulationType;
+        target->CHANNEL_BANDWIDTH = settings.listenBw;
+        target->STEP_SETTING = SpectrumNearestStep(GetScanStep());
+        target->StepFrequency = gStepFrequencyTable[target->STEP_SETTING];
+        RADIO_ApplyOffset(target);
+
+        gRequestSaveVFO = true;
+        gRequestSaveChannel = 1;
+        gVfoConfigureMode = VFO_CONFIGURE;
+    }
+
+#ifdef ENABLE_FEAT_F4HWN_SPECTRUM
+    if (!spectrumChannelMode)
+        SaveSettings();
+#endif
+#ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
+    // Peak selection exits Spectrum and returns to the normal radio screen.
+    // Do not leave the persisted Spectrum resume state active, otherwise the
+    // next power-on opens Spectrum again instead of the main screen.
+    gEeprom.CURRENT_STATE = 0;
+    SETTINGS_WriteCurrentState();
+#endif
+    isInitialized = false;
+}
+
 // Scan info
 
 static void ResetScanStats()
@@ -706,13 +902,15 @@ static void InitScanPosition()
     if (!startFromLeft && scanInfo.measurementsCount > 1)
     {
         scanInfo.i = scanInfo.measurementsCount - 1;
-        scanInfo.f = GetFEnd();
+        scanInfo.f = spectrumChannelMode ? SpectrumChannelFrequencyAt(scanInfo.i)
+                                         : GetFEnd();
         scanForward = false;
     }
     else
     {
         scanInfo.i = 0;
-        scanInfo.f = GetFStart();
+        scanInfo.f = spectrumChannelMode ? SpectrumChannelFrequencyAt(0)
+                                         : GetFStart();
         scanForward = true;
     }
     scanReturnPending = scanInfo.measurementsCount > 1;
@@ -770,14 +968,8 @@ static void UpdateScanInfo()
     }
 
     if (scanInfo.rssi < scanInfo.rssiMin)
-    {
         scanInfo.rssiMin = scanInfo.rssi;
-        settings.dbMin = Rssi2DBm(scanInfo.rssiMin);
-        int dbMax = settings.dbMax - 10;
-        if (settings.dbMin > dbMax)
-            settings.dbMin = dbMax;
-        redrawStatus = true;
-    }
+
 }
 
 static void AutoTriggerLevel()
@@ -788,42 +980,27 @@ static void AutoTriggerLevel()
     if (scanInfo.rssiMin == RSSI_MAX_VALUE)
         return; // no valid measurement yet
 
-    // Lightweight floor tracking with tiny memory/code footprint.
-    // Uses current sweep min, smoothed across sweeps.
     if (autoNoiseFloor == RSSI_MAX_VALUE || settings.rssiTriggerLevel == RSSI_MAX_VALUE)
-    {
         autoNoiseFloor = scanInfo.rssiMin;
-    }
     else
-    {
         autoNoiseFloor = (uint16_t)((3u * autoNoiseFloor + scanInfo.rssiMin + 2u) >> 2);
-    }
 
-    uint16_t target = autoNoiseFloor + autoTriggerMarginRssi[autoSensitivity];
-
-    uint16_t oldTrigger = settings.rssiTriggerLevel;
-
+    const uint16_t target = autoNoiseFloor + autoTriggerMarginRssi[autoSensitivity];
+    const uint16_t oldTrigger = settings.rssiTriggerLevel;
     if (settings.rssiTriggerLevel == RSSI_MAX_VALUE)
     {
-        // Fresh calibration (first sweep, or after step change): jump directly.
         settings.rssiTriggerLevel = target;
         redrawStatus = true;
         return;
     }
 
-    // Adaptive slew: follow noise floor changes with rate limiting.
-    // Faster convergence when the gap is large (e.g. after filter BW change).
-    int16_t diff  = (int16_t)target - (int16_t)settings.rssiTriggerLevel;
-    bool diffSign = diff < 0;
-    uint16_t absDiff = my_abs(diff);
-
+    const int16_t diff = (int16_t)target - (int16_t)settings.rssiTriggerLevel;
+    const uint16_t absDiff = my_abs(diff);
     if (absDiff > 4)
     {
-        int16_t step = (absDiff > 12) ? 4 : ((absDiff > 6) ? 2 : 1);
-        settings.rssiTriggerLevel += diffSign ? -step : step;
+        const uint16_t step = (absDiff > 12) ? 4 : ((absDiff > 6) ? 2 : 1);
+        settings.rssiTriggerLevel += diff < 0 ? -step : step;
     }
-    // Dead zone ±4: hold steady to avoid jitter near target
-
     if (settings.rssiTriggerLevel != oldTrigger)
         redrawStatus = true;
 }
@@ -834,6 +1011,10 @@ static void UpdatePeakInfoForce()
     peak.rssi = scanInfo.rssiMax;
     peak.f = scanInfo.fPeak;
     peak.i = scanInfo.iPeak;
+    if (peak.f != 0)
+        spectrumDisplayFreq = peak.f;
+    if (spectrumChannelMode)
+        CacheSpectrumChannel(peak.i);
     AutoTriggerLevel();
 }
 
@@ -845,7 +1026,6 @@ static void UpdatePeakInfo()
 
 static uint8_t GetHistorySlot(uint16_t idx)
 {
-#ifdef ENABLE_SCAN_RANGES
     if (scanInfo.measurementsCount > ARRAY_SIZE(rssiHistory))
     {
         uint32_t slot = (uint32_t)idx * ARRAY_SIZE(rssiHistory) / scanInfo.measurementsCount;
@@ -853,7 +1033,6 @@ static uint8_t GetHistorySlot(uint16_t idx)
             slot = ARRAY_SIZE(rssiHistory) - 1;
         return (uint8_t)slot;
     }
-#endif
     return (uint8_t)idx;
 }
 
@@ -869,7 +1048,6 @@ static void SetRssiHistory(uint16_t idx, uint16_t rssi)
 
     uint16_t prev = rssiHistory[slot];
 
-#ifdef ENABLE_SCAN_RANGES
     if (scanInfo.measurementsCount > ARRAY_SIZE(rssiHistory))
     {
         if (prev == RSSI_MAX_VALUE)
@@ -881,7 +1059,6 @@ static void SetRssiHistory(uint16_t idx, uint16_t rssi)
             rssiHistory[slot] = (uint16_t)((3u * prev + rssi) >> 2);
         return;
     }
-#endif
     // Attack/decay: instant rise, fast fall for stable display
     if (rssi >= prev) {
         rssiHistory[slot] = rssi;              // Attack: instant
@@ -925,7 +1102,7 @@ static void RearmRuntimeState()
 // context (center/range). Persist only fields that are normally saved.
 static void ResetSpectrumToDefaults()
 {
-    manualSetFlag = false;
+    manualSetFlag = spectrumChannelMode;
     autoSensitivity = AUTO_SENS_NORMAL;
     monitorMode = false;
     menuState = 0;
@@ -936,6 +1113,8 @@ static void ResetSpectrumToDefaults()
     settings.listenBw = BK4819_FILTER_BW_WIDE;
     settings.modulationType = gTxVfo->Modulation;
     settings.rssiTriggerLevel = RSSI_MAX_VALUE;
+    if (spectrumChannelMode)
+        settings.rssiTriggerLevel = SPECTRUM_MR_MANUAL_TRIGGER_RSSI;
     autoNoiseFloor = RSSI_MAX_VALUE;
 
     // Keep frequency/range unchanged; recompute move step from fresh scan params.
@@ -952,7 +1131,8 @@ static void ResetSpectrumToDefaults()
     ResetBlacklist();
 
 #ifdef ENABLE_FEAT_F4HWN_SPECTRUM
-    SaveSettings();
+    if (!spectrumChannelMode)
+        SaveSettings();
 #endif
 }
 
@@ -1065,12 +1245,15 @@ static void UpdateCurrentFreqStill(bool inc)
         f -= offset;
     }
     SetF(f);
+    if (!spectrumChannelMode)
+        selectedPeakFrequency = f;
     redrawScreen = true;
 }
 
 static void ResumeSweepInDirection(bool forward)
 {
     ToggleRX(false);
+    RestoreSpectrumScanRf(true);
     ResetScanStats();
     ResetPeak();
     InitScanPosition();
@@ -1079,13 +1262,15 @@ static void ResumeSweepInDirection(bool forward)
     {
         scanForward = true;
         scanInfo.i = 0;
-        scanInfo.f = GetFStart();
+        scanInfo.f = spectrumChannelMode ? SpectrumChannelFrequencyAt(0)
+                                         : GetFStart();
     }
     else
     {
         scanForward = false;
         scanInfo.i = scanInfo.measurementsCount - 1;
-        scanInfo.f = GetFEnd();
+        scanInfo.f = spectrumChannelMode ? SpectrumChannelFrequencyAt(scanInfo.i)
+                                         : GetFEnd();
     }
 
     newScanStart = false;
@@ -1269,6 +1454,7 @@ static void Blacklist()
     SetRssiHistory(peak.i, RSSI_MAX_VALUE);
     ResetPeak();
     ToggleRX(false);
+    RestoreSpectrumScanRf(true);
     ResetScanStats();
 }
 
@@ -1569,6 +1755,9 @@ static void DrawStatus()
     
     GUI_DisplaySmallest(String, 0, 1, true, true);
 
+    if (spectrumChannelMode && spectrumDisplayName[0])
+        UI_PrintStringSmallBufferNormal(spectrumDisplayName, gStatusLine + 43);
+
     BOARD_ADC_GetBatteryInfo(&gBatteryVoltages[gBatteryCheckCounter++ % 4],
                              &gBatteryCurrent);
 
@@ -1644,17 +1833,25 @@ static void DrawF(uint32_t f)
 {
     f = NormalizeScanFrequency(f);
     FormatFrequency(f, String);
-    // Align frequency with channel name in status bar (both at x=43).
-    // Left-aligned (End == Start = 43) so it does not collide with BW at x=108.
-    UI_PrintStringSmallNormal(String, 43, 43, 0);
+    if (spectrumChannelMode)
+        GUI_DisplaySmallest(String, 43, 1, false, true);
+    else
+        UI_PrintStringSmallNormal(String, 43, 43, 0);
 
-    sprintf(String, "%3s", gModulationStr[settings.modulationType]);
+    const uint8_t modulation = spectrumChannelMode
+                                   ? spectrumDisplayModulation
+                                   : settings.modulationType;
+    sprintf(String, "%3s", gModulationStr[modulation]);
     GUI_DisplaySmallest(String, 116, 1, false, true);
-    sprintf(String, "%4sk", bwOptions[settings.listenBw]);
-    GUI_DisplaySmallest(String, 108, 7, false, true);
+    if (!spectrumChannelMode)
+    {
+        sprintf(String, "%4sk", bwOptions[settings.listenBw]);
+        GUI_DisplaySmallest(String, 108, 7, false, true);
+    }
 
 #ifdef ENABLE_FEAT_F4HWN_SPECTRUM
-    ShowChannelName(f);
+    if (!spectrumChannelMode)
+        ShowChannelName(f);
 #endif
 }
 
@@ -1663,6 +1860,13 @@ static void DrawNums()
 
     if (currentState == SPECTRUM)
     {
+        if (spectrumChannelMode)
+        {
+            sprintf(String, "MR:%u", GetStepsCount());
+            GUI_DisplaySmallest(String, 0, 1, false, true);
+        }
+        else
+        {
 #ifdef ENABLE_SCAN_RANGES
         sprintf(String, "%ux", gScanRangeStart ? GetStepsCountDisplay() : GetStepsCount());
 #else
@@ -1671,7 +1875,17 @@ static void DrawNums()
         GUI_DisplaySmallest(String, 0, 1, false, true);
         sprintf(String, "%u.%02uk", GetScanStep() / 100, GetScanStep() % 100);
         GUI_DisplaySmallest(String, 0, 7, false, true);
+        }
 
+    }
+
+    if (spectrumChannelMode)
+    {
+        sprintf(String, "M:%u", SpectrumChannelAt(0) + 1);
+        GUI_DisplaySmallest(String, 0, 49, false, true);
+        sprintf(String, "M:%u", SpectrumChannelAt(spectrumChannelCount - 1) + 1);
+        GUI_DisplaySmallest(String, 106, 49, false, true);
+        return;
     }
 
     if (IsCenterMode())
@@ -1749,6 +1963,14 @@ static void DrawRssiTriggerLevel(const uint8_t *topY)
 
 static void DrawTicks()
 {
+    if (spectrumChannelMode)
+    {
+        for (uint8_t x = 0; x < 128; x += 8)
+            gFrameBuffer[5][x] |= 0b00000011;
+        gFrameBuffer[5][0] = 0xff;
+        gFrameBuffer[5][127] = 0xff;
+        return;
+    }
     uint32_t f = GetFStart();
     uint32_t span = GetFEnd() - GetFStart();
     uint32_t step = span / 128;
@@ -1813,7 +2035,8 @@ static bool OnKeyDownCommon(uint8_t key) {
         UpdateRssiTriggerLevel(isTrue);
         return true;
     case KEY_0:
-        ToggleModulation();
+        if (!spectrumChannelMode)
+            ToggleModulation();
         return true;
     case KEY_6:
         ToggleListeningBW();
@@ -1832,17 +2055,24 @@ static void OnKeyDown(uint8_t key) {
     {
     case KEY_1:
     case KEY_7:
-        UpdateScanStep(isTrue);
+        if (!spectrumChannelMode)
+            UpdateScanStep(isTrue);
         break;
     case KEY_2:
     case KEY_8:
-        UpdateFreqChangeStep(isTrue);
+        if (!spectrumChannelMode)
+            UpdateFreqChangeStep(isTrue);
         break;
     case KEY_UP:
     case KEY_DOWN:
         // If the spectrum is currently receiving (green LED on),
         // force-stop RX and restart sweep in the requested direction.
         if (isListening) {
+            ResumeSweepInDirection(GetDirection(key));
+            break;
+        }
+        if (spectrumChannelMode)
+        {
             ResumeSweepInDirection(GetDirection(key));
             break;
         }
@@ -1858,12 +2088,16 @@ static void OnKeyDown(uint8_t key) {
         Blacklist();
         break;
     case KEY_5:
+        if (spectrumChannelMode)
+            break;
 #ifdef ENABLE_SCAN_RANGES
         if (!gScanRangeStart)
 #endif
             FreqInput();
         break;
     case KEY_4:
+        if (spectrumChannelMode)
+            break;
 #ifdef ENABLE_SCAN_RANGES
         if (!gScanRangeStart)
 #endif
@@ -1871,13 +2105,20 @@ static void OnKeyDown(uint8_t key) {
         break;
     case KEY_PTT:
         SetState(STILL);
+        peakPttArmed = false;
+        selectedPeakFrequency = peak.f;
+        selectedPeakIndex = peak.i;
         TuneToPeak();
         break;
     case KEY_MENU:
+        if (spectrumChannelMode)
+            break;
         // Short press toggles manual/auto.
         manualSetFlag = !manualSetFlag;
         if (!manualSetFlag)
+        {
             settings.rssiTriggerLevel = RSSI_MAX_VALUE;
+        }
         redrawStatus = true;
         break;
     case KEY_EXIT:
@@ -1887,7 +2128,8 @@ static void OnKeyDown(uint8_t key) {
             break;
         }
 #ifdef ENABLE_FEAT_F4HWN_SPECTRUM
-        SaveSettings();
+        if (!spectrumChannelMode)
+            SaveSettings();
 #endif
 #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
         gEeprom.CURRENT_STATE = 0;
@@ -1948,10 +2190,15 @@ static void OnKeyDownStill(KEY_Code_t key) {
         UpdateCurrentFreqStill(GetDirection(key));
         break;
     case KEY_5:
-        FreqInput();
+        if (!spectrumChannelMode)
+            FreqInput();
         break;
     case KEY_SIDE1:
         monitorMode = !monitorMode;
+        break;
+    case KEY_PTT:
+        if (peakPttArmed)
+            peakExitPending = true;
         break;
     case KEY_MENU:
         menuState = (menuState == ARRAY_SIZE(registerSpecs) - 1) ? 1 : menuState + 1;
@@ -1963,6 +2210,7 @@ static void OnKeyDownStill(KEY_Code_t key) {
             SetState(SPECTRUM);
             lockAGC = false;
             monitorMode = false;
+            RestoreSpectrumScanRf(true);
             RelaunchScan();
             break;
         }
@@ -1985,14 +2233,16 @@ static void RenderStatus()
 static void RenderSpectrum()
 {
     uint16_t steps = GetStepsCount();
-    uint8_t arrowX = (steps > 1) ? (uint8_t)(128u * peak.i / (steps - 1)) : 0;
+    const uint16_t displayIndex = spectrumChannelMode ? spectrumDisplayOrdinal : peak.i;
+    uint8_t arrowX = (steps > 1) ? (uint8_t)(127u * displayIndex / (steps - 1)) : 0;
     uint8_t topY[128];
 
     BuildCurrentSpectrumTopY(topY);
     DrawTicks();
     DrawArrow(arrowX);
     DrawSpectrumCurve(topY);
-    DrawF(peak.f);
+    DrawF(spectrumChannelMode ? SpectrumChannelFrequencyAt(displayIndex)
+                              : spectrumDisplayFreq);
     DrawNums();
     DrawRssiTriggerLevel(topY);
 }
@@ -2116,6 +2366,22 @@ static bool HandleUserInput()
     kbd.prev = kbd.current;
     kbd.current = KEYBOARD_GetKey();
 
+    if (peakExitPending && kbd.current != KEY_PTT && kbd.prev == KEY_PTT)
+    {
+        peakExitPending = false;
+        ExitToSpectrumPeak();
+        return true;
+    }
+
+    // The release of the first PTT only arms peak selection. A later PTT is
+    // therefore unambiguously the user's second-PTT action.
+    if (currentState == STILL && !peakPttArmed &&
+        kbd.current != KEY_PTT && kbd.prev == KEY_PTT)
+    {
+        peakPttArmed = true;
+        return true;
+    }
+
     if (kbd.current != KEY_INVALID && kbd.current == kbd.prev)
     {
         if (kbd.counter < 16)
@@ -2201,10 +2467,12 @@ static void NextScanStep()
     ++peak.t;
     if (scanForward) {
         ++scanInfo.i;
-        scanInfo.f += scanInfo.scanStep;
+        scanInfo.f = spectrumChannelMode ? SpectrumChannelFrequencyAt(scanInfo.i)
+                                         : scanInfo.f + scanInfo.scanStep;
     } else {
         --scanInfo.i;
-        scanInfo.f -= scanInfo.scanStep;
+        scanInfo.f = spectrumChannelMode ? SpectrumChannelFrequencyAt(scanInfo.i)
+                                         : scanInfo.f - scanInfo.scanStep;
     }
 }
 
@@ -2222,7 +2490,8 @@ static bool NextScanStepInterlaced()
     if (next < scanInfo.measurementsCount)
     {
         scanInfo.i = next;
-        scanInfo.f += (uint32_t)interlaceStride * scanInfo.scanStep;
+        scanInfo.f = spectrumChannelMode ? SpectrumChannelFrequencyAt(scanInfo.i)
+                                         : scanInfo.f + (uint32_t)interlaceStride * scanInfo.scanStep;
         return false;
     }
 
@@ -2232,7 +2501,8 @@ static bool NextScanStepInterlaced()
         {
             interlacePhase = phase;
             scanInfo.i = phase;
-            scanInfo.f = GetFStart() + (uint32_t)phase * scanInfo.scanStep;
+            scanInfo.f = spectrumChannelMode ? SpectrumChannelFrequencyAt(phase)
+                                             : GetFStart() + (uint32_t)phase * scanInfo.scanStep;
             return false;
         }
     }
@@ -2247,6 +2517,16 @@ static void FinalizeCompletedSweep()
     if (! (scanInfo.measurementsCount >> 7)) // if (scanInfo.measurementsCount < 128)
         memset(&rssiHistory[scanInfo.measurementsCount], 0,
                sizeof(rssiHistory) - scanInfo.measurementsCount * sizeof(rssiHistory[0]));
+
+    // Use only the completed sweep's minimum. Updating dbMin from the first
+    // few samples of every new sweep made the whole graph collapse and then
+    // return as quieter bins were encountered later.
+    if (scanInfo.rssiMin != RSSI_MAX_VALUE)
+    {
+        settings.dbMin = Rssi2DBm(scanInfo.rssiMin);
+        if (settings.dbMin > settings.dbMax - 10)
+            settings.dbMin = settings.dbMax - 10;
+    }
 
     // Auto-adjust dbMax unless the user has overridden it manually.
     if (manualDbMaxTimer > 0) {
@@ -2373,6 +2653,7 @@ static void UpdateListening()
     if (tailFound)
     {
         ToggleRX(false);
+        RestoreSpectrumScanRf(true);
         ResetScanStats();
         ResetPeak();
         RequestAutoTriggerRecalibration();
@@ -2452,6 +2733,7 @@ static void UpdateListening()
     }
 
     ToggleRX(false);
+    RestoreSpectrumScanRf(true);
     ResetScanStats();
     ResetPeak();
     RequestAutoTriggerRecalibration();
@@ -2498,6 +2780,8 @@ static void Tick()
     if (!preventKeypress)
     {
         HandleUserInput();
+        if (!isInitialized)
+            return;
     }
     if (newScanStart)
     {
@@ -2555,9 +2839,61 @@ void APP_RunSpectrum()
 #ifdef ENABLE_FEAT_F4HWN_SPECTRUM
     LoadSettings();
 #endif
-    // set the current frequency in the middle of the display
+    spectrumScanListenBw = settings.listenBw;
+    spectrumScanModulation = gTxVfo->Modulation;
+    spectrumDisplayModulation = gTxVfo->Modulation;
+    currentState = previousState = SPECTRUM;
+    monitorMode = false;
+    menuState = 0;
+    peakPttArmed = false;
+    peakExitPending = false;
+    selectedPeakFrequency = 0;
+    selectedPeakIndex = 0;
+    kbd.current = kbd.prev = KEY_INVALID;
+    kbd.counter = 0;
+    spectrumDisplayChannel = 0xFFFF;
+    spectrumDisplayName[0] = '\0';
+    spectrumDisplayFreq = gTxVfo->pRX->Frequency;
+
+    spectrumChannelMode = IS_MR_CHANNEL(gTxVfo->CHANNEL_SAVE);
 #ifdef ENABLE_SCAN_RANGES
     if (gScanRangeStart)
+        spectrumChannelMode = false;
+#endif
+
+    spectrumChannelCount = 0;
+    memset(spectrumValidChannels, 0, sizeof(spectrumValidChannels));
+    if (spectrumChannelMode)
+    {
+        for (uint16_t channel = MR_CHANNEL_FIRST; IS_MR_CHANNEL(channel); channel++)
+        {
+            if (!RADIO_CheckValidChannel(channel, false, 0))
+                continue;
+
+            const uint16_t index = channel - MR_CHANNEL_FIRST;
+            spectrumValidChannels[index >> 3] |= 1u << (index & 7);
+
+            spectrumChannelCount++;
+        }
+        if (spectrumChannelCount == 0)
+            spectrumChannelMode = false;
+    }
+
+    if (spectrumChannelMode)
+    {
+        manualSetFlag = true;
+        if (settings.rssiTriggerLevel == RSSI_MAX_VALUE)
+            settings.rssiTriggerLevel = SPECTRUM_MR_MANUAL_TRIGGER_RSSI;
+        initialFreq = gTxVfo->pRX->Frequency;
+        currentFreq = SpectrumChannelFrequencyAt(0);
+        spectrumDisplayOrdinal = SpectrumChannelOrdinal(gTxVfo->CHANNEL_SAVE);
+        CacheSpectrumChannel(spectrumDisplayOrdinal);
+        #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
+            gEeprom.CURRENT_STATE = 4;
+        #endif
+    }
+#ifdef ENABLE_SCAN_RANGES
+    else if (gScanRangeStart)
     {
         currentFreq = initialFreq = gScanRangeStart;
         // Keep saved spectrum step/count in scan-range mode.
@@ -2568,8 +2904,9 @@ void APP_RunSpectrum()
             gEeprom.CURRENT_STATE = 5;
         #endif
     }
-    else {
 #endif
+    else
+    {
         currentFreq = initialFreq = gTxVfo->pRX->Frequency -
                                     ((GetStepsCount() / 2) * GetScanStep());
         #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
@@ -2596,18 +2933,16 @@ void APP_RunSpectrum()
     BK4819_SetFilterBandwidth(settings.listenBw = BK4819_FILTER_BW_WIDE, false);
 #endif
 
-    // Reset dynamic spectrum state on every entry.
-    // Persisted settings are step/count/listenBW only; trigger and dB window
-    // are runtime values and should not carry over between sessions.
-    // manualSetFlag = false;
-    // settings.rssiTriggerLevel = RSSI_MAX_VALUE;
-
+    // Keep F4HWN runtime scaling; MR mode has already been forced to manual.
     RearmRuntimeState();
 
     isInitialized = true;
 
     while (isInitialized)
     {
+#if defined(ENABLE_UART) || defined(ENABLE_USB)
+        UART_ServiceCommands();
+#endif
         Tick();
     }
 
