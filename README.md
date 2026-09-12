@@ -34,6 +34,12 @@ Version **2.0.0** adds compatibility with the official F4HWN 6.0.0 multiboot slo
 - **Custom shortcuts:** open Messenger and HEARD quickly or transmit CALLTX from programmable side keys.
 - **GOGUFW CHIRP module:** configure supported radio settings, custom key actions and FM station names from CHIRP.
 
+## Survival Mode
+
+**Survival Mode** is a temporary, battery-saving operating mode for basic radio use. It keeps the normal voice radio functions available while disabling power-hungry or non-essential features such as Messenger/FSK, scanning, FM radio and Spectrum. Dual Watch and cross-band operation are also disabled for the session.
+
+To start it, hold **PTT + the configured SetKey** while powering on. The default SetKey is **MENU**, so the usual shortcut is **PTT + MENU + Power**. The SetKey can be changed in the menu to **MENU, UP, DOWN, EXIT** or **STAR**. Survival Mode changes runtime behavior only; it does not overwrite your saved settings. Power-cycle the radio normally to return to full GOGUFW mode.
+
 ## Multiboot quick guide
 
 - Hold **MENU while powering on** to open the firmware-slot selector.
@@ -72,6 +78,7 @@ The normal F4HWN Fusion radio features remain available alongside these addition
 | Messenger | Assign **MESSENGER** to a programmable side-key action | Opens Messenger. Pressing the same assigned key on the Messenger home screen closes it. |
 | HEARD | Assign **HEARD** to a programmable side-key action | Opens HEARD / Range Check. Pressing the same assigned key again closes it. |
 | CALLTX | Assign **CALLTX** to a programmable side-key action | Transmits the selected call melody directly. |
+| Survival Mode | **PTT + MENU while powering on** (default SetKey) | Starts a temporary basic-radio, battery-saving session. Configure another trigger with the **SetKey** menu option. |
 
 The programmable actions can be assigned to the short or long press of the side keys from the radio menu or the included CHIRP module.
 
