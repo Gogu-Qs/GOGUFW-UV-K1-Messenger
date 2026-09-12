@@ -39,9 +39,55 @@
 #define PAGE_SIZE 0x100
 
 static uint32_t SectorCacheAddr = 0x1000000;
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY
+/* The restore stub is copied over this cache only after its source image has
+ * passed validation. A reset always follows the internal-Flash rewrite. */
+static uint8_t SectorCache[SECTOR_SIZE]
+    __attribute__((section(".bss.mb_workspace"), aligned(4), used));
+#else
 static uint8_t SectorCache[SECTOR_SIZE];
+#endif
 static uint8_t BlackHole[4] __attribute__((aligned(4)));
 static volatile bool TC_Flag;
+
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+static uint32_t BankBase;
+
+/* GOGUFW's two historical private sectors sit above the shared calibration
+ * boundary. In non-zero banks they are redirected into free B/C sectors so
+ * Messenger settings/drafts and FM names cannot leak between firmwares. */
+#define GOGU_PRIVATE_FROM   0x00012000u
+#define GOGU_PRIVATE_TO     0x00014000u
+#define GOGU_BANK_OFFSET    0x0000B000u
+
+_Static_assert(GOGU_BANK_OFFSET >= 0x0000A200u,
+               "GOGUFW bank data overlaps standard settings");
+_Static_assert(GOGU_BANK_OFFSET + (GOGU_PRIVATE_TO - GOGU_PRIVATE_FROM) <=
+               PY25Q16_BANK_SHARED_FROM,
+               "GOGUFW private data exceeds a multiboot config bank");
+
+void PY25Q16_SetBankBase(uint32_t Base)
+{
+    BankBase = Base;
+    SectorCacheAddr = 0x1000000;
+}
+
+static inline uint32_t BankMap(uint32_t Address)
+{
+    if (Address < PY25Q16_BANK_SHARED_FROM)
+        return Address + BankBase;
+
+    if (BankBase != 0u && Address >= GOGU_PRIVATE_FROM && Address < GOGU_PRIVATE_TO)
+        return BankBase + GOGU_BANK_OFFSET + (Address - GOGU_PRIVATE_FROM);
+
+    return Address;
+}
+#else
+static inline uint32_t BankMap(uint32_t Address)
+{
+    return Address;
+}
+#endif
 
 static inline void CS_Assert()
 {
@@ -218,6 +264,7 @@ static void WriteEnable();
 static void SectorErase(uint32_t Addr);
 static void SectorProgram(uint32_t Addr, const uint8_t *Buf, uint32_t Size);
 static void PageProgram(uint32_t Addr, const uint8_t *Buf, uint32_t Size);
+static void ReadBufferRaw(uint32_t Address, void *pBuffer, uint32_t Size);
 
 void PY25Q16_Init()
 {
@@ -225,7 +272,7 @@ void PY25Q16_Init()
     SPI_Init();
 }
 
-void PY25Q16_ReadBuffer(uint32_t Address, void *pBuffer, uint32_t Size)
+static void ReadBufferRaw(uint32_t Address, void *pBuffer, uint32_t Size)
 {
     CS_Assert();
 
@@ -250,8 +297,15 @@ void PY25Q16_ReadBuffer(uint32_t Address, void *pBuffer, uint32_t Size)
     CS_Release();
 }
 
+void PY25Q16_ReadBuffer(uint32_t Address, void *pBuffer, uint32_t Size)
+{
+    ReadBufferRaw(BankMap(Address), pBuffer, Size);
+}
+
 void PY25Q16_WriteBuffer(uint32_t Address, const void *pBuffer, uint32_t Size, bool Append)
 {
+    Address = BankMap(Address);
+
 #ifdef DEBUG
     printf("spi flash write: %06x %ld %d\n", Address, Size, Append);
 #endif
@@ -277,7 +331,8 @@ void PY25Q16_WriteBuffer(uint32_t Address, const void *pBuffer, uint32_t Size, b
 
         if (SecAddr != SectorCacheAddr)
         {
-            PY25Q16_ReadBuffer(SecAddr, SectorCache, SECTOR_SIZE);
+            /* Address is already mapped; avoid applying the bank twice. */
+            ReadBufferRaw(SecAddr, SectorCache, SECTOR_SIZE);
             SectorCacheAddr = SecAddr;
         }
 
@@ -337,12 +392,18 @@ void PY25Q16_WriteBuffer(uint32_t Address, const void *pBuffer, uint32_t Size, b
 
 void PY25Q16_SectorErase(uint32_t Address)
 {
+    Address = BankMap(Address);
     Address -= (Address % SECTOR_SIZE);
     SectorErase(Address);
     if (SectorCacheAddr == Address)
     {
         memset(SectorCache, 0xff, SECTOR_SIZE);
     }
+}
+
+void PY25Q16_InvalidateCache(void)
+{
+    SectorCacheAddr = 0x1000000;
 }
 
 static inline void WriteAddr(uint32_t Addr)

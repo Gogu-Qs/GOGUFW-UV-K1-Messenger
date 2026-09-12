@@ -45,6 +45,10 @@
 #include "settings.h"
 #include "version.h"
 
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+    #include "driver/mb_flash.h"
+#endif
+
 #if defined(ENABLE_OVERLAY)
     #include "sram-overlay.h"
 #endif
@@ -782,6 +786,24 @@ bool UART_IsCommandAvailable(uint32_t Port)
     return CRC_Calculate(pUART_Command->Buffer, Size) == Crc;
 }
 
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+/* Timestamp latched by the device-info handshake (0x0514) for this port. Slot
+ * writes/erases use the same authorization token as normal EEPROM writes. */
+static uint32_t mb_port_timestamp(uint32_t Port)
+{
+#if defined(ENABLE_UART)
+    if (Port == UART_PORT_UART)
+        return UART_Timestamp;
+#endif
+#if defined(ENABLE_USB)
+    if (Port == UART_PORT_VCP)
+        return VCP_Timestamp;
+#endif
+    (void)Port;
+    return 0;
+}
+#endif
+
 void UART_HandleCommand(uint32_t Port)
 {
     UART_Command_t *pUART_Command;
@@ -851,6 +873,139 @@ void UART_HandleCommand(uint32_t Port)
                 NVIC_SystemReset();
             #endif
             break;
+
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+        /* UV Studio "Firmware Slots" command family. These operations touch
+         * external flash only; the mb_flash layer supplies all bounds, CRC and
+         * power-loss checks. */
+        case 0x0720: // slot info
+        {
+            if (pUART_Command->Header.Size < 1u) break;
+            gSerialConfigCountDown_500ms = 12;
+            const uint8_t slot = pUART_Command->Data[0];
+            mb_slot_header_t hdr;
+            memset(&hdr, 0, sizeof(hdr));
+            const uint8_t status = MB_SlotInfo(slot, &hdr);
+            struct __attribute__((packed)) {
+                Header_t Header;
+                uint8_t  Slot;
+                uint8_t  Status;
+                uint8_t  Hdr[sizeof(mb_slot_header_t)];
+            } Reply;
+            Reply.Header.ID   = 0x0721;
+            Reply.Header.Size = 2 + sizeof(mb_slot_header_t);
+            Reply.Slot        = slot;
+            Reply.Status      = status;
+            memcpy(Reply.Hdr, &hdr, sizeof(hdr));
+            SendReply(Port, &Reply, sizeof(Reply));
+            break;
+        }
+
+        case 0x0722: // erase firmware slot
+        {
+            if (pUART_Command->Header.Size < 6u) break;
+            gSerialConfigCountDown_500ms = 12;
+            const uint8_t slot = pUART_Command->Data[0];
+            const uint32_t ts  = (uint32_t)pUART_Command->Data[2]
+                               | ((uint32_t)pUART_Command->Data[3] << 8)
+                               | ((uint32_t)pUART_Command->Data[4] << 16)
+                               | ((uint32_t)pUART_Command->Data[5] << 24);
+            const uint8_t status = (ts != mb_port_timestamp(Port))
+                                 ? MB_ERR_AUTH : MB_SlotErase(slot);
+            struct __attribute__((packed)) {
+                Header_t Header;
+                uint8_t  Slot;
+                uint8_t  Status;
+            } Reply;
+            Reply.Header.ID   = 0x0723;
+            Reply.Header.Size = 2;
+            Reply.Slot        = slot;
+            Reply.Status      = status;
+            SendReply(Port, &Reply, sizeof(Reply));
+            break;
+        }
+
+        case 0x0724: // write firmware slot chunk
+        {
+            if (pUART_Command->Header.Size < 12u) break;
+            gSerialConfigCountDown_500ms = 12;
+            const uint8_t slot   = pUART_Command->Data[0];
+            const uint32_t offset = (uint32_t)pUART_Command->Data[2]
+                                  | ((uint32_t)pUART_Command->Data[3] << 8)
+                                  | ((uint32_t)pUART_Command->Data[4] << 16)
+                                  | ((uint32_t)pUART_Command->Data[5] << 24);
+            const uint16_t len   = (uint16_t)(pUART_Command->Data[6]
+                                  | ((uint16_t)pUART_Command->Data[7] << 8));
+            const uint32_t ts    = (uint32_t)pUART_Command->Data[8]
+                                  | ((uint32_t)pUART_Command->Data[9] << 8)
+                                  | ((uint32_t)pUART_Command->Data[10] << 16)
+                                  | ((uint32_t)pUART_Command->Data[11] << 24);
+            uint8_t status;
+            if (ts != mb_port_timestamp(Port))
+                status = MB_ERR_AUTH;
+            else if (len > pUART_Command->Header.Size - 12u)
+                status = MB_ERR_SIZE;
+            else
+                status = MB_SlotWrite(slot, offset, &pUART_Command->Data[12], len);
+            struct __attribute__((packed)) {
+                Header_t Header;
+                uint8_t  Slot;
+                uint8_t  Status;
+            } Reply;
+            Reply.Header.ID   = 0x0725;
+            Reply.Header.Size = 2;
+            Reply.Slot        = slot;
+            Reply.Status      = status;
+            SendReply(Port, &Reply, sizeof(Reply));
+            break;
+        }
+
+        case 0x0726: // validate firmware slot
+        {
+            if (pUART_Command->Header.Size < 1u) break;
+            gSerialConfigCountDown_500ms = 12;
+            const uint8_t slot = pUART_Command->Data[0];
+            uint32_t crc = 0;
+            const uint8_t status = MB_ValidateSlot(slot, NULL, &crc);
+            struct __attribute__((packed)) {
+                Header_t Header;
+                uint32_t Crc32;
+                uint8_t  Slot;
+                uint8_t  Status;
+            } Reply;
+            Reply.Header.ID   = 0x0727;
+            Reply.Header.Size = 6;
+            Reply.Crc32       = crc;
+            Reply.Slot        = slot;
+            Reply.Status      = status;
+            SendReply(Port, &Reply, sizeof(Reply));
+            break;
+        }
+
+        case 0x0728: // erase config bank
+        {
+            if (pUART_Command->Header.Size < 6u) break;
+            gSerialConfigCountDown_500ms = 12;
+            const uint8_t bank = pUART_Command->Data[0];
+            const uint32_t ts  = (uint32_t)pUART_Command->Data[2]
+                               | ((uint32_t)pUART_Command->Data[3] << 8)
+                               | ((uint32_t)pUART_Command->Data[4] << 16)
+                               | ((uint32_t)pUART_Command->Data[5] << 24);
+            const uint8_t status = (ts != mb_port_timestamp(Port))
+                                 ? MB_ERR_AUTH : MB_BankErase(bank);
+            struct __attribute__((packed)) {
+                Header_t Header;
+                uint8_t  Bank;
+                uint8_t  Status;
+            } Reply;
+            Reply.Header.ID   = 0x0729;
+            Reply.Header.Size = 2;
+            Reply.Bank        = bank;
+            Reply.Status      = status;
+            SendReply(Port, &Reply, sizeof(Reply));
+            break;
+        }
+#endif
 
 #ifdef ENABLE_UART_RW_BK_REGS
         case 0x0601:

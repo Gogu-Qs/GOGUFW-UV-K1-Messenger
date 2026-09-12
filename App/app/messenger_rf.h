@@ -15,5 +15,6 @@ void MSG_RF_PrepareVoxVoiceTx(void);
 void MSG_RF_OnVoxModeChanged(bool enabled);
 void MSG_RF_OnRadioSetupRegisters(void);
 bool MSG_RF_RxChannelLockActive(void);
+bool MSG_RF_TransactionActive(void);
 
 #endif

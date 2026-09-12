@@ -1367,6 +1367,9 @@ void APP_Update(void)
 #ifdef ENABLE_NOAA
             || (gIsNoaaMode && (IS_NOAA_CHANNEL(gEeprom.ScreenChannel[0]) || IS_NOAA_CHANNEL(gEeprom.ScreenChannel[1])))
 #endif
+#ifdef ENABLE_MESSENGER
+            || MSG_RF_TransactionActive()
+#endif
         ) {
             gBatterySaveCountdown_10ms = battery_save_count_10ms;
         } else {
@@ -1382,6 +1385,18 @@ void APP_Update(void)
 #endif
     ) {
         static bool goToSleep;
+        /* Keep the already-awake RX window open only while Messenger is
+         * actively receiving or completing an ACK/PONG transaction.  The
+         * normal battery-save cadence resumes as soon as that work ends. */
+#ifdef ENABLE_MESSENGER
+        if (MSG_RF_TransactionActive())
+        {
+            gPowerSave_10ms = power_save1_10ms;
+            gRxIdleMode = false;
+            goToSleep = false;
+        }
+        else
+#endif
         // wake up, enable RX then go back to sleep
         if (gRxIdleMode)
         {
@@ -1646,7 +1661,8 @@ void APP_TimeSlice10ms(void)
 #ifdef ENABLE_MESSENGER
         if (!gSurvivalMode) {
             MSG_RF_Tick10ms();
-            MSG_Tick();  // GOGUFW 0.3.3 hotfix: drive T9 multi-tap commit timeout every 10ms
+            MSG_Tick();
+            MENU_TextEditTick10ms();  // Compose, Callsign and ChName share the same 800 ms T9 timeout
         }
 #endif
 #ifdef ENABLE_FMRADIO

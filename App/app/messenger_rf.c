@@ -342,6 +342,24 @@ bool MSG_RF_RxChannelLockActive(void)
     return s_rx_channel_lock_active;
 }
 
+bool MSG_RF_TransactionActive(void)
+{
+    if (gSurvivalMode || !gMessengerConfig.msg_rx) return false;
+
+    if (s_rx_capture_active || s_rx_stale_ticks != 0u ||
+        s_fsk_audio_muted || s_rx_channel_lock_active ||
+        s_wait_ack_active || s_ack_collect_active ||
+        s_pending_range_pong_active) {
+        return true;
+    }
+
+    for (uint8_t i = 0; i < MSG_RF_ACK_QUEUE_LEN; ++i) {
+        if (s_pending_ack_queue[i].active) return true;
+    }
+
+    return false;
+}
+
 static void MSG_RF_RequestRangeBeep(void)
 {
     if (!gMessengerConfig.msg_beep) return;

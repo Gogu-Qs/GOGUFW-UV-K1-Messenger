@@ -50,6 +50,10 @@
 #include "driver/systick.h"
 #include "driver/st7565.h"
 #include "driver/py25q16.h"
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+    #include "driver/mb_flash.h"
+    #include "ui/multiboot.h"
+#endif
 #ifdef ENABLE_UART
     #include "driver/uart.h"
 #endif
@@ -83,6 +87,12 @@ void Main(void)
      * This prevents random LCD RAM/glitch pixels from being visible during
      * the normal boot path before the standard welcome screen is drawn. */
     ST7565_FillScreen(0x00);
+
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+    /* Resolve the settings bank before the first EEPROM/config read. A normal
+     * direct installation is adopted once as Main (slot 0 / bank 0). */
+    PY25Q16_SetBankBase(MB_BankBase(MB_BootResolveState()));
+#endif
 
     boot_counter_10ms = 250;   // 2.5 sec
 
@@ -130,6 +140,16 @@ void Main(void)
 #endif
 
     BOOT_Mode_t  BootMode = BOOT_GetMode();
+
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+    /* The selector runs before the welcome screen. EXIT resumes normal boot;
+     * selecting a slot validates, restores and resets from RAM. */
+    if (BootMode == BOOT_MODE_MULTIBOOT)
+    {
+        BOOT_ProcessMode(BootMode);
+        BootMode = BOOT_MODE_NORMAL;
+    }
+#endif
 
 #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
     if (BootMode == BOOT_MODE_RESCUE_OPS)

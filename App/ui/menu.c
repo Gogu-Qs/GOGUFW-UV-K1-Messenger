@@ -46,6 +46,9 @@
 #include "menu.h"
 #include "ui.h"
 #include "welcome.h"
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+    #include "driver/mb_flash.h"
+#endif
 
 
 const t_menu_item MenuList[] =
@@ -177,6 +180,9 @@ const t_menu_item MenuList[] =
 #endif
 #ifdef ENABLE_FEAT_F4HWN_LOGO
     {"SetSav",      MENU_SET_SAV       },
+#endif
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+    {"SetCfg",      MENU_SET_CFG       },
 #endif
 #endif
 #ifdef ENABLE_MESSENGER
@@ -1477,6 +1483,14 @@ void UI_DisplayMenu(void)
             strcpy(String, gSubMenu_SET_NAV[gSubMenuSelection]);
             break;
 
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+        case MENU_SET_CFG:
+            strcpy(String, "CFG M");
+            if (gSubMenuSelection != 0)
+                String[4] = (char)('0' + gSubMenuSelection);
+            break;
+#endif
+
         case MENU_F1SHRT:
         case MENU_F1LONG:
         case MENU_F2SHRT:
@@ -1743,6 +1757,9 @@ void UI_DisplayMenu(void)
     if ((m == MENU_RESET    ||
          m == MENU_MEM_CH   ||
          m == MENU_MEM_NAME ||
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+         m == MENU_SET_CFG  ||
+#endif
          m == MENU_DEL_CH) && gAskForConfirmation)
     {   // display confirmation
         char *pPrintStr = (gAskForConfirmation == 1) ? "SURE?" : "WAIT!";

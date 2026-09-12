@@ -150,6 +150,16 @@ enable_feature(ENABLE_MESSENGER
     app/messenger_rf.c
 )
 
+enable_feature(ENABLE_FEAT_F4HWN_MULTIBOOT
+    driver/mb_flash.c
+    ui/multiboot.c
+)
+enable_feature(ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY)
+
+if(ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY AND NOT ENABLE_FEAT_F4HWN_MULTIBOOT)
+    message(FATAL_ERROR "ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY requires ENABLE_FEAT_F4HWN_MULTIBOOT.")
+endif()
+
 # ---- CUSTOM MODS ----
 
 enable_feature(ENABLE_SPECTRUM

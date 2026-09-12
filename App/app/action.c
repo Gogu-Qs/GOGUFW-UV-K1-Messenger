@@ -102,7 +102,7 @@ static void ACTION_CallTx(void)
 }
 #endif
 
-void (*const action_opt_table[])(void) = {
+void (*const action_opt_table[ACTION_OPT_LEN])(void) = {
     [ACTION_OPT_NONE] = &FUNCTION_NOP,
     [ACTION_OPT_POWER] = &ACTION_Power,
     [ACTION_OPT_MONITOR] = &ACTION_Monitor,
@@ -187,6 +187,10 @@ void (*const action_opt_table[])(void) = {
 };
 
 static_assert(ARRAY_SIZE(action_opt_table) == ACTION_OPT_LEN);
+static_assert(ACTION_OPT_BEAM == 23);
+static_assert(ACTION_OPT_MESSENGER == 24);
+static_assert(ACTION_OPT_HEARD == 25);
+static_assert(ACTION_OPT_CALLTX == 26);
 
 void ACTION_Power(void)
 {
@@ -442,6 +446,11 @@ void ACTION_Handle(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
         }
     }
 #endif
+
+    if ((unsigned)func >= ACTION_OPT_LEN || action_opt_table[func] == NULL) {
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        return;
+    }
 
     action_opt_table[func]();
 }

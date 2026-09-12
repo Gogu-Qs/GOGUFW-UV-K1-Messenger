@@ -1,26 +1,26 @@
-# GOGUFW 1.3.0
+# GOGUFW 2.0.0
 
 GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3, built on the F4HWN Fusion firmware and focused on radio-to-radio messaging and practical everyday tools.
 
 ## Firmware at a glance
 
-| Statistic | Current stable build |
+| Statistic | Project status |
 | --- | --- |
-| 📦 **Release** | [GOGUFW 1.3.0](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v1.3.0) |
+| 📦 **Current stable release** | GOGUFW 2.0.0 |
 | 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
 | ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
 | ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
 | 🍴 **GitHub forks** | [![GitHub forks](https://img.shields.io/github/forks/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=forks&color=orange)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/forks) |
-| 🧩 **Firmware base** | F4HWN Fusion 5.9.0 |
+| 🧩 **Firmware base** | F4HWN Fusion 5.9.0 with the official 6.0.0 multiboot format |
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **FLASH usage** | 115,324 / 120,832 bytes · **95.44%** · 5,508 bytes free |
-| 🧠 **RAM usage** | 13,664 / 16,384 bytes · **83.40%** · 2,720 bytes free |
+| 💾 **FLASH usage** | 116,932 / 120,832 bytes · **96.77%** · 3,900 bytes free |
+| 🧠 **RAM usage** | 13,408 / 16,384 bytes · **81.84%** · 2,976 bytes free |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · FM names/RSSI |
-| 🔌 **CHIRP support** | Matching GOGUFW 1.3.0 custom module |
+| 🔌 **CHIRP support** | Matching GOGUFW 2.0.0 custom module |
 
-Version **1.3.0** adds Memory Spectrum, safe peak selection for MR and VFO operation, improved multi-radio Range Check collection, and additional Messenger, scanning and channel-management refinements.
+Version **2.0.0** adds compatibility with the official F4HWN 6.0.0 multiboot slot, settings-bank format and UV Studio Firmware Slots tools while preserving GOGUFW Messenger, Range Check and Spectrum behavior.
 
 [Download the latest release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/latest)
 
@@ -34,7 +34,21 @@ Version **1.3.0** adds Memory Spectrum, safe peak selection for MR and VFO opera
 - **Custom shortcuts:** open Messenger and HEARD quickly or transmit CALLTX from programmable side keys.
 - **GOGUFW CHIRP module:** configure supported radio settings, custom key actions and FM station names from CHIRP.
 
-## What is new in 1.3.0
+## Multiboot quick guide
+
+- Hold **MENU while powering on** to open the firmware-slot selector.
+- On the first normal installation, GOGUFW creates a one-time **Main** backup in slot 0. Do not power the radio off while `Init Main` is displayed.
+- Slot images are CRC-checked completely before the internal application Flash is erased.
+- Each slot uses its own settings bank by default. GOGUFW Messenger settings/drafts and FM station names are also redirected into that private bank.
+- **SetCfg** can deliberately pair a firmware slot with a compatible settings bank. This selection is kept across normal restarts, but returning to the firmware after booting another slot restores its own bank as a safety measure.
+- Calibration and the boot logo remain shared between slots.
+- GOGUFW can run as the Main firmware or from a firmware slot. Compatible images can be written, checked, erased and configured through UV Studio's Firmware Slots page.
+
+Before first using multiboot, save a complete CHIRP backup and keep a known-good DFU recovery image available. Only select a different settings bank with **SetCfg** when its layout is known to be compatible with that firmware.
+
+To recover the flash space needed for multiboot without changing GOGUFW's core features, version 2.0.0 removes Beam, QR display, MEM display, Scan RSSI and Scan Progress.
+
+## Memory Spectrum and 1.3.0 improvements
 
 - **Memory Spectrum:** Spectrum opened from MR mode scans the radio's valid stored channels instead of a continuous VFO frequency range.
 - **Channel-focused display:** Memory Spectrum shows the selected channel name prominently, with its frequency and channel range information.
@@ -100,14 +114,14 @@ Memory Spectrum deliberately uses manual threshold control because stored FM and
 
 ## Download and compatibility
 
-The current stable release is **GOGUFW 1.3.0**. Its release page includes:
+The current stable release is **GOGUFW 2.0.0**. Its release page includes:
 
-- the Fusion firmware `.bin` file;
-- the matching `Gogufw_1.3.0_chirp_module.py` CHIRP module.
+- the canonical multiboot-compatible `f4hwn.gogufw.v2.0.0.bin` firmware image;
+- the matching `Gogufw_2.0.0_chirp_module.py` CHIRP module.
 
 GOGUFW is intended for Quansheng UV-K1 / UV-K5 V3 variants using the **PY32F071 MCU and BK4829 RF IC**. It is not intended for unrelated BK4819-based radios.
 
-[Open the GOGUFW 1.3.0 release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v1.3.0)
+[Open the GOGUFW 2.0.0 release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.0.0)
 
 ## Build from source
 

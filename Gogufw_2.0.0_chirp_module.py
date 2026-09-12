@@ -1,4 +1,4 @@
-# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v1.3.0
+# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v2.0.0
 # Based on F4HWN Fusion CHIRP 5.5.0 support.
 # Matches GOGUFW 1.0.1 EEPROM aliases:
 #   FM names: 0x00D000 alias -> firmware flash 0x013000
@@ -800,6 +800,10 @@ KEYACTIONS_LIST = ["NONE",
                    "CALLTX"
                   ]
 
+# Keep BEAM at its historical numeric slot so later GOGUFW actions retain
+# their EEPROM IDs, but do not offer the removed feature as a selectable key.
+REMOVED_KEY_ACTIONS = {"BEAM"}
+
 MIC_GAIN_LIST = ["+1.5dB", "+4.0dB", "+8.0dB", "+12.0dB", "+16.0dB", "+20.0dB", "+24.0dB", "+28.0dB", "+31.5dB"]
 
 def xorarr(data: bytes):
@@ -1215,7 +1219,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
     """Quansheng UV-K5 (egzumer + f4hwn)"""
     VENDOR = "Quansheng"
     MODEL = "UV-K1 / UV-K5 V3 GOGUFW Messenger"
-    VARIANT = "1.3.0"
+    VARIANT = "2.0.0"
     BAUD_RATE = 38400
     NEEDS_COMPAT_SERIAL = False
     FIRMWARE_VERSION = ""
@@ -2255,7 +2259,8 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
             has_game = self._memobj.BUILD_OPTIONS.ENABLE_FEAT_F4HWN_GAME
             has_vox = self._memobj.BUILD_OPTIONS.ENABLE_VOX
 
-            lst = KEYACTIONS_LIST.copy()
+            lst = [action for action in KEYACTIONS_LIST
+                   if action not in REMOVED_KEY_ACTIONS]
             lst.remove("BACKLIGHT") # Only for key press on TX
             lst.remove("BL_MIN_TMP_OFF")
 

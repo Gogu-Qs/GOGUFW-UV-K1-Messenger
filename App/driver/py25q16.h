@@ -24,5 +24,13 @@ void PY25Q16_Init();
 void PY25Q16_ReadBuffer(uint32_t Address, void *pBuffer, uint32_t Size);
 void PY25Q16_WriteBuffer(uint32_t Address, const void *pBuffer, uint32_t Size, bool Append);
 void PY25Q16_SectorErase(uint32_t Address);
+void PY25Q16_InvalidateCache(void);
+
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+/* Addresses below 0x10000 are ordinary per-bank configuration. Calibration,
+ * boot logo, firmware slots and multiboot state remain shared. */
+#define PY25Q16_BANK_SHARED_FROM 0x00010000u
+void PY25Q16_SetBankBase(uint32_t Base);
+#endif
 
 #endif

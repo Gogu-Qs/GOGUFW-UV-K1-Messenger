@@ -32,7 +32,7 @@ void MENU_StartCssScan(void);
 void MENU_CssScanFound(void);
 void MENU_StopCssScan(void);
 
+void MENU_TextEditTick10ms(void);
 void MENU_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
 
 #endif
-

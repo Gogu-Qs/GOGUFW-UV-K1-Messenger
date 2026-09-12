@@ -38,6 +38,10 @@
 #include "driver/eeprom.h"
 #include "driver/gpio.h"
 #include "driver/keyboard.h"
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+    #include "driver/mb_flash.h"
+    #include "ui/multiboot.h"
+#endif
 #include "frequencies.h"
 #include "helper/battery.h"
 #include "misc.h"
@@ -223,6 +227,12 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
             //*pMin = 0;
             *pMax = ARRAY_SIZE(gSubMenu_RESET) - 1;
             break;
+
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+        case MENU_SET_CFG:
+            *pMax = MB_BANK_COUNT - 1;
+            break;
+#endif
 
         case MENU_COMPAND:
         case MENU_ABR_ON_TX_RX:
@@ -1177,6 +1187,12 @@ void MENU_ShowCurrentSetting(void)
             gSubMenuSelection = 0;
             break;
 
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+        case MENU_SET_CFG:
+            gSubMenuSelection = MB_GetActiveBank();
+            break;
+#endif
+
         case MENU_R_DCS:
         case MENU_R_CTCS:
         {
@@ -1644,6 +1660,18 @@ static bool MENU_IsEditingName() {
         && edit_index >= 0;
 }
 
+void MENU_TextEditTick10ms(void)
+{
+#ifdef ENABLE_MESSENGER
+    /* Compose already advances its T9 commit timeout from MSG_Tick().  The
+     * Callsign and ChName editors share the same T9 core, so advance their
+     * pending key here as well.  After 800 ms, pressing the same number starts
+     * a new character instead of cycling the previous one. */
+    if (MENU_IsEditingName())
+        MSG_T9_Tick(&s_menuTextEditor);
+#endif
+}
+
 static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
     uint8_t  Offset;
@@ -2039,7 +2067,11 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
 
         if (m == MENU_RESET  ||
             m == MENU_MEM_CH ||
-            m == MENU_DEL_CH)
+            m == MENU_DEL_CH
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+            || m == MENU_SET_CFG
+#endif
+            )
         {
             switch (gAskForConfirmation)
             {
@@ -2067,6 +2099,39 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
                             NVIC_SystemReset();
                         #endif
                     }
+#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
+                    else if (m == MENU_SET_CFG)
+                    {
+                        /* Re-use another slot's compatible channel/settings
+                         * bank without moving the running firmware.  GOGUFW's
+                         * Messenger and FM-name sectors remain bank-local and
+                         * occupy offsets unused by stock F4HWN. */
+                        if (gSubMenuSelection == MB_GetActiveBank())
+                        {
+                            gFlagAcceptSetting  = false;
+                            gIsInSubMenu        = false;
+                            gAskForConfirmation = 0;
+                            SCANNER_Stop();
+                            return;
+                        }
+
+                        const uint8_t err = MB_SetActiveBank(gSubMenuSelection);
+                        if (err != MB_OK)
+                        {
+                            UI_MultibootShowConfigError(err);
+                            gAskForConfirmation   = 0;
+                            gRequestDisplayScreen = DISPLAY_MENU;
+                            SCANNER_Stop();
+                            return;
+                        }
+
+                        #if defined(ENABLE_OVERLAY)
+                            overlay_FLASH_RebootToBootloader();
+                        #else
+                            NVIC_SystemReset();
+                        #endif
+                    }
+#endif
 
                     gFlagAcceptSetting  = true;
                     gIsInSubMenu        = false;
