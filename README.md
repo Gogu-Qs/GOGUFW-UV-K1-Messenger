@@ -36,9 +36,11 @@ Version **2.0.0** adds compatibility with the official F4HWN 6.0.0 multiboot slo
 
 ## Survival Mode
 
-**Survival Mode** is a temporary, battery-saving operating mode for basic radio use. It keeps the normal voice radio functions available while disabling power-hungry or non-essential features such as Messenger/FSK, scanning, FM radio and Spectrum. Dual Watch and cross-band operation are also disabled for the session.
+**Survival Mode** is a temporary, simplified mode for basic voice communication, designed to reduce distractions and help conserve battery. Normal voice reception and PTT transmission remain available, while Messenger/FSK, HEARD/Range Check, scanning, FM radio and Spectrum are unavailable. Dual Watch, cross-band operation and VOX are disabled for the session, and only the first 17 basic menu items are shown.
 
 To start it, hold **PTT + the configured SetKey** while powering on. The default SetKey is **MENU**, so the usual shortcut is **PTT + MENU + Power**. The SetKey can be changed in the menu to **MENU, UP, DOWN, EXIT** or **STAR**. Survival Mode changes runtime behavior only; it does not overwrite your saved settings. Power-cycle the radio normally to return to full GOGUFW mode.
+
+This is separate from the normal **BatSav** receiver power-saving setting and does not automatically change its ratio. **MENU alone at power-on opens multiboot; Survival Mode also requires PTT.** See the [Survival Mode guide](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/wiki/Survival-Mode).
 
 ## Multiboot quick guide
 
