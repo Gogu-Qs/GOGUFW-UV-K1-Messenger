@@ -38,7 +38,7 @@ static const uint16_t BEEP_Classic_array[][3] = { /* Tone    Duration    Repeats
     [BEEP_1KHZ_60MS_OPTIONAL]                     = {1000,   60,         1      },
     [BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL]        = {500,    60,         2      },
     [BEEP_500HZ_60MS_DOUBLE_BEEP_FORCE]           = {500,    60,         2      },
-    [BEEP_500HZ_60MS_QUADRUPLE_BEEP_OPTIONAL]     = {500,    60,         4      },
+    [BEEP_500HZ_60MS_QUADRUPLE_BEEP_FORCE]        = {500,    60,         4      },
 #ifdef ENABLE_DTMF_CALLING
     [BEEP_880HZ_200MS]                            = {880,    200,        1      },
     [BEEP_880HZ_500MS]                            = {880,    500,        1      },
@@ -59,8 +59,7 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
         return;
 
     if ((Beep == BEEP_1KHZ_60MS_OPTIONAL ||
-         Beep == BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL ||
-         Beep == BEEP_500HZ_60MS_QUADRUPLE_BEEP_OPTIONAL) &&
+         Beep == BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL) &&
          !gEeprom.BEEP_CONTROL)
         return;
         

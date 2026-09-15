@@ -15,7 +15,7 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3, built on the F4H
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **FLASH usage** | 118,184 / 120,832 bytes · **97.81%** · 2,648 bytes free |
+| 💾 **FLASH usage** | 118,180 / 120,832 bytes · **97.81%** · 2,652 bytes free |
 | 🧠 **RAM usage** | 13,488 / 16,384 bytes · **82.32%** · 2,896 bytes free |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · FM names/RSSI |
 | 🔌 **CHIRP support** | Matching GOGUFW 2.0.1 custom module |
@@ -30,7 +30,7 @@ Version **2.0.1** is a Messenger and Range Check safety/reliability update. It k
 - **Captured reply target:** delayed ACK/PONG replies retain the receive-side VFO, RX frequency, TX frequency and repeater offset. A later channel change cancels the response instead of transmitting on the wrong channel.
 - **Safe retries:** text retries retain the original TX VFO and frequencies and are cancelled if that target changes or becomes disallowed.
 - **Hard F Lock boundary:** Messenger wake, text, retry, PING, ACK and PONG transmissions cannot occur outside the configured F Lock plan, in either VFO or memory mode. The actual TX frequency is checked, including channel offsets.
-- **Visible manual-TX rejection:** a blocked message, resend or PING keeps the current screen open and shows a two-second floating `TX BLOCKED / SEND CANCELLED` notice with four short error beeps. Blocked messages are not added to Sent and blocked PINGs do not start an empty result window.
+- **Visible manual-TX rejection:** a blocked message, resend or PING keeps the current screen open and shows a two-second floating `TX BLOCKED / SEND CANCELLED` notice with four short forced safety beeps, independent of the optional keypad-beep setting. Blocked messages are not added to Sent and blocked PINGs do not start an empty result window.
 - **Non-FM protection:** Messenger and Range Check remain blocked in AM and other unsupported modulation modes; manual attempts receive the same visible warning.
 - **Reduced multi-radio PONG overlap:** Range Check responders choose one of six 1.2-second reply slots starting 3–9 seconds after reception. Callsign (`MsgCsg`), PING ID, RSSI and runtime entropy are mixed into the selection. Carrier checks and the complete 12-second collection window remain active. Slot collisions are reduced but cannot be eliminated completely.
 - **Text-entry fix:** ChName and MsgCsg now follow Compose key handling: short presses are processed on release and long presses enter only the digit, without leaving an extra provisional letter.

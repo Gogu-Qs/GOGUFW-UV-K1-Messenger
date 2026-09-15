@@ -16,7 +16,7 @@ GOGUFW 2.0.1 is a focused Messenger and Range Check safety/reliability update fo
 - The actual TX frequency is checked before wake, text, retry, PING, ACK and PONG transmission, including memory-channel TX offsets.
 - Outside-plan transmission is blocked even if the memory channel's separate TXLock override is disabled. This deliberately prevents unattended FSK replies from bypassing the configured frequency plan.
 - FSK TX is also rejected in AM/non-FM modes, during serial configuration and at invalid battery levels.
-- A manually blocked message, resend or PING keeps the current screen open and displays a two-second floating **TX BLOCKED / SEND CANCELLED** notice with four short error beeps.
+- A manually blocked message, resend or PING keeps the current screen open and displays a two-second floating **TX BLOCKED / SEND CANCELLED** notice with four short forced safety beeps, independent of the optional keypad-beep setting.
 - A blocked message is not added to Sent and a blocked PING does not start the Range Check result timer. Automatic ACK/PONG rejection remains silent and releases the transaction normally.
 
 ## Multi-radio Range Check
@@ -37,7 +37,7 @@ GOGUFW 2.0.1 is a focused Messenger and Range Check safety/reliability update fo
 
 - Welcome/version strings, UART identity and new multiboot slot metadata report **v2.0.1**.
 - Clean ARM GNU Fusion build and multiboot RAM-stub isolation check passed.
-- FLASH: **118,184 / 120,832 bytes (97.81%)**
+- FLASH: **118,180 / 120,832 bytes (97.81%)**
 - RAM: **13,488 / 16,384 bytes (82.32%)**
 
 ## Downloads

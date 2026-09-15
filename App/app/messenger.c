@@ -58,7 +58,7 @@ static void show_tx_blocked_notice(void)
     /* Keep the current Messenger screen underneath a short floating warning.
      * Four beeps are intentionally distinct from the two-beep RX alert. */
     gMsgTxLockNoticeTicks = 200u;
-    gBeepToPlay = BEEP_500HZ_60MS_QUADRUPLE_BEEP_OPTIONAL;
+    gBeepToPlay = BEEP_500HZ_60MS_QUADRUPLE_BEEP_FORCE;
     gUpdateDisplay = true;
 }
 
