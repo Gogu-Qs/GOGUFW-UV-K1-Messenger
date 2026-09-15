@@ -10,6 +10,7 @@
 #include "driver/bk4819-regs.h"
 #include "driver/system.h"
 #include "functions.h"
+#include "frequencies.h"
 #include "helper/battery.h"
 #include "misc.h"
 #include "radio.h"
@@ -46,7 +47,6 @@ extern uint8_t gFSKWriteIndex;
 #define MSG_RF_UNREAD_LED_FLASH_TICKS  8u     /* 80 ms */
 #define MSG_RF_UNREAD_LED_GAP_TICKS    14u    /* 140 ms between double flashes */
 #define MSG_RF_RANGE_PONG_MIN_TICKS     300u   /* 0.5.18: 3000 ms; wait until 3x PING repeats are safely over */
-#define MSG_RF_RANGE_PONG_JIT_TICKS     500u   /* +0..5000 ms; PONG window = 3..8s inside 12s listen */
 #define MSG_RF_RANGE_BACKOFF_TICKS      100u   /* 1000 ms if FSK busy */
 #define MSG_RF_RANGE_PING_REPEATS       2u     /* 1.0.1d: send two Range Check PING frames; first may wake UV-K1 FSK RX */
 #define MSG_RF_RANGE_PONG_REPEATS       1u     /* 1.0.1: single Range Check PONG; reduce collisions */
@@ -105,6 +105,9 @@ static uint8_t s_range_beep_ticks;
 
 typedef struct {
     bool active;
+    uint16_t lifetime;
+    uint32_t rx_frequency;
+    uint32_t tx_frequency;
     uint16_t delay_ticks;
     uint16_t id;
     char to[MSG_CALLSIGN_LEN + 1];
@@ -121,10 +124,16 @@ static uint16_t s_last_range_ping_age_ticks;
 static char s_last_range_ping_from[MSG_CALLSIGN_LEN + 1];
 static char s_pending_range_pong_to[MSG_CALLSIGN_LEN + 1];
 static uint8_t s_pending_range_pong_vfo;
+static uint16_t s_pending_range_pong_lifetime;
+static uint32_t s_pending_range_pong_rx_frequency;
+static uint32_t s_pending_range_pong_tx_frequency;
 
 static bool MSG_RF_ParseAckText(const char *text, uint16_t *id);
 
 static bool s_wait_ack_active;
+static uint8_t s_wait_ack_vfo;
+static uint32_t s_wait_ack_rx_frequency;
+static uint32_t s_wait_ack_tx_frequency;
 static uint16_t s_wait_ack_id;
 static uint16_t s_wait_ack_ticks;
 static uint8_t s_wait_ack_retries;
@@ -137,6 +146,36 @@ static uint16_t s_ack_collect_ticks;
 
 static uint16_t s_ack_jitter_seed;
 static uint32_t s_range_jitter_seed;
+static bool s_last_send_blocked;
+
+static bool MSG_RF_FrequencyBlocked(const VFO_Info_t *vfo)
+{
+    /* Messenger/Range Check use the F Lock plan as a hard safety boundary.
+     * Unlike voice PTT, a per-channel TXLock override cannot enable an
+     * unattended FSK transmission outside the configured plan. */
+    return !vfo || TX_freq_check(vfo->pTX->Frequency) != 0;
+}
+
+/* Check the actual RF target before any FSK TX, including warmup/wake. */
+static bool MSG_RF_TxAllowed(const VFO_Info_t *vfo)
+{
+    return vfo && !MSG_RF_FrequencyBlocked(vfo) &&
+           vfo->Modulation == MODULATION_FM &&
+           !SerialConfigInProgress() && gBatteryDisplayLevel > 0 &&
+           gBatteryDisplayLevel <= 6;
+}
+
+bool MSG_RF_LastSendWasBlocked(void)
+{
+    return s_last_send_blocked;
+}
+
+static bool MSG_RF_ReplyValid(uint8_t vfo, uint32_t rx, uint32_t tx)
+{
+    const VFO_Info_t *target = &gEeprom.VfoInfo[vfo & 1u];
+    return target->pRX->Frequency == rx && target->pTX->Frequency == tx &&
+           MSG_RF_TxAllowed(target);
+}
 
 /* Only registers that stock RADIO_SetupRegisters() does not rebuild are kept
  * here. Dynamic voice/RX state (REG_19/2B/30/3F/47) is deliberately excluded
@@ -238,16 +277,17 @@ static uint16_t MSG_RF_RandomAckDelayTicks(uint16_t msg_id)
 
 static uint16_t MSG_RF_RandomRangeDelayTicks(uint16_t msg_id)
 {
-    /* 0.5.14: Range PONG jitter must not share the ACK seed.
-     * Mix fresh per-ping entropy so replies from one or more radios spread
-     * across the first 6s of the 10s listen window instead of clustering near the end.
-     * Use multiply-high reduction rather than a raw modulo on a weak 16-bit
-     * sequence to avoid visible bias in short field tests. */
+    /* Keep PONG scheduling separate from ACK jitter and mix fresh request
+     * entropy with the responder callsign before selecting a reply slot. */
     uint32_t entropy = ((uint32_t)gFlashLightBlinkCounter << 16) ^
                        ((uint32_t)BK4819_ReadRegister(BK4819_REG_67) << 1) ^
                        ((uint32_t)BK4819_ReadRegister(BK4819_REG_0C) << 5) ^
                        ((uint32_t)(gEeprom.RX_VFO & 1u) << 12) ^
                        (uint32_t)msg_id ^ 0x3C5A9E37u;
+    /* Distinguish responders even when their clocks/RSSI match. New PING
+     * IDs and fresh entropy change the slot assignment on each request. */
+    for (uint8_t i = 0; i < MSG_CALLSIGN_LEN; ++i)
+        entropy = (entropy ^ (uint8_t)gMessengerConfig.callsign[i]) * 16777619u;
 
     if (s_range_jitter_seed == 0u) {
         s_range_jitter_seed = entropy ^ 0x6B21A5A5u;
@@ -262,10 +302,10 @@ static uint16_t MSG_RF_RandomRangeDelayTicks(uint16_t msg_id)
     s_range_jitter_seed ^= (s_range_jitter_seed >> 17);
     s_range_jitter_seed ^= (s_range_jitter_seed << 5);
 
-    const uint32_t span = (uint32_t)MSG_RF_RANGE_PONG_JIT_TICKS + 1u;
-    const uint16_t rnd16 = (uint16_t)(s_range_jitter_seed ^ (s_range_jitter_seed >> 16));
-    const uint16_t jitter = (uint16_t)(((uint32_t)rnd16 * span) >> 16);
-    return (uint16_t)(MSG_RF_RANGE_PONG_MIN_TICKS + jitter);
+    /* 100 bytes + preamble/sync at 1200 baud, 180 ms warmup and TX
+     * setup/cleanup fit in a 1.2 s slot. Six slots start at 3..9 s. */
+    return (uint16_t)(MSG_RF_RANGE_PONG_MIN_TICKS +
+                     (s_range_jitter_seed % 6u) * 120u);
 }
 
 
@@ -307,6 +347,27 @@ static void MSG_RF_RxChannelLockStop(void)
 
 static void MSG_RF_RxChannelLockTick(void)
 {
+    /* A received packet owns its RX VFO until its delayed reply completes.
+     * The short sync timer must not restore an older VFO while PONG/ACK is
+     * still queued. Queue lifetimes and TX permission are checked below. */
+    uint8_t reply_vfo = 2u;
+    if (s_pending_range_pong_active) {
+        reply_vfo = s_pending_range_pong_vfo;
+    } else {
+        for (uint8_t i = 0; i < MSG_RF_ACK_QUEUE_LEN; ++i) {
+            if (s_pending_ack_queue[i].active) {
+                reply_vfo = s_pending_ack_queue[i].vfo;
+                break;
+            }
+        }
+    }
+    if (reply_vfo < 2u) {
+        if (!s_rx_channel_lock_active || s_rx_channel_lock_vfo != reply_vfo)
+            MSG_RF_RxChannelLockStart(reply_vfo,
+                s_rx_channel_lock_ticks > 2u ? s_rx_channel_lock_ticks : 2u);
+        else if (s_rx_channel_lock_ticks < 2u)
+            s_rx_channel_lock_ticks = 2u;
+    }
     if (!s_rx_channel_lock_active) return;
     if ((gEeprom.RX_VFO & 1u) != (s_rx_channel_lock_vfo & 1u)) {
         gEeprom.RX_VFO = s_rx_channel_lock_vfo & 1u;
@@ -832,6 +893,13 @@ void MSG_RF_Tick10ms(void)
      * from the RX interrupt/parser path. This keeps voice/RX restore behavior
      * close to the RF17 stable baseline. */
     if (s_pending_range_pong_active) {
+        if (s_pending_range_pong_lifetime) --s_pending_range_pong_lifetime;
+        if (!s_pending_range_pong_lifetime ||
+            !MSG_RF_ReplyValid(s_pending_range_pong_vfo,
+                s_pending_range_pong_rx_frequency, s_pending_range_pong_tx_frequency))
+            s_pending_range_pong_active = false;
+    }
+    if (s_pending_range_pong_active) {
         if (s_pending_range_pong_delay_ticks > 0u) --s_pending_range_pong_delay_ticks;
         if (s_pending_range_pong_delay_ticks == 0u) {
             if (gCurrentFunction != FUNCTION_TRANSMIT && !MSG_RF_AutoTxBusy()) {
@@ -871,6 +939,13 @@ void MSG_RF_Tick10ms(void)
         }
     }
     for (uint8_t i = 0; i < MSG_RF_ACK_QUEUE_LEN; ++i) {
+        if (s_pending_ack_queue[i].active) {
+            if (s_pending_ack_queue[i].lifetime) --s_pending_ack_queue[i].lifetime;
+            if (!s_pending_ack_queue[i].lifetime ||
+                !MSG_RF_ReplyValid(s_pending_ack_queue[i].vfo,
+                    s_pending_ack_queue[i].rx_frequency, s_pending_ack_queue[i].tx_frequency))
+                s_pending_ack_queue[i].active = false;
+        }
         if (s_pending_ack_queue[i].active && s_pending_ack_queue[i].delay_ticks > 0u) {
             --s_pending_ack_queue[i].delay_ticks;
         }
@@ -902,6 +977,11 @@ void MSG_RF_Tick10ms(void)
         MSG_RF_RxChannelLockStop();
     }
     if (s_wait_ack_active) {
+        if (!MSG_RF_ReplyValid(s_wait_ack_vfo, s_wait_ack_rx_frequency,
+                              s_wait_ack_tx_frequency)) {
+            s_wait_ack_retries = 1u;
+            s_wait_ack_ticks = 0u;
+        }
         if (s_wait_ack_ticks > 0u) {
             --s_wait_ack_ticks;
         }
@@ -912,10 +992,10 @@ void MSG_RF_Tick10ms(void)
                 if (MSG_PACKET_BuildText(retry_frame, sizeof(retry_frame), s_wait_ack_id,
                                          gMessengerConfig.callsign, s_wait_ack_text,
                                          s_wait_ack_ttl) == MSG_PKT_WIRE_LEN &&
-                    MSG_RF_SendPacketFrame(retry_frame, true, true)) {
+                    MSG_RF_SendPacketFrameRepeatedOnVfo(retry_frame, true, true, s_wait_ack_vfo, 1u)) {
                     s_wait_ack_retries = 1u;
                     s_wait_ack_ticks = MSG_RF_ACK_TIMEOUT_TICKS;
-                    MSG_RF_RxChannelLockStart(gEeprom.TX_VFO, MSG_RF_ACK_TIMEOUT_TICKS);
+                    MSG_RF_RxChannelLockStart(s_wait_ack_vfo, MSG_RF_ACK_TIMEOUT_TICKS);
                     s_rearm_delay_ticks = MSG_RF_POST_TX_REARM_TICKS;
                 }
             } else if (s_wait_ack_retries != 0u) {
@@ -1003,6 +1083,7 @@ static bool MSG_RF_SendPacketFrame(const uint8_t *packet, bool count_tx, bool ig
 {
 #ifdef ENABLE_AIRCOPY
     if (!packet) return false;
+    if (!MSG_RF_TxAllowed(gCurrentVfo)) return false;
     if (MSG_RF_FskBusy()) return false;
 
     MSG_RF_CaptureFskCleanupSnapshot();
@@ -1065,19 +1146,23 @@ static bool MSG_RF_SendPacketFrameRepeatedOnVfo(const uint8_t *packet, bool coun
 {
 #ifdef ENABLE_AIRCOPY
     const uint8_t old_tx_vfo = gEeprom.TX_VFO;
+    const uint8_t old_crossband = gEeprom.CROSS_BAND_RX_TX;
     bool ok;
 
     tx_vfo &= 1u;
-    if (old_tx_vfo != tx_vfo) {
+    if (!MSG_RF_TxAllowed(&gEeprom.VfoInfo[tx_vfo])) return false;
+    if (old_tx_vfo != tx_vfo || old_crossband != CROSS_BAND_OFF || gCurrentVfo != &gEeprom.VfoInfo[tx_vfo]) {
         gEeprom.TX_VFO = tx_vfo;
+        gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
         RADIO_SelectVfos();
         RADIO_SetupRegisters(true);
     }
 
     ok = MSG_RF_SendPacketFrameRepeated(packet, count_tx, ignore_self_rx, repeats);
 
-    if (old_tx_vfo != tx_vfo) {
+    if (old_tx_vfo != tx_vfo || old_crossband != CROSS_BAND_OFF) {
         gEeprom.TX_VFO = old_tx_vfo;
+        gEeprom.CROSS_BAND_RX_TX = old_crossband;
         RADIO_SelectVfos();
         RADIO_SetupRegisters(true);
     }
@@ -1129,21 +1214,33 @@ static void MSG_RF_RangeTxWarmupCurrentVfo(void)
 static bool MSG_RF_SendRangePacketFrameRepeatedOnVfo(const uint8_t *packet, bool count_tx, bool ignore_self_rx, uint8_t tx_vfo, uint8_t repeats)
 {
 #ifdef ENABLE_AIRCOPY
+    if (!MSG_RF_TxAllowed(&gEeprom.VfoInfo[tx_vfo & 1u])) return false;
     const uint8_t old_tx_vfo = gEeprom.TX_VFO;
+    const uint8_t old_crossband = gEeprom.CROSS_BAND_RX_TX;
     bool ok;
 
     tx_vfo &= 1u;
-    if (old_tx_vfo != tx_vfo) {
+    if (old_tx_vfo != tx_vfo || old_crossband != CROSS_BAND_OFF) {
         gEeprom.TX_VFO = tx_vfo;
+        gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
         RADIO_SelectVfos();
         RADIO_SetupRegisters(true);
     }
 
+    RADIO_SelectVfos();
+    if (!MSG_RF_TxAllowed(gCurrentVfo)) {
+        gEeprom.TX_VFO = old_tx_vfo;
+        gEeprom.CROSS_BAND_RX_TX = old_crossband;
+        RADIO_SelectVfos();
+        RADIO_SetupRegisters(true);
+        return false;
+    }
     MSG_RF_RangeTxWarmupCurrentVfo();
     ok = MSG_RF_SendPacketFrameRepeated(packet, count_tx, ignore_self_rx, repeats);
 
-    if (old_tx_vfo != tx_vfo) {
+    if (old_tx_vfo != tx_vfo || old_crossband != CROSS_BAND_OFF) {
         gEeprom.TX_VFO = old_tx_vfo;
+        gEeprom.CROSS_BAND_RX_TX = old_crossband;
         RADIO_SelectVfos();
         RADIO_SetupRegisters(true);
     }
@@ -1258,6 +1355,9 @@ static void MSG_RF_QueueRangePong(uint16_t id, const char *to, uint8_t rx_vfo)
     if (to && to[0]) strncpy(s_last_range_ping_from, to, MSG_CALLSIGN_LEN);
 
     s_pending_range_pong_active = true;
+    s_pending_range_pong_lifetime = 1100u;
+    s_pending_range_pong_rx_frequency = gEeprom.VfoInfo[rx_vfo & 1u].pRX->Frequency;
+    s_pending_range_pong_tx_frequency = gEeprom.VfoInfo[rx_vfo & 1u].pTX->Frequency;
     s_pending_range_pong_delay_ticks = MSG_RF_RandomRangeDelayTicks(id);
     s_pending_range_pong_id = id;
     s_pending_range_pong_vfo = (uint8_t)(rx_vfo & 1u);
@@ -1293,6 +1393,9 @@ static void MSG_RF_QueueAck(uint16_t id, const char *to, uint8_t rx_vfo)
     for (uint8_t i = 0; i < MSG_RF_ACK_QUEUE_LEN; ++i) {
         if (s_pending_ack_queue[i].active) continue;
         s_pending_ack_queue[i].active = true;
+        s_pending_ack_queue[i].lifetime = MSG_RF_ACK_TIMEOUT_TICKS;
+        s_pending_ack_queue[i].rx_frequency = gEeprom.VfoInfo[rx_vfo & 1u].pRX->Frequency;
+        s_pending_ack_queue[i].tx_frequency = gEeprom.VfoInfo[rx_vfo & 1u].pTX->Frequency;
         s_pending_ack_queue[i].delay_ticks = MSG_RF_RandomAckDelayTicks(id);
         s_pending_ack_queue[i].id = id;
         s_pending_ack_queue[i].vfo = (uint8_t)(rx_vfo & 1u);
@@ -1551,9 +1654,16 @@ static void MSG_RF_RangeForceRxReprime(void)
 
 bool MSG_RF_SendRangePing(void)
 {
+    s_last_send_blocked = false;
     if (gSurvivalMode) return false;
     MSG_RF_EnsureStoreInitialized();
 #ifdef ENABLE_AIRCOPY
+    const VFO_Info_t *target = &gEeprom.VfoInfo[gEeprom.TX_VFO & 1u];
+    if (!MSG_RF_TxAllowed(target)) {
+        s_last_send_blocked = true;
+        return false;
+    }
+
     /* 0.6.1: make Range Check self-healing after long idle.  Restore any
      * stale FSK/voice remnants before building and sending the PING; normal
      * Messenger TX still uses the proven generic path. */
@@ -1611,9 +1721,15 @@ static void MSG_RF_SendInitialWakeFrame(uint16_t id)
 
 bool MSG_RF_SendText(const char *text)
 {
+    s_last_send_blocked = false;
     if (gSurvivalMode) return false;
     MSG_RF_EnsureStoreInitialized();
 #ifdef ENABLE_AIRCOPY
+    if (!MSG_RF_TxAllowed(gCurrentVfo)) {
+        s_last_send_blocked = true;
+        return false;
+    }
+
     uint8_t packet[MSG_PKT_WIRE_LEN];
     char rf_text[MSG_RF_TEXT_LIMIT + 1u];
     clamp_rf_text(rf_text, text);
@@ -1625,20 +1741,24 @@ bool MSG_RF_SendText(const char *text)
         return false;
     }
 
+    const uint8_t sent_vfo = (gCurrentVfo == &gEeprom.VfoInfo[1]) ? 1u : 0u;
     MSG_RF_SendInitialWakeFrame(id);
 
-    if (!MSG_RF_SendPacketFrame(packet, true, true)) return false;
+    if (!MSG_RF_SendPacketFrameRepeatedOnVfo(packet, true, true, sent_vfo, 1u)) return false;
 
     MSG_STORE_AddOutboxMessage(rf_text, gMessengerConfig.callsign, MSG_PKT_TO_ALL, id, ttl, ttl);
     if (MSG_RF_AckEnabledNow()) {
         s_wait_ack_active = true;
+        s_wait_ack_vfo = sent_vfo;
+        s_wait_ack_rx_frequency = gEeprom.VfoInfo[sent_vfo].pRX->Frequency;
+        s_wait_ack_tx_frequency = gEeprom.VfoInfo[sent_vfo].pTX->Frequency;
         s_wait_ack_id = id;
         s_wait_ack_ticks = MSG_RF_ACK_TIMEOUT_TICKS;
         s_wait_ack_retries = 0u;
         s_wait_ack_ttl = ttl;
         memset(s_wait_ack_text, 0, sizeof(s_wait_ack_text));
         strncpy(s_wait_ack_text, rf_text, MSG_TEXT_LEN);
-        MSG_RF_RxChannelLockStart(gEeprom.TX_VFO, MSG_RF_ACK_TIMEOUT_TICKS);
+        MSG_RF_RxChannelLockStart(sent_vfo, MSG_RF_ACK_TIMEOUT_TICKS);
         s_rearm_delay_ticks = MSG_RF_POST_TX_REARM_TICKS;
     } else {
         MSG_STORE_SetOutboxStatusById(id, MSG_STATUS_NONE);

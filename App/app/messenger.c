@@ -48,9 +48,29 @@ uint8_t gMsgRangeStatus; /* 0 idle, 1 wait, 2 ok */
 uint16_t gMsgRangeSession;
 static uint16_t s_msgRangeWaitTicks;
 static uint8_t s_msgAgeSubTicks;
+uint8_t gMsgTxLockNoticeTicks;
 
 static bool gMsgComposeIsDraftEdit;
 static uint8_t gMsgComposeDraftIndex;
+
+static void show_tx_blocked_notice(void)
+{
+    /* Keep the current Messenger screen underneath a short floating warning.
+     * Four beeps are intentionally distinct from the two-beep RX alert. */
+    gMsgTxLockNoticeTicks = 200u;
+    gBeepToPlay = BEEP_500HZ_60MS_QUADRUPLE_BEEP_OPTIONAL;
+    gUpdateDisplay = true;
+}
+
+static bool handle_send_failure(const char *text)
+{
+    if (MSG_RF_LastSendWasBlocked()) {
+        show_tx_blocked_notice();
+        return true;
+    }
+    MSG_STORE_AddOutboxDemo(text);
+    return false;
+}
 
 void MSG_Init(void)
 {
@@ -75,6 +95,8 @@ void MSG_Open(void)
 void MSG_Tick(void)
 {
     if (gSurvivalMode) return;
+    if (gMsgTxLockNoticeTicks > 0u && --gMsgTxLockNoticeTicks == 0u)
+        gUpdateDisplay = true;
     if (gMsgScreen == MSG_SCREEN_COMPOSE) MSG_T9_Tick(&gMsgEditor);
     else if (gMsgScreen == MSG_SCREEN_RANGE && gMsgRangeStatus == 1u) {
         if (s_msgRangeWaitTicks > 0u) --s_msgRangeWaitTicks;
@@ -279,6 +301,14 @@ static void read_move(int8_t dir)
 
 void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
+    if (gMsgTxLockNoticeTicks > 0u) {
+        if (!bKeyPressed && !bKeyHeld) {
+            gMsgTxLockNoticeTicks = 0u;
+            gUpdateDisplay = true;
+        }
+        return;
+    }
+
     if (bKeyHeld) {
         if (bKeyPressed && gMsgScreen == MSG_SCREEN_COMPOSE && Key >= KEY_0 && Key <= KEY_9) {
             MSG_T9_HandleLongKey(&gMsgEditor, Key);
@@ -330,7 +360,7 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                 if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
                     const char *text = read_message_text();
                     if (text) {
-                        if (!MSG_RF_SendText(text)) MSG_STORE_AddOutboxDemo(text);
+                        if (!MSG_RF_SendText(text) && handle_send_failure(text)) break;
                     }
                     open_sent_after_send();
                 } else {
@@ -358,11 +388,11 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                      */
                     MSG_STORE_SetDraft(gMsgComposeDraftIndex, gMsgComposeBuf);
                     const char *send_text = gMsgComposeBuf[0] ? gMsgComposeBuf : "EMPTY";
-                    if (!MSG_RF_SendText(send_text)) MSG_STORE_AddOutboxDemo(send_text);
+                    if (!MSG_RF_SendText(send_text) && handle_send_failure(send_text)) break;
                     open_sent_after_send();
                 } else {
                     const char *send_text = gMsgComposeBuf[0] ? gMsgComposeBuf : "EMPTY";
-                    if (!MSG_RF_SendText(send_text)) MSG_STORE_AddOutboxDemo(send_text);
+                    if (!MSG_RF_SendText(send_text) && handle_send_failure(send_text)) break;
                     open_sent_after_send();
                 }
             }
@@ -387,6 +417,8 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                         gMsgRangeStatus = 1u;
                         s_msgRangeWaitTicks = MSG_RANGE_WAIT_TICKS;
                         gMsgRangeScroll = 0u;
+                    } else if (MSG_RF_LastSendWasBlocked()) {
+                        show_tx_blocked_notice();
                     }
                 }
             } else if (Key == KEY_UP) {

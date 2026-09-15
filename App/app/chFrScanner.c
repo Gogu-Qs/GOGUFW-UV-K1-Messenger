@@ -4,6 +4,9 @@
 
 #include "app/app.h"
 #include "app/chFrScanner.h"
+#ifdef ENABLE_MESSENGER
+#include "app/messenger_rf.h"
+#endif
 #include "audio.h"
 #include "driver/bk4819.h"
 #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
@@ -854,6 +857,11 @@ void CHFRSCANNER_ContinueScanning(void)
 
 void CHFRSCANNER_ContinueScanning(void)
 {
+    /* Retain the resume request and current channel until ACK/PONG has
+     * finished. This also covers callers other than the main app tick. */
+#ifdef ENABLE_MESSENGER
+    if (MSG_RF_TransactionActive()) return;
+#endif
 #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
     if (scanFastLastFullTuneCandidate &&
         gCurrentFunction != FUNCTION_INCOMING &&

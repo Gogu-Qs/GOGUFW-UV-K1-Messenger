@@ -1288,6 +1288,9 @@ void APP_Update(void)
         && !UI_MAIN_ShouldHoldScanResume())
 #endif
     {   // scanning
+#ifdef ENABLE_MESSENGER
+        if (!MSG_RF_TransactionActive())
+#endif
         CHFRSCANNER_ContinueScanning();
     }
 
@@ -1308,6 +1311,9 @@ void APP_Update(void)
 
     // toggle between the VFO's if dual watch is enabled
     if (!SCANNER_IsScanning()
+#ifdef ENABLE_MESSENGER
+        && !MSG_RF_TransactionActive()
+#endif
         && gEeprom.DUAL_WATCH != DUAL_WATCH_OFF
         && gScheduleDualWatch
         && gScanStateDir == SCAN_OFF

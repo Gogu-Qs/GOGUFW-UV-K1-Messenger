@@ -1,4 +1,4 @@
-# GOGUFW 2.0.0
+# GOGUFW 2.0.1
 
 GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3, built on the F4HWN Fusion firmware and focused on radio-to-radio messaging and practical everyday tools.
 
@@ -6,7 +6,7 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3, built on the F4H
 
 | Statistic | Project status |
 | --- | --- |
-| 📦 **Current stable release** | GOGUFW 2.0.0 |
+| 📦 **Current stable release** | GOGUFW 2.0.1 |
 | 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
 | ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
 | ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
@@ -15,14 +15,26 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3, built on the F4H
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **FLASH usage** | 116,932 / 120,832 bytes · **96.77%** · 3,900 bytes free |
-| 🧠 **RAM usage** | 13,408 / 16,384 bytes · **81.84%** · 2,976 bytes free |
+| 💾 **FLASH usage** | 118,184 / 120,832 bytes · **97.81%** · 2,648 bytes free |
+| 🧠 **RAM usage** | 13,488 / 16,384 bytes · **82.32%** · 2,896 bytes free |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · FM names/RSSI |
-| 🔌 **CHIRP support** | Matching GOGUFW 2.0.0 custom module |
+| 🔌 **CHIRP support** | Matching GOGUFW 2.0.1 custom module |
 
-Version **2.0.0** adds compatibility with the official F4HWN 6.0.0 multiboot slot, settings-bank format and UV Studio Firmware Slots tools while preserving GOGUFW Messenger, Range Check and Spectrum behavior.
+Version **2.0.1** is a Messenger and Range Check safety/reliability update. It keeps delayed ACK/PONG replies on the channel where the FSK packet was received, pauses Scan and Dual Watch until the transaction finishes, enforces the configured F Lock plan for all FSK transmissions and improves multi-radio PONG scheduling.
 
 [Download the latest release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/latest)
+
+## Version 2.0.1 fixes
+
+- **Correct scan replies:** when a valid FSK message or PING is received during scanning, Scan and Dual Watch remain on that receive VFO until the queued ACK or PONG is sent, cancelled or expires. Scanning then resumes normally.
+- **Captured reply target:** delayed ACK/PONG replies retain the receive-side VFO, RX frequency, TX frequency and repeater offset. A later channel change cancels the response instead of transmitting on the wrong channel.
+- **Safe retries:** text retries retain the original TX VFO and frequencies and are cancelled if that target changes or becomes disallowed.
+- **Hard F Lock boundary:** Messenger wake, text, retry, PING, ACK and PONG transmissions cannot occur outside the configured F Lock plan, in either VFO or memory mode. The actual TX frequency is checked, including channel offsets.
+- **Visible manual-TX rejection:** a blocked message, resend or PING keeps the current screen open and shows a two-second floating `TX BLOCKED / SEND CANCELLED` notice with four short error beeps. Blocked messages are not added to Sent and blocked PINGs do not start an empty result window.
+- **Non-FM protection:** Messenger and Range Check remain blocked in AM and other unsupported modulation modes; manual attempts receive the same visible warning.
+- **Reduced multi-radio PONG overlap:** Range Check responders choose one of six 1.2-second reply slots starting 3–9 seconds after reception. Callsign (`MsgCsg`), PING ID, RSSI and runtime entropy are mixed into the selection. Carrier checks and the complete 12-second collection window remain active. Slot collisions are reduced but cannot be eliminated completely.
+- **Text-entry fix:** ChName and MsgCsg now follow Compose key handling: short presses are processed on release and long presses enter only the digit, without leaving an extra provisional letter.
+- **Updated identity:** welcome text, UART identity and new multiboot slot metadata report v2.0.1.
 
 ## What GOGUFW adds
 
@@ -123,14 +135,14 @@ Memory Spectrum deliberately uses manual threshold control because stored FM and
 
 ## Download and compatibility
 
-The current stable release is **GOGUFW 2.0.0**. Its release page includes:
+The current stable release is **GOGUFW 2.0.1**. Its release page includes:
 
-- the canonical multiboot-compatible `f4hwn.gogufw.v2.0.0.bin` firmware image;
-- the matching `Gogufw_2.0.0_chirp_module.py` CHIRP module.
+- the canonical multiboot-compatible `f4hwn.gogufw.v2.0.1.bin` firmware image;
+- the matching `Gogufw_2.0.1_chirp_module.py` CHIRP module.
 
 GOGUFW is intended for Quansheng UV-K1 / UV-K5 V3 variants using the **PY32F071 MCU and BK4829 RF IC**. It is not intended for unrelated BK4819-based radios.
 
-[Open the GOGUFW 2.0.0 release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.0.0)
+[Open the GOGUFW 2.0.1 release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.0.1)
 
 ## Build from source
 
@@ -145,7 +157,7 @@ For setup instructions, see [BUILD_VSCODE_MAC.md](BUILD_VSCODE_MAC.md) or [BUILD
 
 ## Credits
 
-GOGUFW is based on the F4HWN / UV-K5 custom firmware project and retains the original project attribution and license. Thanks to the F4HWN contributors for the firmware foundation on which these additions were built.
+GOGUFW is based on the F4HWN / UV-K5 custom firmware project and retains the original project attribution and license. Thanks to the F4HWN contributors for the firmware foundation on which these additions were built. Special thanks to [@mkalin22](https://github.com/mkalin22) for detailed field testing and reports that helped identify the Scan/PONG channel-context and TX-safety issues fixed in v2.0.1.
 
 ## Disclaimer
 

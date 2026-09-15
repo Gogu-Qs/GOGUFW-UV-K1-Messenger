@@ -1679,8 +1679,13 @@ static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
     int32_t  Max;
     uint16_t Value = 0;
 
-    if (!bKeyPressed)
+    /* Text entry follows Compose: short press on release, digit on hold.
+     * Never insert a provisional letter on the initial key-down. */
+    if (MENU_IsTextEditMenuItemId(UI_MENU_GetCurrentMenuId()) && edit_index >= 0) {
+        if (bKeyPressed != bKeyHeld) return;
+    } else if (!bKeyPressed) {
         return;
+    }
 
     gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
 

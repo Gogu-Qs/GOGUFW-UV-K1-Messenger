@@ -10,6 +10,7 @@ void MSG_RF_Tick10ms(void);
 void MSG_RF_OnRadioInterrupt(uint16_t status);
 bool MSG_RF_SendText(const char *text);
 bool MSG_RF_SendRangePing(void);
+bool MSG_RF_LastSendWasBlocked(void);
 void MSG_RF_HardRestoreVoicePath(void);
 void MSG_RF_PrepareVoxVoiceTx(void);
 void MSG_RF_OnVoxModeChanged(bool enabled);

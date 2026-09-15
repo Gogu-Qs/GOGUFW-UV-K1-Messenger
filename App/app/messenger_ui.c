@@ -32,6 +32,7 @@ extern uint8_t gMsgRangeCount;
 extern uint8_t gMsgRangeScroll;
 extern uint8_t gMsgRangeStatus;
 extern uint16_t gMsgRangeSession;
+extern uint8_t gMsgTxLockNoticeTicks;
 #define MSG_RANGE_MAX_FOUND 6u
 
 enum { MSG_SCREEN_HOME = 0, MSG_SCREEN_INBOX, MSG_SCREEN_OUTBOX, MSG_SCREEN_DRAFTS, MSG_SCREEN_COMPOSE, MSG_SCREEN_READ, MSG_SCREEN_RANGE };
@@ -558,6 +559,17 @@ void UI_DisplayMessenger(void)
         case MSG_SCREEN_COMPOSE: draw_compose(); break;
         case MSG_SCREEN_RANGE: draw_range(); break;
         default: draw_home(); break;
+    }
+
+    if (gMsgTxLockNoticeTicks > 0u) {
+        /* Floating modal: retain the current screen and cover only its centre. */
+        msg_fill_rect(19u, 19u, 108u, 43u, false);
+        msg_draw_hline(19u, 108u, 19u, true);
+        msg_draw_hline(19u, 108u, 43u, true);
+        msg_draw_vline(19u, 19u, 43u, true);
+        msg_draw_vline(108u, 19u, 43u, true);
+        msg_draw_small_at_y("TX BLOCKED", 29u, 23u, false);
+        GUI_DisplaySmallest("SEND CANCELLED", 38u, 34u, false, true);
     }
     ST7565_BlitFullScreen();
 }
