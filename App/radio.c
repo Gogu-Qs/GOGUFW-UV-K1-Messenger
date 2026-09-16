@@ -19,6 +19,7 @@
 
 #include "am_fix.h"
 #include "app/dtmf.h"
+#include "app/main.h"
 #ifdef ENABLE_MESSENGER
     #include "app/messenger_rf.h"
 #endif
@@ -221,6 +222,8 @@ void RADIO_InitInfo(VFO_Info_t *pInfo, const uint16_t ChannelSave, const uint32_
     pInfo->CHANNEL_SAVE             = ChannelSave;
     pInfo->FrequencyReverse         = false;
     pInfo->TX_LOCK                  = true;
+    pInfo->NO_FSK_TX                = false;
+    pInfo->NO_ROGER                 = false;
     pInfo->OUTPUT_POWER             = OUTPUT_POWER_LOW1;
     pInfo->freq_config_RX.Frequency = Frequency;
     pInfo->freq_config_TX.Frequency = Frequency;
@@ -355,8 +358,20 @@ void RADIO_ConfigureChannel(const unsigned int VFO, const unsigned int configure
         pVfo->Modulation = tmp;
 
         tmp = data[6];
-        if (tmp >= STEP_N_ELEM)
+        if (tmp == 0xFF)
+        {
+            pVfo->NO_FSK_TX = false;
+            pVfo->NO_ROGER  = false;
             tmp = STEP_12_5kHz;
+        }
+        else
+        {
+            pVfo->NO_FSK_TX = !!((tmp >> 7) & 1u);
+            pVfo->NO_ROGER  = !!((tmp >> 6) & 1u);
+            tmp &= 0x3F;
+            if (tmp >= STEP_N_ELEM)
+                tmp = STEP_12_5kHz;
+        }
         pVfo->STEP_SETTING  = tmp;
         pVfo->StepFrequency = gStepFrequencyTable[tmp];
 
@@ -1344,7 +1359,11 @@ void RADIO_SendEndOfTransmission(void)
     }
 #endif
 
-    BK4819_PlayRoger(Bandwidth);
+    /* CALLTX already consists entirely of an alert melody.  Its shared TX
+     * shutdown path must still send DTMF/CSS tails and restore RX, but must
+     * not append the normal voice PTT Roger/MDC signal. */
+    if (!gCallToneTxActive && !gCurrentVfo->NO_ROGER)
+        BK4819_PlayRoger(Bandwidth);
     DTMF_SendEndOfTransmission();
 
     // send the CTCSS/DCS tail tone - allows the receivers to mute the usual FM squelch tail/crash

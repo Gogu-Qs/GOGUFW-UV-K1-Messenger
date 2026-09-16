@@ -328,6 +328,8 @@ typedef struct {
     uint8_t          channelBandwidth;
     uint8_t          busyChannelLock;
     uint8_t          txLock;
+    uint8_t          noFskTx;
+    uint8_t          noRoger;
 #ifdef ENABLE_DTMF_CALLING
     uint8_t          dtmfDecodingEnable;
 #endif

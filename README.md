@@ -1,4 +1,4 @@
-# GOGUFW 2.0.1
+# GOGUFW 2.0.2
 
 GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3, built on the F4HWN Fusion firmware and focused on radio-to-radio messaging and practical everyday tools.
 
@@ -6,7 +6,7 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3, built on the F4H
 
 | Statistic | Project status |
 | --- | --- |
-| 📦 **Current stable release** | GOGUFW 2.0.1 |
+| 📦 **Current stable release** | GOGUFW 2.0.2 |
 | 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
 | ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
 | ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
@@ -15,14 +15,39 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3, built on the F4H
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **FLASH usage** | 118,180 / 120,832 bytes · **97.81%** · 2,652 bytes free |
+| 💾 **FLASH usage** | 118,288 / 120,832 bytes · **97.89%** · 2,544 bytes free |
 | 🧠 **RAM usage** | 13,488 / 16,384 bytes · **82.32%** · 2,896 bytes free |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · FM names/RSSI |
-| 🔌 **CHIRP support** | Matching GOGUFW 2.0.1 custom module |
+| 🔌 **CHIRP support** | Matching GOGUFW 2.0.2 custom module with per-channel FSK/Roger controls |
 
-Version **2.0.1** is a Messenger and Range Check safety/reliability update. It keeps delayed ACK/PONG replies on the channel where the FSK packet was received, pauses Scan and Dual Watch until the transaction finishes, enforces the configured F Lock plan for all FSK transmissions and improves multi-radio PONG scheduling.
+Version **2.0.2** adds per-memory-channel FSK and Roger controls, matching CHIRP support and clear main-screen capability icons. It also prevents CALLTX from appending a Roger/MDC signal, completes every call-tone phrase without clipping its final note, and aligns FM station-name long-press entry with the other text editors. The Messenger safety work introduced in 2.0.1 remains in place.
 
 [Download the latest release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/latest)
+
+## Version 2.0.2 changes
+
+- **Per-channel No FSK TX:** each memory channel can independently block every outgoing Messenger/Range Check FSK transmission. This includes wake frames, messages, retries, PING, ACK and PONG. Voice transmission and FSK reception remain available.
+- **Consistent blocked-send feedback:** a manually attempted message, resend or Range Check PING on a `No FSK TX` channel uses the existing two-second `TX BLOCKED / SEND CANCELLED` notice and four forced warning beeps. Automatic ACK/PONG rejection stays silent.
+- **Per-channel No Roger:** a memory channel can suppress the selected Roger beep or MDC burst even when Roger is enabled globally. DTMF and CTCSS/DCS end-of-transmission handling are unchanged.
+- **CALLTX tail correction:** CALLTX no longer appends the globally selected Roger/MDC signal. Roger/MDC remains available for ordinary PTT/VOX voice transmissions unless the channel has `No Roger` enabled.
+- **Complete call melodies:** CALLTX now stops only after completing the current melodic phrase. The final note is no longer clipped at the three-second boundary, and the configured inter-note pauses are transmitted as real silence while the RF carrier remains active.
+- **Memory-channel capability icons:** a radio-wave/RSS-style symbol means FSK transmission is permitted on that memory channel. A musical-note symbol means the global Roger/MDC selection is active on that channel. The symbols are evaluated independently for both displayed memory channels and are hidden in VFO mode.
+- **Spectrum spacing:** the manual threshold readout is compacted from `M -110/-120` to `M-110/-120`, preventing it from touching long channel names in Memory Spectrum.
+- **FM name-entry consistency:** while renaming an FM broadcast memory, holding a number key inserts the digit immediately when the long-press threshold is reached; releasing the key does not add it again.
+- **CHIRP 2.0.2 module:** adds `No FSK TX` and `No Roger` as visible memory-list columns, also exposes them under **Properties → Extra** for bulk editing, and preserves the packed channel-step data used by the firmware.
+
+### Configure No FSK TX and No Roger in CHIRP
+
+Use `Gogufw_2.0.2_chirp_module.py` supplied with this firmware version; older GOGUFW modules do not know these two channel flags.
+
+1. In CHIRP, choose **File → Load Module** and select the 2.0.2 module, then download the radio normally.
+2. In the **Memories** list, edit **No FSK TX** or **No Roger** directly in the channel's normal columns for an individual channel.
+3. To apply the same setting to several channels, select those rows together, right-click and open **Properties/Edit**, then use the **Extra** tab.
+4. Enable **No FSK TX** to prevent the selected channel(s) from sending Messenger or Range Check FSK. Incoming FSK and normal voice operation are not disabled.
+5. Enable **No Roger** to suppress the Roger beep/MDC burst after normal voice PTT on the selected channel(s), regardless of the global Roger menu selection.
+6. Upload the edited image back to the radio.
+
+Manual Messenger/PING attempts on a `No FSK TX` channel show the blocking notice and four beeps. Automatic ACK/PONG responses are simply cancelled without disturbing the user. The radio-wave icon is shown when FSK TX is allowed; the note icon is shown only when Roger/MDC is globally enabled and allowed by the channel.
 
 ## Version 2.0.1 fixes
 
@@ -135,14 +160,14 @@ Memory Spectrum deliberately uses manual threshold control because stored FM and
 
 ## Download and compatibility
 
-The current stable release is **GOGUFW 2.0.1**. Its release page includes:
+The current stable release is **GOGUFW 2.0.2**. Its release page includes:
 
-- the canonical multiboot-compatible `f4hwn.gogufw.v2.0.1.bin` firmware image;
-- the matching `Gogufw_2.0.1_chirp_module.py` CHIRP module.
+- the canonical multiboot-compatible `f4hwn.gogufw.v2.0.2.bin` firmware image;
+- the matching `Gogufw_2.0.2_chirp_module.py` CHIRP module.
 
 GOGUFW is intended for Quansheng UV-K1 / UV-K5 V3 variants using the **PY32F071 MCU and BK4829 RF IC**. It is not intended for unrelated BK4819-based radios.
 
-[Open the GOGUFW 2.0.1 release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.0.1)
+[Open the GOGUFW 2.0.2 release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.0.2)
 
 ## Build from source
 

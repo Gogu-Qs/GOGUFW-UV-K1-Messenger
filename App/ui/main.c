@@ -2213,44 +2213,16 @@ void UI_DisplayMain(void)
 #endif
 
 #ifdef ENABLE_FEAT_F4HWN
-        /*
-        if(isMainVFO)   
+        /* Active channel capabilities replace the selected-VFO-only SQL label.
+         * Fixed slots keep the symbols stable when only one capability is active. */
+        if (IS_MR_CHANNEL(vfoInfo->CHANNEL_SAVE))
         {
-            if(gMonitor)
-            {
-                sprintf(String, "%s", "MONI");
-            }
-            
-            if (gSetting_set_gui)
-            {
-                if(!gMonitor)
-                {
-                    sprintf(String, "SQL%d", gEeprom.SQUELCH_LEVEL);
-                }
-                UI_PrintStringSmallNormal(String, LCD_WIDTH + 98, 0, line + 1);
-            }
-            else
-            {
-                if(!gMonitor)
-                {
-                    sprintf(String, "SQL%d", gEeprom.SQUELCH_LEVEL);
-                }
-                GUI_DisplaySmallest(String, 110, line == 0 ? 17 : 49, false, true);
-            }
-        }
-        */
-        if (isMainVFO) {
-           if (gMonitor) {
-                strcpy(String, "MONI");
-           } else {
-                sprintf(String, "SQL%d", gEeprom.SQUELCH_LEVEL);
-           }
+            uint8_t *policyLine = p_line0 + (2 * LCD_WIDTH);
 
-           if (gSetting_set_gui) {
-                UI_PrintStringSmallNormal(String, LCD_WIDTH + 98, 0, line + 1);
-           } else {
-                GUI_DisplaySmallest(String, 110, line == 0 ? 17 : 49, false, true);
-           }
+            if (!vfoInfo->NO_FSK_TX)
+                memcpy(policyLine + 109, BITMAP_FskTx, sizeof(BITMAP_FskTx));
+            if (gEeprom.ROGER != ROGER_MODE_OFF && !vfoInfo->NO_ROGER)
+                memcpy(policyLine + 120, BITMAP_NoRoger, sizeof(BITMAP_NoRoger));
         }
 #endif
 

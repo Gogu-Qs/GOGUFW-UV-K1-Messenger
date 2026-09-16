@@ -159,7 +159,7 @@ static bool MSG_RF_FrequencyBlocked(const VFO_Info_t *vfo)
 /* Check the actual RF target before any FSK TX, including warmup/wake. */
 static bool MSG_RF_TxAllowed(const VFO_Info_t *vfo)
 {
-    return vfo && !MSG_RF_FrequencyBlocked(vfo) &&
+    return vfo && !vfo->NO_FSK_TX && !MSG_RF_FrequencyBlocked(vfo) &&
            vfo->Modulation == MODULATION_FM &&
            !SerialConfigInProgress() && gBatteryDisplayLevel > 0 &&
            gBatteryDisplayLevel <= 6;

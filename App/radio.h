@@ -109,6 +109,8 @@ typedef struct VFO_Info_t
 
     STEP_Setting_t STEP_SETTING;
     uint8_t        TX_LOCK;
+    uint8_t        NO_FSK_TX;
+    uint8_t        NO_ROGER;
     uint8_t        OUTPUT_POWER;
     uint8_t        TXP_CalculatedSetting;
     bool           FrequencyReverse;

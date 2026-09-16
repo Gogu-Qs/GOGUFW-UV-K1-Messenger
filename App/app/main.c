@@ -399,7 +399,8 @@ static void MAIN_SendCallToneNote(uint16_t hz, uint8_t on_10ms, uint8_t off_10ms
     BK4819_ExitTxMute();
     SYSTEM_DelayMs((uint16_t)on_10ms * 10u);
 
-    /* Keep tone modulation and the TX link continuous between notes. */
+    /* Keep the TX link active, but make the configured inter-note gap silent. */
+    BK4819_WriteRegister(BK4819_REG_70, 0x0000);
     if (off_10ms) {
         SYSTEM_DelayMs((uint16_t)off_10ms * 10u);
     }
@@ -447,21 +448,16 @@ static void MAIN_SendPmrCallTone(void)
     BK4819_EnableTXLink();
     SYSTEM_DelayMs(80); // let TX/tone path settle before first tone
 
-    /* Send for a full ~3 seconds. A single melody pass can be only around
-     * 1.5-2.0s depending on the selected tone, so repeat the melody until the
-     * requested call-tone duration is reached. */
+    /* Send for at least 3 seconds, but only stop at the end of a complete
+     * melody phrase so the last note is never truncated. */
     uint16_t elapsed = 0;
     const CallToneMelody_t *melody = &gCallToneMelodies[tone];
-    const uint8_t total_notes = (uint8_t)(melody->note_count * melody->repeat_count);
     while (elapsed < 3000u) {
-        bool played_any = false;
-        for (uint8_t i = 0; i < total_notes && elapsed < 3000u; ++i) {
+        for (uint8_t i = 0; i < melody->note_count; ++i) {
             const CallToneNote_t *n = MAIN_GetCallToneNote(melody, i);
             MAIN_SendCallToneNote(n->hz, n->on_10ms, n->off_10ms);
             elapsed += (uint16_t)((uint16_t)n->on_10ms + (uint16_t)n->off_10ms) * 10u;
-            played_any = true;
         }
-        if (!played_any) break;
     }
 
     AUDIO_AudioPathOff();

@@ -79,7 +79,8 @@ const uint8_t BUTTON_STATE_HELD = 1 << 1;
 const uint8_t BUTTON_EVENT_PRESSED = BUTTON_STATE_PRESSED;
 const uint8_t BUTTON_EVENT_HELD = BUTTON_STATE_PRESSED | BUTTON_STATE_HELD;
 const uint8_t BUTTON_EVENT_SHORT =  0;
-const uint8_t BUTTON_EVENT_LONG =  BUTTON_STATE_HELD;
+/* Fire long-press actions as soon as the hold threshold is reached. */
+const uint8_t BUTTON_EVENT_LONG =  BUTTON_STATE_PRESSED | BUTTON_STATE_HELD;
 
 
 static void Key_FUNC(KEY_Code_t Key, uint8_t state);

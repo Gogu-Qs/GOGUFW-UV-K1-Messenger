@@ -42,6 +42,8 @@ extern const uint8_t BITMAP_VFO_Default[7];
 extern const uint8_t BITMAP_VFO_NotDefault[7];
 extern const uint8_t BITMAP_VFO_Empty[7];
 extern const uint8_t BITMAP_VFO_Lock[7];
+extern const uint8_t BITMAP_FskTx[8];
+extern const uint8_t BITMAP_NoRoger[8];
 extern const uint8_t BITMAP_PowerUser[3];
 extern const uint8_t BITMAP_compand[6];
 

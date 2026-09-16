@@ -443,6 +443,8 @@ static bool ScanFastUpdateDisplayVfo(uint16_t channel, uint32_t *frequency, Modu
     scanFastDisplayVfo.CHANNEL_BANDWIDTH = info.channelBandwidth;
     scanFastDisplayVfo.BUSY_CHANNEL_LOCK = info.busyChannelLock;
     scanFastDisplayVfo.TX_LOCK = info.txLock;
+    scanFastDisplayVfo.NO_FSK_TX = info.noFskTx;
+    scanFastDisplayVfo.NO_ROGER = info.noRoger;
 #ifdef ENABLE_DTMF_CALLING
     scanFastDisplayVfo.DTMF_DECODING_ENABLE = info.dtmfDecodingEnable;
 #endif

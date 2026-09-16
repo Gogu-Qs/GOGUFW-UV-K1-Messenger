@@ -1744,7 +1744,7 @@ static void DrawStatus()
         else
             sprintf(trigStr, "%d", Rssi2DBm(settings.rssiTriggerLevel));
 
-        sprintf(String, "M %s/%s", curStr, trigStr);
+        sprintf(String, "M%s/%s", curStr, trigStr);
     }
     else
     {

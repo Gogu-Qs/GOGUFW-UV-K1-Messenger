@@ -656,8 +656,20 @@ bool SETTINGS_FetchChannelScanDisplayInfo(const uint16_t channel, ChannelScanDis
     info->modulation = (ModulationMode_t)tmp;
 
     tmp = raw.data[6];
-    if (tmp >= STEP_N_ELEM)
+    if (tmp == 0xFF)
+    {
+        info->noFskTx = false;
+        info->noRoger  = false;
         tmp = STEP_12_5kHz;
+    }
+    else
+    {
+        info->noFskTx = !!((tmp >> 7) & 1u);
+        info->noRoger  = !!((tmp >> 6) & 1u);
+        tmp &= 0x3F;
+        if (tmp >= STEP_N_ELEM)
+            tmp = STEP_12_5kHz;
+    }
     info->stepSetting   = (STEP_Setting_t)tmp;
     info->stepFrequency = gStepFrequencyTable[tmp];
 
@@ -1207,7 +1219,9 @@ void SETTINGS_SaveChannel(uint16_t Channel, uint8_t VFO, const VFO_Info_t *pVFO,
             | ((pVFO->DTMF_DECODING_ENABLE & 1u) << 0)
 #endif
         ;
-        State -> _8[6] =  pVFO->STEP_SETTING;
+        State -> _8[6] = (pVFO->NO_FSK_TX << 7)
+                       | (pVFO->NO_ROGER  << 6)
+                       | (pVFO->STEP_SETTING & 0x3F);
 #ifdef ENABLE_FEAT_F4HWN
         State -> _8[7] =  0;
 #else

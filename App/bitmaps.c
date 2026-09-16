@@ -195,6 +195,32 @@ const uint8_t BITMAP_VFO_Lock[7] =
     0b00111100,
 };
 
+/* RSS-style radio waves: this memory channel permits FSK transmission. */
+const uint8_t BITMAP_FskTx[8] =
+{
+    0b01101010,
+    0b01101010,
+    0b00001010,
+    0b00010010,
+    0b01100100,
+    0b00000100,
+    0b00011000,
+    0b01100000,
+};
+
+/* Clear single musical note: its presence means Roger/MDC is enabled. */
+const uint8_t BITMAP_NoRoger[8] =
+{
+    0b01100000,
+    0b01100000,
+    0b01111110,
+    0b00000010,
+    0b00000010,
+    0b00000110,
+    0b00000000,
+    0b00000000,
+};
+
 /*
 const uint8_t BITMAP_VFO_Default[7] =
 {
