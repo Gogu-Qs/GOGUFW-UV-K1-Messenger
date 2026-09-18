@@ -703,6 +703,8 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
                     } else {
                         if (gEeprom.SQUELCH_LEVEL > 0) gEeprom.SQUELCH_LEVEL--;
                     }
+                    gSquelchDisplayCountdown_500ms = SQUELCH_DISPLAY_TIMEOUT_500MS;
+                    gUpdateDisplay = true;
                     gVfoConfigureMode = VFO_CONFIGURE;
                 }
 

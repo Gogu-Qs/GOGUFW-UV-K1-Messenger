@@ -465,12 +465,15 @@ extern uint8_t               gIsLocked;
 extern volatile uint8_t      boot_counter_10ms;
 
 #ifdef ENABLE_FEAT_F4HWN
+    #define SQUELCH_DISPLAY_TIMEOUT_500MS 6u
+
     extern bool                  gK5startup;
     extern bool                  gBackLight;
     extern bool                  gMute;
     extern uint8_t               gBacklightTimeOriginal;
     extern uint8_t               gBacklightBrightnessOld;
     extern uint8_t               gSquelchLevelOriginal;
+    extern uint8_t               gSquelchDisplayCountdown_500ms;
     extern uint8_t               gPttOnePushCounter;
     extern uint32_t              gBlinkCounter;
 

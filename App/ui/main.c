@@ -55,6 +55,18 @@
 
 center_line_t center_line = CENTER_LINE_NONE;
 
+#ifdef ENABLE_FEAT_F4HWN
+enum
+{
+    VFO_CLASSIC_BANDWIDTH_X  = 88,
+    VFO_CLASSIC_SCRAMBLER_X  = 105,
+    VFO_CLASSIC_FSK_ICON_X   = 110,
+    VFO_TINY_SCRAMBLER_X     = 95,
+    VFO_TINY_FSK_ICON_X      = 107,
+    VFO_ROGER_ICON_X         = 120,
+};
+#endif
+
 #ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
 static void UI_PrintActionPickerLabel(uint8_t index, uint8_t line, bool big)
 {
@@ -2229,7 +2241,7 @@ void UI_DisplayMain(void)
             else
             {
                 const char *bandWidthNames[] = {"WIDE", "NAR", "NAR+"};
-                GUI_DisplaySmallest(bandWidthNames[displayBandwidth + narrower], 91, line == 0 ? 17 : 49, false, true);
+                GUI_DisplaySmallest(bandWidthNames[displayBandwidth + narrower], VFO_CLASSIC_BANDWIDTH_X, line == 0 ? 17 : 49, false, true);
             }
         #else
             if (gSetting_set_gui)
@@ -2240,7 +2252,7 @@ void UI_DisplayMain(void)
             else
             {
                 const char *bandWidthNames[] = {"WIDE", "NAR"};
-                GUI_DisplaySmallest(bandWidthNames[displayBandwidth], 91, line == 0 ? 17 : 49, false, true);
+                GUI_DisplaySmallest(bandWidthNames[displayBandwidth], VFO_CLASSIC_BANDWIDTH_X, line == 0 ? 17 : 49, false, true);
             }
         #endif
 #else
@@ -2254,23 +2266,55 @@ void UI_DisplayMain(void)
             UI_PrintStringSmallNormal("DTMF", LCD_WIDTH + 78, 0, line + 1);
 #endif
 
-#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
+#ifndef ENABLE_FEAT_F4HWN
         // show the audio scramble symbol
         if (vfoInfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable)
             UI_PrintStringSmallNormal("SCR", LCD_WIDTH + 106, 0, line + 1);
 #endif
 
 #ifdef ENABLE_FEAT_F4HWN
-        /* Active channel capabilities replace the selected-VFO-only SQL label.
-         * Fixed slots keep the symbols stable when only one capability is active. */
-        if (IS_MR_CHANNEL(vfoInfo->CHANNEL_SAVE))
-        {
-            uint8_t *policyLine = p_line0 + (2 * LCD_WIDTH);
+        uint8_t *policyLine = p_line0 + (2 * LCD_WIDTH);
 
-            if (!vfoInfo->NO_FSK_TX)
-                memcpy(policyLine + 109, BITMAP_FskTx, sizeof(BITMAP_FskTx));
-            if (gEeprom.ROGER != ROGER_MODE_OFF && !vfoInfo->NO_ROGER)
-                memcpy(policyLine + 120, BITMAP_NoRoger, sizeof(BITMAP_NoRoger));
+        /* While squelch is being adjusted, temporarily restore the old SQL
+         * readout on the selected VFO and hide its policy/status icons. */
+        if (isMainVFO && gSquelchDisplayCountdown_500ms > 0)
+        {
+            sprintf(String, "SQL%u", gEeprom.SQUELCH_LEVEL);
+            if (gSetting_set_gui)
+                UI_PrintStringSmallNormal(String, LCD_WIDTH + 98, 0, line + 1);
+            else
+                GUI_DisplaySmallest(String, 110, line == 0 ? 17 : 49, false, true);
+        }
+        else
+        {
+            const uint8_t fskIconX = gSetting_set_gui
+                                   ? VFO_TINY_FSK_ICON_X
+                                   : VFO_CLASSIC_FSK_ICON_X;
+
+#ifdef ENABLE_GOGUFW_SCRAMBLER
+            /* Scrambling applies in MR and VFO modes.  Use the layout's own
+             * standard font so the indicator is an unmistakable letter S. */
+            if (vfoInfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable)
+            {
+                if (gSetting_set_gui)
+                    UI_PrintStringSmallNormal("S", LCD_WIDTH + VFO_TINY_SCRAMBLER_X,
+                                              0, line + 1);
+                else
+                    GUI_DisplaySmallest("S", VFO_CLASSIC_SCRAMBLER_X,
+                                        line == 0 ? 17 : 49, false, true);
+            }
+#endif
+
+            /* FSK and Roger policy flags exist only on memory channels. */
+            if (IS_MR_CHANNEL(vfoInfo->CHANNEL_SAVE))
+            {
+                if (!vfoInfo->NO_FSK_TX)
+                    memcpy(policyLine + fskIconX,
+                           BITMAP_FskTx, sizeof(BITMAP_FskTx));
+                if (gEeprom.ROGER != ROGER_MODE_OFF && !vfoInfo->NO_ROGER)
+                    memcpy(policyLine + VFO_ROGER_ICON_X,
+                           BITMAP_NoRoger, sizeof(BITMAP_NoRoger));
+            }
         }
 #endif
 

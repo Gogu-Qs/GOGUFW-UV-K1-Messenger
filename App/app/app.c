@@ -1881,6 +1881,13 @@ void cancelUserInputModes(void)
 void APP_TimeSlice500ms(void)
 {
     gNextTimeslice_500ms = false;
+#ifdef ENABLE_FEAT_F4HWN
+    if (gSquelchDisplayCountdown_500ms > 0 &&
+        --gSquelchDisplayCountdown_500ms == 0)
+    {
+        gUpdateDisplay = true;
+    }
+#endif
 #ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
     if (gActionPickerKey != 0 && gActionPickerTimeout_500ms > 0 &&
         --gActionPickerTimeout_500ms == 0)

@@ -340,6 +340,7 @@ uint8_t           gIsLocked = 0xFF;
     uint8_t       gBacklightTimeOriginal;
     uint8_t       gBacklightBrightnessOld;
     uint8_t       gSquelchLevelOriginal = 10;
+    uint8_t       gSquelchDisplayCountdown_500ms = 0;
     uint8_t       gPttOnePushCounter = 0;
     uint32_t      gBlinkCounter = 0;
 

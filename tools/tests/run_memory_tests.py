@@ -60,7 +60,7 @@ int main(void) {
             compare(s, 121, 0, line, 8);
         }
     }
-    const char *samples[] = {"", " ", "GOGUFW v2.0.3", "145.50000", "g j ~ ! 09", "CH-1024", "MESSENGER"};
+    const char *samples[] = {"", " ", "GOGUFW v2.0.5", "145.50000", "g j ~ ! 09", "CH-1024", "MESSENGER"};
     for (unsigned i = 0; i < sizeof(samples)/sizeof(samples[0]); i++)
         for (uint8_t line = 0; line < 6; line++) {
             compare(samples[i], 0, 127, line, 8);
