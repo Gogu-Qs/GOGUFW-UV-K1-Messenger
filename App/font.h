@@ -20,7 +20,8 @@
 #include <stdint.h>
 
 
-extern const uint8_t gFontBig[95 - 1][16 - 2];
+extern const uint8_t gFontBigColumnIndex[94][7];
+extern const uint8_t gFontBigColumns[161][2];
 extern const uint8_t gFontBigDigits[11][26 - 6];
 extern const uint8_t gFont3x5[96][3];
 extern const uint8_t gFontSmall[95 - 1][6];

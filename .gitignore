@@ -16,3 +16,18 @@ __pycache__/
 /archive/local-development-notes/
 
 .DS_Store
+
+# Local development/release material; published downloads belong in Releases.
+/AGENTS.md
+/GITHUB_RELEASE_BODY_*.md
+/GOGUFW_*_NOTES.md
+/PR*_NOTES.md
+/TEST_NOTES*.md
+/NEXT_CHANGES.md
+/*.png
+/*.jpg
+/*.jpeg
+/*.bin
+/*.hex
+/reports/
+/archive/

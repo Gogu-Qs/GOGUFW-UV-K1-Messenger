@@ -7,6 +7,8 @@
 
 #ifdef ENABLE_FEAT_F4HWN
     const char Version[]      = AUTHOR_STRING_2 " " VERSION_STRING_2;
+    /* The CHIRP/UART handshake reserves 16 bytes including the terminator. */
+    _Static_assert(sizeof(Version) <= 16u, "firmware identity exceeds UART version field");
     const char Edition[]      = EDITION_STRING;
     const char BuildDate[]    = __DATE__;
     const char BuildTime[]    = __TIME__;

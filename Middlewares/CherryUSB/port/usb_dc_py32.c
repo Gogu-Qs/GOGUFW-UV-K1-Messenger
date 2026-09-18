@@ -31,9 +31,8 @@
 #define USB_BASE (0x40005C00)
 #endif
 
-#ifndef USB_NUM_BIDIR_ENDPOINTS
-#define USB_NUM_BIDIR_ENDPOINTS 8
-#endif
+#define USB_NUM_BIDIR_ENDPOINTS CONFIG_USBDEV_EP_COUNT
+#define USB_EP_IRQ_MASK ((1u << USB_NUM_BIDIR_ENDPOINTS) - 1u)
 
 typedef enum {
   USB_EP0_STATE_SETUP = 0x0,      /**< SETUP DATA */
@@ -301,13 +300,17 @@ int usbd_ep_open(const struct usbd_endpoint_cfg *ep_cfg)
 
 int usbd_ep_close(const uint8_t ep)
 {
-  return 0;
+  return USB_EP_GET_IDX(ep) < USB_NUM_BIDIR_ENDPOINTS ? 0 : -1;
 }
 
 int usbd_ep_set_stall(const uint8_t ep)
 {
   uint8_t ep_idx = USB_EP_GET_IDX(ep);
   uint8_t old_ep_idx;
+
+  if (ep_idx >= USB_NUM_BIDIR_ENDPOINTS) {
+    return -1;
+  }
 
   old_ep_idx = pyusb_get_active_ep();
   pyusb_set_active_ep(ep_idx);
@@ -344,6 +347,10 @@ int usbd_ep_clear_stall(const uint8_t ep)
 {
   uint8_t ep_idx = USB_EP_GET_IDX(ep);
   uint8_t old_ep_idx;
+
+  if (ep_idx >= USB_NUM_BIDIR_ENDPOINTS) {
+    return -1;
+  }
 
   old_ep_idx = pyusb_get_active_ep();
   pyusb_set_active_ep(ep_idx);
@@ -382,6 +389,10 @@ int usbd_ep_is_stalled(const uint8_t ep, uint8_t *stalled)
   uint8_t ep_idx = USB_EP_GET_IDX(ep);
   uint8_t old_ep_idx;
 
+  if (ep_idx >= USB_NUM_BIDIR_ENDPOINTS) {
+    return -1;
+  }
+
   old_ep_idx = pyusb_get_active_ep();
   pyusb_set_active_ep(ep_idx);
 
@@ -412,6 +423,10 @@ int usbd_ep_start_write(const uint8_t ep, const uint8_t *data, uint32_t data_len
 {
   uint8_t ep_idx = USB_EP_GET_IDX(ep);
   uint8_t old_ep_idx;
+
+  if (ep_idx >= USB_NUM_BIDIR_ENDPOINTS) {
+    return -1;
+  }
 
   if (!data && data_len) {
     return -1;
@@ -525,6 +540,10 @@ int usbd_ep_start_read(const uint8_t ep, uint8_t *data, uint32_t data_len)
 {
   uint8_t ep_idx = USB_EP_GET_IDX(ep);
   uint8_t old_ep_idx;
+
+  if (ep_idx >= USB_NUM_BIDIR_ENDPOINTS) {
+    return -1;
+  }
 
   if (!data && data_len)
   {
@@ -698,7 +717,8 @@ void USBD_IRQHandler(void)
      usbd_event_suspend_handler();
   }
 
-  txis &= USB->INT_IN1E;
+  /* Mask unsupported endpoints before walking the shortened state arrays. */
+  txis &= USB->INT_IN1E & USB_EP_IRQ_MASK;
   /* Handle EP0 interrupt */
   if (txis & USB_INTR_EP0)
   {
@@ -747,7 +767,7 @@ void USBD_IRQHandler(void)
     ep_idx++;
   }
 
-  rxis &= USB->INT_OUT1E;
+  rxis &= USB->INT_OUT1E & (USB_EP_IRQ_MASK & ~1u);
   ep_idx = 1;
   while (rxis)
   {

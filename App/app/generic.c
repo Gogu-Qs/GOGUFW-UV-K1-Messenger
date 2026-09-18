@@ -25,6 +25,9 @@
 #endif
 
 #include "app/generic.h"
+#if defined(ENABLE_MESSENGER) && defined(ENABLE_FEAT_F4HWN_ACTION_PICKER)
+    #include "app/messenger.h"
+#endif
 #ifdef ENABLE_MESSENGER
 #include "app/messenger_rf.h"
 #endif
@@ -59,13 +62,19 @@ void GENERIC_Key_F(bool bKeyPressed, bool bKeyHeld)
             COMMON_KeypadLockToggle();
         }
         else { // released
+            bool canToggleF = gScreenToDisplay == DISPLAY_MAIN;
 #ifdef ENABLE_FMRADIO
-            if ((gFmRadioMode || gScreenToDisplay != DISPLAY_MAIN) && gScreenToDisplay != DISPLAY_FM)
-                return;
-#else
-            if (gScreenToDisplay != DISPLAY_MAIN)
-                return;
+            if (gFmRadioMode && gScreenToDisplay != DISPLAY_FM)
+                canToggleF = false;
+            if (gScreenToDisplay == DISPLAY_FM)
+                canToggleF = true;
 #endif
+#if defined(ENABLE_MESSENGER) && defined(ENABLE_FEAT_F4HWN_ACTION_PICKER)
+            if (gScreenToDisplay == DISPLAY_MESSENGER && MSG_ActionPickerAllowed())
+                canToggleF = true;
+#endif
+            if (!canToggleF)
+                return;
 
             gWasFKeyPressed = !gWasFKeyPressed; // toggle F function
 

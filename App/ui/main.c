@@ -18,6 +18,9 @@
 #include <stdlib.h>  // abs()
 
 #include "app/app.h"
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+    #include "app/action.h"
+#endif
 #include "app/chFrScanner.h"
 #include "app/dtmf.h"
 #include "app/main.h"
@@ -51,6 +54,46 @@
 #endif
 
 center_line_t center_line = CENTER_LINE_NONE;
+
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+static void UI_PrintActionPickerLabel(uint8_t index, uint8_t line, bool big)
+{
+    char label[20];
+    strcpy(label, gSubMenu_SIDEFUNCTIONS[index].name);
+
+    char *newline = strchr(label, '\n');
+    if (newline != NULL)
+        *newline = ' ';
+
+    if (big)
+        UI_PrintString(label, 0, LCD_WIDTH, line, 8);
+    else
+        UI_PrintStringSmallNormal(label, 0, LCD_WIDTH, line);
+}
+
+bool UI_DisplayActionPicker(void)
+{
+    if (gActionPickerKey == 0)
+        return false;
+
+    UI_DisplayClear();
+
+    const uint8_t selection = gActionPickerSelection[gActionPickerKey - 1];
+    uint8_t previous = selection - 1;
+    uint8_t next = selection + 1;
+
+    if (previous == 0)
+        previous = gSubMenu_SIDEFUNCTIONS_size - 1;
+    if (next >= gSubMenu_SIDEFUNCTIONS_size)
+        next = 1;
+
+    UI_PrintActionPickerLabel(previous, 1, false);
+    UI_PrintActionPickerLabel(selection, 2, true);
+    UI_PrintActionPickerLabel(next, 4, false);
+    ST7565_BlitFullScreen();
+    return true;
+}
+#endif
 
 #ifdef ENABLE_FEAT_F4HWN
     // static int8_t RxBlink;
@@ -1328,6 +1371,11 @@ void UI_DisplayMain(void)
         return;
     }
 
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+    if (UI_DisplayActionPicker())
+        return;
+#endif
+
 #ifndef ENABLE_FEAT_F4HWN
     if (gEeprom.KEY_LOCK && gKeypadLocked > 0)
     {   // tell user how to unlock the keyboard
@@ -2206,7 +2254,7 @@ void UI_DisplayMain(void)
             UI_PrintStringSmallNormal("DTMF", LCD_WIDTH + 78, 0, line + 1);
 #endif
 
-#ifndef ENABLE_FEAT_F4HWN
+#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
         // show the audio scramble symbol
         if (vfoInfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable)
             UI_PrintStringSmallNormal("SCR", LCD_WIDTH + 106, 0, line + 1);

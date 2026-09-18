@@ -152,6 +152,7 @@ enable_feature(ENABLE_MESSENGER
 
 enable_feature(ENABLE_FEAT_F4HWN_MULTIBOOT
     driver/mb_flash.c
+    driver/mb_flash_logic.c
     ui/multiboot.c
 )
 enable_feature(ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY)
@@ -227,6 +228,8 @@ enable_feature(ENABLE_FEAT_F4HWN_GMRS_FRS_MURS)
 enable_feature(ENABLE_FEAT_F4HWN_CA)
 enable_feature(ENABLE_FEAT_F4HWN_DEBUG)
 enable_feature(ENABLE_FEAT_F4HWN_MEM)
+enable_feature(ENABLE_FEAT_F4HWN_ACTION_PICKER)
+enable_feature(ENABLE_GOGUFW_SCRAMBLER)
 enable_feature(ENABLE_FEAT_F4HWN_BEAM
     app/beam.c
 )

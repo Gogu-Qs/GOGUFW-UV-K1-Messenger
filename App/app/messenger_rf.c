@@ -264,14 +264,20 @@ static uint16_t MSG_RF_RandomAckDelayTicks(uint16_t msg_id)
     /* 0.2.4: multi-radio ACK collision reduction with legacy compatibility.
      * Minimum delay stays near the old 800ms ACK window so older builds have
      * time to re-prime RX after TX; jitter then reduces ACK collisions.
-     * Keep this tiny and
-     * deterministic enough for MCU use, but seeded by time/RSSI/msgid so
-     * multiple receivers do not answer on the exact same 10ms tick. */
-    if (s_ack_jitter_seed == 0u) {
-        s_ack_jitter_seed = (uint16_t)(gFlashLightBlinkCounter ^ BK4819_ReadRegister(BK4819_REG_67) ^ msg_id);
-        if (s_ack_jitter_seed == 0u) s_ack_jitter_seed = 0x5A3Cu;
-    }
-    s_ack_jitter_seed = (uint16_t)(s_ack_jitter_seed * 109u + 89u + msg_id);
+     * Mix the responder callsign as well as fresh timing/RF state so several
+     * receivers of the same packet do not answer on the same 10ms tick. */
+    uint16_t entropy = (uint16_t)(gFlashLightBlinkCounter ^ msg_id ^
+                                  gMessengerConfig.next_msg_id ^
+                                  BK4819_ReadRegister(BK4819_REG_67) ^
+                                  (BK4819_ReadRegister(BK4819_REG_0C) << 5));
+    for (uint8_t i = 0; i < MSG_CALLSIGN_LEN && gMessengerConfig.callsign[i]; ++i)
+        entropy = (uint16_t)((entropy ^ (uint8_t)gMessengerConfig.callsign[i]) * 109u + 89u);
+
+    s_ack_jitter_seed ^= entropy;
+    if (s_ack_jitter_seed == 0u) s_ack_jitter_seed = 0x5A3Cu;
+    s_ack_jitter_seed ^= (uint16_t)(s_ack_jitter_seed << 7);
+    s_ack_jitter_seed ^= (uint16_t)(s_ack_jitter_seed >> 9);
+    s_ack_jitter_seed ^= (uint16_t)(s_ack_jitter_seed << 8);
     return (uint16_t)(MSG_RF_ACK_SEND_DELAY_MIN_TICKS + (s_ack_jitter_seed % (MSG_RF_ACK_SEND_DELAY_JIT_TICKS + 1u)));
 }
 

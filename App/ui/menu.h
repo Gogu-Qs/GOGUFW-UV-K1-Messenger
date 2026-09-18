@@ -176,7 +176,12 @@ enum
     MENU_CALL_TONE,
     MENU_CALL_VOL,
     MENU_MSG_LED,
-    MENU_RNG_RSP
+    MENU_RNG_RSP,
+#endif
+#if defined(ENABLE_FEAT_F4HWN) && defined(ENABLE_GOGUFW_SCRAMBLER)
+    /* Append the GOGUFW-only menu ID so all existing F4HWN/Messenger menu
+     * numeric values remain unchanged.  MenuList controls its visible order. */
+    MENU_SCR,
 #endif
 };
 
@@ -243,7 +248,7 @@ extern const char        gSubMenu_RX_TX[4][6];
 extern const char        gSubMenu_BAT_TXT[3][8];
 extern const char        gSubMenu_BATTYP[5][12];
 
-#ifndef ENABLE_FEAT_F4HWN
+#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
     extern const char        gSubMenu_SCRAMBLER[11][7];
 #endif
 

@@ -45,7 +45,7 @@ if(ENABLE_FEAT_F4HWN)
         set(VERSION_STRING_1 "v0.22")
     endif()
     if(NOT VERSION_STRING_2)
-        set(VERSION_STRING_2 "v2.0.2")
+        set(VERSION_STRING_2 "v2.0.3")
     endif()
     if(NOT EDITION_STRING)
         set(EDITION_STRING "GGFW")
@@ -80,6 +80,7 @@ add_subdirectory(Middlewares)
 add_subdirectory(Core)
 add_subdirectory(App)
 
+# mb_flash.c contains only the RAM copier; mb_flash_logic.c remains LTO-enabled.
 # The internal application Flash is unavailable while the multiboot restore
 # stub runs. Keep it as a concrete non-LTO object so its RAM-only
 # branches and references can be audited after linking.
@@ -136,6 +137,21 @@ add_custom_command(
     COMMAND ${CMAKE_OBJCOPY} -O binary ${EXE_NAME}.elf ${EXE_NAME}.bin
     COMMENT "Generating .bin file"
 )
+
+# Keep the normal target-named binary for direct flashing and also emit the
+# canonical F4HWN multiboot/release filename from the exact same image.
+if(ENABLE_FEAT_F4HWN AND ENABLE_FEAT_F4HWN_MULTIBOOT)
+    set(MULTIBOOT_BIN "f4hwn.gogufw.${VERSION_STRING_2}.bin")
+    add_custom_command(
+        TARGET ${EXE_NAME}
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_BINARY_DIR}/${EXE_NAME}.bin"
+                "${CMAKE_CURRENT_BINARY_DIR}/${MULTIBOOT_BIN}"
+        COMMENT "Generating multiboot-compatible ${MULTIBOOT_BIN}"
+        VERBATIM
+    )
+endif()
 
 # Generate .hex file
 add_custom_command(

@@ -17,6 +17,7 @@
 #include "ui/fmradio.h"
 #include "ui/helper.h"
 #include "ui/inputbox.h"
+#include "ui/main.h"
 #include "ui/ui.h"
 
 static uint8_t text_width_3x5(const char *s) { return (uint8_t)(strlen(s) * 4U); }
@@ -206,6 +207,11 @@ void UI_DisplayFM(void)
         ST7565_BlitFullScreen();
         return;
     }
+
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+    if (UI_DisplayActionPicker())
+        return;
+#endif
 
     UI_DisplayClear();
 

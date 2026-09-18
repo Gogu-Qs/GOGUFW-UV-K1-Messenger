@@ -147,20 +147,20 @@ SECTIONS
     _edata = .;        /* define a global symbol at data end */
   } >RAM AT> FLASH
 
-  /* Explicit placement of .noncacheable (CherryUSB) + end-of-FLASH symbol */
-  .noncacheable :
+  /* USB state has no load image; usbd_desc_register initializes it before use. */
+  .noncacheable (NOLOAD) :
   {
     . = ALIGN(4);
     *(.noncacheable)
     *(.noncacheable*)
     . = ALIGN(4);
-  } >RAM AT> FLASH
+  } >RAM
   /* The restore-only routine and the 4 KiB PY25Q16 sector cache deliberately
      share one fixed RAM address. Its load image stays in internal Flash until
      the validated slot is ready to be restored. */
   ASSERT((ADDR(.noncacheable) + SIZEOF(.noncacheable)) <= (ORIGIN(RAM) + 0x280),
          "RAM before the overlay exceeds the fixed 0x280 anchor")
-  OVERLAY (ORIGIN(RAM) + 0x280) : NOCROSSREFS AT (LOADADDR(.noncacheable) + SIZEOF(.noncacheable))
+  OVERLAY (ORIGIN(RAM) + 0x280) : NOCROSSREFS AT (LOADADDR(.data) + SIZEOF(.data))
   {
     .mb_ramfunc
     {

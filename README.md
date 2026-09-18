@@ -1,189 +1,175 @@
-# GOGUFW 2.0.2
+# GOGUFW 2.0.3
 
-GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3, built on the F4HWN Fusion firmware and focused on radio-to-radio messaging and practical everyday tools.
+GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3. It keeps the F4HWN Fusion radio feature set and adds an integrated radio-to-radio Messenger, HEARD list, multi-radio Range Check, CALLTX melodies, named FM memories, an Action Picker, per-channel scrambling and a multiboot environment.
 
-## Firmware at a glance
+[![Latest release](https://img.shields.io/github/v/release/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=release)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases)
+[![Stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers)
 
-| Statistic | Project status |
-| --- | --- |
-| 📦 **Current stable release** | GOGUFW 2.0.2 |
-| 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
-| ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
-| ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
-| 🍴 **GitHub forks** | [![GitHub forks](https://img.shields.io/github/forks/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=forks&color=orange)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/forks) |
-| 🧩 **Firmware base** | F4HWN Fusion 5.9.0 with the official 6.0.0 multiboot format |
-| 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
-| ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
-| 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **FLASH usage** | 118,288 / 120,832 bytes · **97.89%** · 2,544 bytes free |
-| 🧠 **RAM usage** | 13,488 / 16,384 bytes · **82.32%** · 2,896 bytes free |
-| ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · FM names/RSSI |
-| 🔌 **CHIRP support** | Matching GOGUFW 2.0.2 custom module with per-channel FSK/Roger controls |
+## Compatibility and downloads
 
-Version **2.0.2** adds per-memory-channel FSK and Roger controls, matching CHIRP support and clear main-screen capability icons. It also prevents CALLTX from appending a Roger/MDC signal, completes every call-tone phrase without clipping its final note, and aligns FM station-name long-press entry with the other text editors. The Messenger safety work introduced in 2.0.1 remains in place.
+GOGUFW is intended only for Quansheng **UV-K1 / UV-K5 V3** radios built around the **PY32F071 MCU and BK4829 RF IC**. Do not install it on UV-K5 V1/V2 or other BK4819-based radios.
 
-[Download the latest release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/latest)
+The current release contains:
 
-## Version 2.0.2 changes
+- `f4hwn.gogufw.v2.0.3.bin` — the multiboot-compatible firmware image;
+- `Gogufw_2.0.3_chirp_module.py` — the matching custom CHIRP module.
 
-- **Per-channel No FSK TX:** each memory channel can independently block every outgoing Messenger/Range Check FSK transmission. This includes wake frames, messages, retries, PING, ACK and PONG. Voice transmission and FSK reception remain available.
-- **Consistent blocked-send feedback:** a manually attempted message, resend or Range Check PING on a `No FSK TX` channel uses the existing two-second `TX BLOCKED / SEND CANCELLED` notice and four forced warning beeps. Automatic ACK/PONG rejection stays silent.
-- **Per-channel No Roger:** a memory channel can suppress the selected Roger beep or MDC burst even when Roger is enabled globally. DTMF and CTCSS/DCS end-of-transmission handling are unchanged.
-- **CALLTX tail correction:** CALLTX no longer appends the globally selected Roger/MDC signal. Roger/MDC remains available for ordinary PTT/VOX voice transmissions unless the channel has `No Roger` enabled.
-- **Complete call melodies:** CALLTX now stops only after completing the current melodic phrase. The final note is no longer clipped at the three-second boundary, and the configured inter-note pauses are transmitted as real silence while the RF carrier remains active.
-- **Memory-channel capability icons:** a radio-wave/RSS-style symbol means FSK transmission is permitted on that memory channel. A musical-note symbol means the global Roger/MDC selection is active on that channel. The symbols are evaluated independently for both displayed memory channels and are hidden in VFO mode.
-- **Spectrum spacing:** the manual threshold readout is compacted from `M -110/-120` to `M-110/-120`, preventing it from touching long channel names in Memory Spectrum.
-- **FM name-entry consistency:** while renaming an FM broadcast memory, holding a number key inserts the digit immediately when the long-press threshold is reached; releasing the key does not add it again.
-- **CHIRP 2.0.2 module:** adds `No FSK TX` and `No Roger` as visible memory-list columns, also exposes them under **Properties → Extra** for bulk editing, and preserves the packed channel-step data used by the firmware.
+[Download GOGUFW 2.0.3](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.0.3)
 
-### Configure No FSK TX and No Roger in CHIRP
+Back up the radio with CHIRP before updating and keep a known-good DFU recovery image available.
 
-Use `Gogufw_2.0.2_chirp_module.py` supplied with this firmware version; older GOGUFW modules do not know these two channel flags.
-
-1. In CHIRP, choose **File → Load Module** and select the 2.0.2 module, then download the radio normally.
-2. In the **Memories** list, edit **No FSK TX** or **No Roger** directly in the channel's normal columns for an individual channel.
-3. To apply the same setting to several channels, select those rows together, right-click and open **Properties/Edit**, then use the **Extra** tab.
-4. Enable **No FSK TX** to prevent the selected channel(s) from sending Messenger or Range Check FSK. Incoming FSK and normal voice operation are not disabled.
-5. Enable **No Roger** to suppress the Roger beep/MDC burst after normal voice PTT on the selected channel(s), regardless of the global Roger menu selection.
-6. Upload the edited image back to the radio.
-
-Manual Messenger/PING attempts on a `No FSK TX` channel show the blocking notice and four beeps. Automatic ACK/PONG responses are simply cancelled without disturbing the user. The radio-wave icon is shown when FSK TX is allowed; the note icon is shown only when Roger/MDC is globally enabled and allowed by the channel.
-
-## Version 2.0.1 fixes
-
-- **Correct scan replies:** when a valid FSK message or PING is received during scanning, Scan and Dual Watch remain on that receive VFO until the queued ACK or PONG is sent, cancelled or expires. Scanning then resumes normally.
-- **Captured reply target:** delayed ACK/PONG replies retain the receive-side VFO, RX frequency, TX frequency and repeater offset. A later channel change cancels the response instead of transmitting on the wrong channel.
-- **Safe retries:** text retries retain the original TX VFO and frequencies and are cancelled if that target changes or becomes disallowed.
-- **Hard F Lock boundary:** Messenger wake, text, retry, PING, ACK and PONG transmissions cannot occur outside the configured F Lock plan, in either VFO or memory mode. The actual TX frequency is checked, including channel offsets.
-- **Visible manual-TX rejection:** a blocked message, resend or PING keeps the current screen open and shows a two-second floating `TX BLOCKED / SEND CANCELLED` notice with four short forced safety beeps, independent of the optional keypad-beep setting. Blocked messages are not added to Sent and blocked PINGs do not start an empty result window.
-- **Non-FM protection:** Messenger and Range Check remain blocked in AM and other unsupported modulation modes; manual attempts receive the same visible warning.
-- **Reduced multi-radio PONG overlap:** Range Check responders choose one of six 1.2-second reply slots starting 3–9 seconds after reception. Callsign (`MsgCsg`), PING ID, RSSI and runtime entropy are mixed into the selection. Carrier checks and the complete 12-second collection window remain active. Slot collisions are reduced but cannot be eliminated completely.
-- **Text-entry fix:** ChName and MsgCsg now follow Compose key handling: short presses are processed on release and long presses enter only the digit, without leaving an extra provisional letter.
-- **Updated identity:** welcome text, UART identity and new multiboot slot metadata report v2.0.1.
-
-## What GOGUFW adds
-
-- **Messenger:** compose and receive text messages directly on the radio, with Inbox, Sent, Drafts, Reply, Resend and delivery acknowledgements.
-- **HEARD:** view recently heard Messenger stations together with callsign, signal level, packet type and age.
-- **Range Check:** send a PING and receive the other radio's callsign, signal level and battery voltage.
-- **CALLTX:** transmit one of five selectable call melodies, with volume selection and tone preview in the menu.
-- **FM radio tools:** save station names, rename or delete memories, and follow the live FM signal-strength meter.
-- **Custom shortcuts:** open Messenger and HEARD quickly or transmit CALLTX from programmable side keys.
-- **GOGUFW CHIRP module:** configure supported radio settings, custom key actions and FM station names from CHIRP.
-
-## Survival Mode
-
-**Survival Mode** is a temporary, simplified mode for basic voice communication, designed to reduce distractions and help conserve battery. Normal voice reception and PTT transmission remain available, while Messenger/FSK, HEARD/Range Check, scanning, FM radio and Spectrum are unavailable. Dual Watch, cross-band operation and VOX are disabled for the session, and only the first 17 basic menu items are shown.
-
-To start it, hold **PTT + the configured SetKey** while powering on. The default SetKey is **MENU**, so the usual shortcut is **PTT + MENU + Power**. The SetKey can be changed in the menu to **MENU, UP, DOWN, EXIT** or **STAR**. Survival Mode changes runtime behavior only; it does not overwrite your saved settings. Power-cycle the radio normally to return to full GOGUFW mode.
-
-This is separate from the normal **BatSav** receiver power-saving setting and does not automatically change its ratio. **MENU alone at power-on opens multiboot; Survival Mode also requires PTT.** See the [Survival Mode guide](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/wiki/Survival-Mode).
-
-## Multiboot quick guide
-
-- Hold **MENU while powering on** to open the firmware-slot selector.
-- On the first normal installation, GOGUFW creates a one-time **Main** backup in slot 0. Do not power the radio off while `Init Main` is displayed.
-- Slot images are CRC-checked completely before the internal application Flash is erased.
-- Each slot uses its own settings bank by default. GOGUFW Messenger settings/drafts and FM station names are also redirected into that private bank.
-- **SetCfg** can deliberately pair a firmware slot with a compatible settings bank. This selection is kept across normal restarts, but returning to the firmware after booting another slot restores its own bank as a safety measure.
-- Calibration and the boot logo remain shared between slots.
-- GOGUFW can run as the Main firmware or from a firmware slot. Compatible images can be written, checked, erased and configured through UV Studio's Firmware Slots page.
-
-Before first using multiboot, save a complete CHIRP backup and keep a known-good DFU recovery image available. Only select a different settings bank with **SetCfg** when its layout is known to be compatible with that firmware.
-
-To recover the flash space needed for multiboot without changing GOGUFW's core features, version 2.0.0 removes Beam, QR display, MEM display, Scan RSSI and Scan Progress.
-
-## Memory Spectrum and 1.3.0 improvements
-
-- **Memory Spectrum:** Spectrum opened from MR mode scans the radio's valid stored channels instead of a continuous VFO frequency range.
-- **Channel-focused display:** Memory Spectrum shows the selected channel name prominently, with its frequency and channel range information.
-- **Per-channel reception:** stored AM/FM modulation and bandwidth are applied when listening to a Memory Spectrum peak.
-- **Safe peak selection:** the first PTT listens to a peak; after entering the peak view, the second PTT opens the stored MR channel or transfers a VFO peak to the active VFO without transmitting.
-- **Correct return behavior:** leaving through peak selection returns to the radio screen, and the next power-on starts on the main screen rather than reopening Spectrum.
-- **Stable Spectrum display:** completed-sweep scaling prevents the graph from collapsing and the last valid peak remains visible while scanning restarts.
-- **Range Check collection:** PONG results appear immediately while the complete 12-second window remains active for additional radios.
-- **Messenger reception:** an FSK sync hold keeps Dual Watch on the correct receive VFO across closely timed wake/message frames.
-- **Channel and scan-list refinements:** more focused channel-attribute updates and clearer scan-list feedback on the main screen.
-
-The normal F4HWN Fusion radio features remain available alongside these additions.
-
-## Shortcuts
-
-| Function | Shortcut | What it does |
-| --- | --- | --- |
-| Messenger | **F + MENU** | Opens Messenger directly from the main radio screen. |
-| HEARD / Range Check | **F + 7** | Opens the HEARD screen. Press **MENU** there to start a Range Check PING. |
-| CALLTX | **F + 9** | Transmits the selected call melody. |
-| Messenger | Assign **MESSENGER** to a programmable side-key action | Opens Messenger. Pressing the same assigned key on the Messenger home screen closes it. |
-| HEARD | Assign **HEARD** to a programmable side-key action | Opens HEARD / Range Check. Pressing the same assigned key again closes it. |
-| CALLTX | Assign **CALLTX** to a programmable side-key action | Transmits the selected call melody directly. |
-| Survival Mode | **PTT + MENU while powering on** (default SetKey) | Starts a temporary basic-radio, battery-saving session. Configure another trigger with the **SetKey** menu option. |
-
-The programmable actions can be assigned to the short or long press of the side keys from the radio menu or the included CHIRP module.
-
-## Spectrum quick guide
-
-Open Spectrum with **F + 5**. Its mode follows the active radio screen:
-
-- Open it from **MR mode** to scan valid stored channels with Memory Spectrum. The channel name is shown prominently and the frequency appears below it.
-- Open it from **VFO mode** to scan a continuous frequency range with VFO Spectrum.
-- Press **PTT once** on a peak to stop and listen. You may press **MENU** there to inspect or adjust the LNA/PGA controls.
-- Press and release **PTT a second time** to leave Spectrum. Memory Spectrum opens that stored channel; VFO Spectrum transfers the selected frequency and reception settings to the active VFO. This action does not transmit.
-- Press **UP/DOWN** while listening to resume scanning. Press **EXIT** from the peak view to return to the graph, or **EXIT** from the graph to return to the radio screen.
-- **SIDE1** temporarily blocks the current peak for the active Spectrum session.
-
-Memory Spectrum deliberately uses manual threshold control because stored FM and AM channels can have very different noise floors. For the complete key reference, see the [Spectrum guide](SPECTRUM.md).
-
-## Screens
+## Main features
 
 ### Messenger
 
-| Messenger home | Compose a message |
+Messenger sends and receives short text messages directly between compatible GOGUFW radios over FSK. It works as a sidecar to normal analog operation, so receiving messages does not require leaving the Messenger screen open.
+
+- 36-character messages with T9-style text entry;
+- 16-message Inbox, 8-message Sent list and 8 editable quick-message Drafts;
+- delivery acknowledgements, retry status and up to three responding callsigns;
+- Reply, Resend and Delete controls;
+- duplicate-message protection;
+- callsign, receive, ACK, alert-beep and LED settings;
+- a short wake frame before the first normal message attempt to improve reception while the destination radio is idle;
+- per-channel **No FSK TX** protection for channels where Messenger transmission must remain disabled;
+- TX-frequency, F Lock, modulation and channel-policy checks before every message, retry, ACK, PING or PONG.
+
+Open Messenger with **F + MENU**, or assign **MESSENGER** to a side key. The assigned Messenger action is a toggle: use it again on the Messenger home screen to return to the radio.
+
+#### Messenger controls
+
+| Screen | Controls |
 | --- | --- |
-| ![Messenger home screen](uv-k5-screenshot17.png) | ![Messenger compose screen](uv-k5-screenshot19.png) |
+| Home | **UP/DOWN** selects Inbox, Compose, Sent or Drafts; **MENU** opens; **EXIT** returns to the radio. |
+| Inbox / Sent | **UP/DOWN** selects; **MENU** opens; **F** deletes; **EXIT** returns. |
+| Read | **UP/DOWN** changes message; **MENU** replies or resends; **F** deletes; **EXIT** returns. |
+| Compose / Draft edit | Number keys enter text; hold a number for the digit; **STAR/F** changes text entry; **MENU** sends; **EXIT** returns. |
 
 ### HEARD and Range Check
 
-| Recently heard stations | Range Check result |
+HEARD records recently received Messenger packets with callsign, RSSI, packet type and age. Range Check sends a PING and collects PONG replies from multiple GOGUFW radios, showing the remote callsign, RSSI and battery voltage.
+
+- Open HEARD with **F + 7**, or assign **HEARD** to a side key.
+- Press **MENU** on HEARD to start a 12-second Range Check.
+- Use **UP/DOWN** to move between result pages and **EXIT** to leave the result.
+- `RngRsp` controls automatic PONG replies.
+- Randomized ACK and PONG timing reduces collisions when several radios answer together.
+
+The assigned HEARD action also behaves as a toggle.
+
+### Action Picker
+
+The Action Picker gives temporary access to the complete programmable side-key action list without repeatedly changing the saved side-key assignment.
+
+1. Briefly press **F**.
+2. Hold **SIDE1** or **SIDE2** to open that key's picker.
+3. Use **UP/DOWN** to choose an action.
+4. Press **MENU** to run it, or **EXIT/F** to cancel.
+
+Each side key remembers its last picker selection. The picker is available on the main radio screen, Messenger Home, HEARD/idle Range Check and the normal FM radio screen. It deliberately stays out of Inbox, Sent, Read, Compose, active Range Check collection and FM edit/confirmation screens so their existing controls remain intact. **PTT** closes the picker and continues normally.
+
+Some radio actions are unsafe while the FM receiver is active; selecting one of those actions in FM gives a double warning beep instead of changing radio state.
+
+### CALLTX
+
+CALLTX transmits one of five selectable alert melodies using the existing radio TX path.
+
+- **F + 9** transmits the selected melody.
+- `CllTon` selects the melody and provides a preview.
+- `CllVol` selects low or high tone-generator level.
+- The melody completes its current phrase without clipping the final note.
+- CALLTX does not append the normal Roger beep or MDC tail.
+- Assign **CALLTX** to a side key for direct access.
+
+### FM broadcast radio
+
+The FM radio includes named station memories, rename/delete controls and a continuously updated signal-strength display. FM RSSI drawing is cached to avoid unnecessary display and tuner activity.
+
+The Action Picker can also be opened from the normal FM screen. It is disabled while entering a frequency, editing a station name, choosing save/delete operations or confirming an automatic scan.
+
+### Per-channel scrambler
+
+The `Scramb` channel menu selects **OFF** or an inversion frequency from **2600 Hz to 3500 Hz**. The setting is stored separately for each memory channel and is also available in the matching CHIRP module.
+
+The analog voice scrambler is not encryption and may be restricted by local radio regulations. Use it only where permitted.
+
+### Channel policies and main-screen indicators
+
+- **No FSK TX** blocks Messenger and Range Check transmission on an individual memory channel while leaving ordinary voice TX and FSK reception available.
+- **No Roger** suppresses the selected Roger beep or MDC tail on an individual memory channel.
+- The radio-wave icon indicates that FSK TX is permitted on that memory channel.
+- The musical-note icon indicates that the global Roger/MDC selection is active and permitted on that memory channel.
+
+These settings appear as normal memory-list columns and under **Properties → Extra** in the custom CHIRP module.
+
+### Spectrum
+
+Open Spectrum with **F + 5**.
+
+- From MR mode it scans valid stored memories and displays the selected channel name and frequency.
+- From VFO mode it scans a continuous frequency range.
+- Press **PTT** on a peak to stop and listen.
+- Press **MENU** while listening to inspect or adjust LNA/PGA controls.
+- Press **PTT** again to open the stored MR channel or transfer a VFO peak to the active VFO; this does not transmit.
+- **UP/DOWN** resumes scanning, **EXIT** returns and **SIDE1** temporarily excludes the current peak.
+
+### Multiboot
+
+Hold **MENU while powering on** to open the firmware-slot selector.
+
+- On first use, GOGUFW creates a one-time backup of the Main firmware in slot 0. Do not interrupt `Init Main`.
+- Slot images are completely CRC-checked before internal Flash is erased.
+- Each slot uses a private settings bank by default, including Messenger settings/drafts and FM station names.
+- `SetCfg` can deliberately pair a slot with a compatible settings bank.
+- Calibration and the boot logo remain shared.
+- GOGUFW can run as Main or from a slot and uses the official F4HWN multiboot image format.
+
+### Survival Mode
+
+Survival Mode is a temporary basic-radio session for voice operation with fewer background features. Messenger/FSK, HEARD/Range Check, scanning, FM radio, Spectrum, Dual Watch, cross-band operation and VOX are disabled for that session.
+
+Hold **PTT + SetKey while powering on**. The default SetKey is **MENU**, so the default shortcut is **PTT + MENU + Power**. The `SetKey` menu can change the trigger to MENU, UP, DOWN, EXIT or STAR. Power-cycle normally to return to full operation; saved settings are not overwritten.
+
+## Quick shortcuts
+
+| Function | Shortcut |
 | --- | --- |
-| ![HEARD station list](heard.png) | ![Range Check result](rangecheck.png) |
+| Messenger | **F + MENU** |
+| HEARD / Range Check | **F + 7** |
+| CALLTX | **F + 9** |
+| Spectrum | **F + 5** |
+| Backlight override cycle | **F + 8**: always on → always off → saved strategy |
+| Keypad lock | Hold **F** |
+| Action Picker | Press **F**, then hold **SIDE1** or **SIDE2** |
+| Multiboot | Hold **MENU** while powering on |
+| Survival Mode | Hold **PTT + SetKey** while powering on |
 
-### FM radio
+## CHIRP
 
-| Live FM signal meter | Named FM station memory |
-| --- | --- |
-| ![FM radio signal meter](radio_vfo.png) | ![Named FM station memory](radio_name.png) |
+Use the module that matches the firmware release. For GOGUFW 2.0.3:
 
-### Programmable key actions
+1. Start CHIRP and choose **File → Load Module**.
+2. Select `Gogufw_2.0.3_chirp_module.py`.
+3. Download the radio using **Quansheng → UV-K1 / UV-K5 V3 GOGUFW Messenger**.
+4. Edit channels, side-key actions, Messenger/Call settings, FM names, `No FSK TX`, `No Roger` and Scrambler as required.
+5. Upload the completed image to the radio.
 
-![Selecting a GOGUFW side-key action](f1short.png)
-
-## Download and compatibility
-
-The current stable release is **GOGUFW 2.0.2**. Its release page includes:
-
-- the canonical multiboot-compatible `f4hwn.gogufw.v2.0.2.bin` firmware image;
-- the matching `Gogufw_2.0.2_chirp_module.py` CHIRP module.
-
-GOGUFW is intended for Quansheng UV-K1 / UV-K5 V3 variants using the **PY32F071 MCU and BK4829 RF IC**. It is not intended for unrelated BK4819-based radios.
-
-[Open the GOGUFW 2.0.2 release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.0.2)
+The firmware and module support the radio's 1024 memory-channel layout. Do not use an older GOGUFW module with this release: an older module may not understand newer key-action or channel fields and can overwrite them.
 
 ## Build from source
 
 The Fusion preset requires CMake, Ninja and the ARM GNU Embedded toolchain (`arm-none-eabi-gcc`):
 
 ```bash
-cmake --preset Fusion
+cmake --preset Fusion --fresh
 cmake --build --preset Fusion
 ```
 
-For setup instructions, see [BUILD_VSCODE_MAC.md](BUILD_VSCODE_MAC.md) or [BUILD_WITH_VSCODE.md](BUILD_WITH_VSCODE.md).
+The build emits the normal `gogufw.bin` and the canonical multiboot filename `f4hwn.gogufw.v2.0.3.bin`. See `BUILD_VSCODE_MAC.md` or `BUILD_WITH_VSCODE.md` for environment setup.
 
-## Credits
+## Credits and license
 
-GOGUFW is based on the F4HWN / UV-K5 custom firmware project and retains the original project attribution and license. Thanks to the F4HWN contributors for the firmware foundation on which these additions were built. Special thanks to [@mkalin22](https://github.com/mkalin22) for detailed field testing and reports that helped identify the Scan/PONG channel-context and TX-safety issues fixed in v2.0.1.
+GOGUFW is based on F4HWN Fusion and the wider Quansheng custom-firmware community's work. The original project attribution and licenses are retained. Thanks to everyone who reports real-radio results and helps test Messenger, Range Check and radio safety behavior.
 
-## Disclaimer
-
-This firmware is provided as-is. Users are responsible for complying with the radio regulations, licensing requirements and permitted frequencies applicable in their jurisdiction.
+This firmware is provided as-is. Users are responsible for complying with the licensing, frequency, power and emission rules applicable in their jurisdiction.

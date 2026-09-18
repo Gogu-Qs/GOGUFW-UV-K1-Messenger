@@ -1,11 +1,13 @@
 #include <string.h>
 #include <stdio.h>
 #include "app/messenger_store.h"
+#include "app/messenger.h"
 #include "app/messenger_t9.h"
 #include "app/messenger_packet.h"
 #include "driver/st7565.h"
 #include "external/printf/printf.h"
 #include "ui/helper.h"
+#include "ui/main.h"
 #include "ui/ui.h"
 #include "misc.h"
 #include "font.h"
@@ -18,22 +20,12 @@ extern uint8_t gMsgReadSource;
 extern char gMsgComposeBuf[];
 extern MSG_T9Editor_t gMsgEditor;
 extern uint8_t gMsgScreen;
-typedef struct {
-    bool used;
-    char callsign[MSG_CALLSIGN_EDIT_LEN + 1];
-    int8_t rssi;
-    uint16_t battery_cv;
-    uint16_t age_seconds;
-    uint8_t packet_type;
-    uint16_t range_session;
-} MSG_RangeFound_t;
-extern MSG_RangeFound_t gMsgRangeFound[];
+
 extern uint8_t gMsgRangeCount;
 extern uint8_t gMsgRangeScroll;
 extern uint8_t gMsgRangeStatus;
 extern uint16_t gMsgRangeSession;
 extern uint8_t gMsgTxLockNoticeTicks;
-#define MSG_RANGE_MAX_FOUND 6u
 
 enum { MSG_SCREEN_HOME = 0, MSG_SCREEN_INBOX, MSG_SCREEN_OUTBOX, MSG_SCREEN_DRAFTS, MSG_SCREEN_COMPOSE, MSG_SCREEN_READ, MSG_SCREEN_RANGE };
 
@@ -550,6 +542,11 @@ static void draw_range(void)
 
 void UI_DisplayMessenger(void)
 {
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+    if (UI_DisplayActionPicker())
+        return;
+#endif
+
     switch (gMsgScreen) {
         case MSG_SCREEN_HOME: draw_home(); break;
         case MSG_SCREEN_INBOX:

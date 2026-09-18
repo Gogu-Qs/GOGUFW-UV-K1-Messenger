@@ -27,17 +27,6 @@ MSG_T9Editor_t gMsgEditor;
 uint8_t gMsgReadIndex;
 uint8_t gMsgReadSource;
 
-typedef struct {
-    bool used;
-    char callsign[MSG_CALLSIGN_EDIT_LEN + 1];
-    int8_t rssi;
-    uint16_t battery_cv;
-    uint16_t age_seconds;
-    uint8_t packet_type;
-    uint16_t range_session;
-} MSG_RangeFound_t;
-
-#define MSG_RANGE_MAX_FOUND 6u
 #define MSG_RANGE_PAGE_SIZE 3u
 #define MSG_RANGE_WAIT_TICKS 1200u
 
@@ -147,6 +136,19 @@ bool MSG_IsHomeOpen(void)
 {
     return gMsgScreen != MSG_SCREEN_RANGE;
 }
+
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+bool MSG_ActionPickerAllowed(void)
+{
+    /* F remains Delete in Inbox/Sent/Read and part of text editing in Compose.
+     * Only screens where short F was unused may arm the action picker. */
+    if (gMsgTxLockNoticeTicks > 0u)
+        return false;
+
+    return gMsgScreen == MSG_SCREEN_HOME ||
+           (gMsgScreen == MSG_SCREEN_RANGE && gMsgRangeStatus != 1u);
+}
+#endif
 
 void MSG_HeardUpdate(const char *callsign, int8_t rssi_dbm, uint8_t packet_type)
 {

@@ -45,8 +45,8 @@ extern "C" {
 extern uint32_t SystemCoreClock;     /*!< System Clock Frequency (Core Clock) */
 
 /* Exported constants --------------------------------------------------------*/
-extern const uint32_t AHBPrescTable[16];  /*!< AHB prescalers table values */
-extern const uint32_t APBPrescTable[8];   /*!< APB prescalers table values */
+extern const uint8_t AHBPrescTable[16];  /*!< AHB prescalers table values */
+extern const uint8_t APBPrescTable[8];   /*!< APB prescalers table values */
 extern const uint32_t HSIFreqTable[8];    /*!< HSI frequency table values */
 
 /** @addtogroup PY32F0xx_System_Exported_Functions

@@ -30,6 +30,12 @@
 
 /* ================= USB Device Stack Configuration ================ */
 
+/* CDC uses EP0, IN1, OUT2 and notification IN3. Core and port must agree. */
+#define CONFIG_USBDEV_EP_COUNT 4
+#if CONFIG_USBDEV_EP_COUNT < 4 || CONFIG_USBDEV_EP_COUNT > 8
+#error "USB endpoint count does not cover the CDC descriptor / hardware"
+#endif
+
 /* Ep0 max transfer buffer, specially for receiving data from ep0 out */
 #define CONFIG_USBDEV_REQUEST_BUFFER_LEN 256
 

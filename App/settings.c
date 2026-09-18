@@ -369,7 +369,9 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
     gSetting_500TX             = (Data[4] < 2) ? Data[4] : false;
 #endif
     gSetting_350EN             = (Data[5] < 2) ? Data[5] : true;
-#ifdef ENABLE_FEAT_F4HWN
+#ifdef ENABLE_GOGUFW_SCRAMBLER
+    gSetting_ScrambleEnable    = true;
+#elif defined(ENABLE_FEAT_F4HWN)
     gSetting_ScrambleEnable    = false;
 #else
     gSetting_ScrambleEnable    = (Data[6] < 2) ? Data[6] : true;
@@ -1088,7 +1090,9 @@ void SETTINGS_SaveSettings(void)
     State[4]  = gSetting_500TX;
 #endif
     State[5]  = gSetting_350EN;
-#ifdef ENABLE_FEAT_F4HWN
+#ifdef ENABLE_GOGUFW_SCRAMBLER
+    State[6]  = true;
+#elif defined(ENABLE_FEAT_F4HWN)
     State[6]  = false;
 #else
     State[6]  = gSetting_ScrambleEnable;
@@ -1222,7 +1226,7 @@ void SETTINGS_SaveChannel(uint16_t Channel, uint8_t VFO, const VFO_Info_t *pVFO,
         State -> _8[6] = (pVFO->NO_FSK_TX << 7)
                        | (pVFO->NO_ROGER  << 6)
                        | (pVFO->STEP_SETTING & 0x3F);
-#ifdef ENABLE_FEAT_F4HWN
+#if defined(ENABLE_FEAT_F4HWN) && !defined(ENABLE_GOGUFW_SCRAMBLER)
         State -> _8[7] =  0;
 #else
         State -> _8[7] =  pVFO->SCRAMBLING_TYPE;

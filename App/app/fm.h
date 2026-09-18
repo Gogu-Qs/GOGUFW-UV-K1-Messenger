@@ -58,6 +58,9 @@ bool    FM_UpdateRssiLevel(void);
 uint8_t FM_GetRssiLevel(void);
 bool    FM_IsNameEditActive(void);
 bool    FM_IsAutoScanConfirmActive(void);
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+bool    FM_ActionPickerAllowed(void);
+#endif
 uint8_t FM_GetMenuMode(void);
 const char *FM_GetNameEditBuffer(void);
 uint8_t FM_GetNameEditorMode(void);

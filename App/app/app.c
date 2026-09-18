@@ -1664,6 +1664,12 @@ void APP_TimeSlice10ms(void)
 
     if (gCurrentFunction != FUNCTION_POWER_SAVE || !gRxIdleMode)
         CheckRadioInterrupts();
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+    if (gActionPickerKey != 0 && FUNCTION_IsRx()) {
+        gActionPickerKey = 0;
+        gUpdateDisplay = true;
+    }
+#endif
 #ifdef ENABLE_MESSENGER
         if (!gSurvivalMode) {
             MSG_RF_Tick10ms();
@@ -1875,6 +1881,14 @@ void cancelUserInputModes(void)
 void APP_TimeSlice500ms(void)
 {
     gNextTimeslice_500ms = false;
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+    if (gActionPickerKey != 0 && gActionPickerTimeout_500ms > 0 &&
+        --gActionPickerTimeout_500ms == 0)
+    {
+        gActionPickerKey = 0;
+        gUpdateDisplay = true;
+    }
+#endif
     bool exit_menu = false;
 
     // Skipped authentic device check
@@ -2095,6 +2109,10 @@ void APP_TimeSlice500ms(void)
         {
             gEeprom.KEY_LOCK = true;     // lock the keyboard
             gUpdateStatus = true;            // lock symbol needs showing
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+            gActionPickerKey = 0;
+            gUpdateDisplay = true;
+#endif
         }
 
         if (exit_menu) {
@@ -2353,7 +2371,11 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             BACKLIGHT_TurnOn();
         }
 
-        if (Key == KEY_EXIT && bKeyHeld) { // exit key held pressed
+        if (Key == KEY_EXIT && bKeyHeld
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+            && gActionPickerKey == 0
+#endif
+        ) { // exit key held pressed
             // clear the live DTMF decoder
             if (gDTMF_RX_live[0] != 0) {
                 DTMF_clear_input_box_memory();
@@ -2390,6 +2412,81 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
     }
 
     bool lowBatPopup = gLowBattery && !gLowBatteryConfirmed &&  gScreenToDisplay == DISPLAY_MAIN;
+
+#ifdef ENABLE_MESSENGER
+    /* Messenger, HEARD and Range Check share DISPLAY_MESSENGER.  Handle the
+     * global long-F lock toggle before their local key handler can consume it. */
+    if (gScreenToDisplay == DISPLAY_MESSENGER &&
+        Key == KEY_F && bKeyPressed && bKeyHeld)
+    {
+        GENERIC_Key_F(bKeyPressed, bKeyHeld);
+        goto Skip;
+    }
+#endif
+
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+    bool actionPickerScreenAllowed = gScreenToDisplay == DISPLAY_MAIN;
+#ifdef ENABLE_MESSENGER
+    if (gScreenToDisplay == DISPLAY_MESSENGER && MSG_ActionPickerAllowed())
+        actionPickerScreenAllowed = true;
+#endif
+#ifdef ENABLE_FMRADIO
+    if (gScreenToDisplay == DISPLAY_FM && FM_ActionPickerAllowed())
+        actionPickerScreenAllowed = true;
+#endif
+
+    if (gActionPickerKey != 0 &&
+        (gEeprom.KEY_LOCK || lowBatPopup || !actionPickerScreenAllowed))
+    {
+        gActionPickerKey = 0;
+        gUpdateDisplay = true;
+    }
+    if (ACTION_PickerProcessKey(Key, bKeyPressed, bKeyHeld))
+        goto Skip;
+
+#ifdef ENABLE_MESSENGER
+    if (gScreenToDisplay == DISPLAY_MESSENGER && MSG_ActionPickerAllowed())
+    {
+        /* Short F is unused on Messenger Home and HEARD/Range, so it may arm
+         * the same F + long Side1/Side2 picker used by the main screen. */
+        if (Key == KEY_F && !bKeyHeld)
+        {
+            GENERIC_Key_F(bKeyPressed, bKeyHeld);
+            goto Skip;
+        }
+
+        if (gWasFKeyPressed && bKeyPressed && bKeyHeld &&
+            (Key == KEY_SIDE1 || Key == KEY_SIDE2))
+        {
+            ACTION_PickerOpen((Key == KEY_SIDE1) ? 1u : 2u);
+            goto Skip;
+        }
+    }
+    else if (gScreenToDisplay == DISPLAY_MESSENGER && gWasFKeyPressed)
+    {
+        /* Entering Inbox/Sent/Read/Compose restores their native F behavior,
+         * especially Delete, even if F was armed on Messenger Home. */
+        HideFKeyIcon();
+    }
+#endif
+
+#ifdef ENABLE_FMRADIO
+    if (gScreenToDisplay == DISPLAY_FM &&
+        FM_ActionPickerAllowed() &&
+        gWasFKeyPressed && bKeyPressed && bKeyHeld &&
+        (Key == KEY_SIDE1 || Key == KEY_SIDE2))
+    {
+        ACTION_PickerOpen((Key == KEY_SIDE1) ? 1u : 2u);
+        goto Skip;
+    }
+    if (gScreenToDisplay == DISPLAY_FM &&
+        !FM_ActionPickerAllowed() &&
+        gWasFKeyPressed)
+    {
+        HideFKeyIcon();
+    }
+#endif
+#endif
 
 #ifdef ENABLE_FEAT_F4HWN // Disable PTT if KEY_LOCK
     bool lck_condition = (gEeprom.KEY_LOCK || lowBatPopup) && gCurrentFunction != FUNCTION_TRANSMIT;
@@ -2511,7 +2608,7 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
                     BK4819_ExitDTMF_TX(false);
 
-#ifndef ENABLE_FEAT_F4HWN
+#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
                     if (gCurrentVfo->SCRAMBLING_TYPE == 0 || !gSetting_ScrambleEnable)
                         BK4819_DisableScramble();
                     else

@@ -68,6 +68,8 @@
                 "ENABLE_FEAT_F4HWN_DEBUG": false,
                 "ENABLE_FEAT_F4HWN_QRCODE": false,
                 "ENABLE_FEAT_F4HWN_MEM": false,
+                "ENABLE_FEAT_F4HWN_ACTION_PICKER": true,
+                "ENABLE_GOGUFW_SCRAMBLER": true,
                 "ENABLE_FEAT_F4HWN_SCAN_PROGRESS": false,
                 "ENABLE_FEAT_F4HWN_SCAN_FASTER": false,
                 "ENABLE_FEAT_F4HWN_BEAM": false,
@@ -76,7 +78,7 @@
                 "ENABLE_UART_RW_BK_REGS": false,
                 "ENABLE_SWD": false,
                 "VERSION_STRING_1": "v0.22",
-                "VERSION_STRING_2": "v2.0.2"
+                "VERSION_STRING_2": "v2.0.3"
             }
         },
         {

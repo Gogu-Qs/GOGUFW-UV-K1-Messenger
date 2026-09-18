@@ -1,6 +1,6 @@
-# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v2.0.2
+# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v2.0.3
 # Based on F4HWN Fusion CHIRP 5.5.0 support.
-# Matches GOGUFW 1.0.1 EEPROM aliases:
+# Matches the GOGUFW external-flash EEPROM aliases:
 #   FM names: 0x00D000 alias -> firmware flash 0x013000
 #   Messenger/Call config: 0x00E000 alias -> firmware flash 0x012000
 # Includes GGFW settings: MsgRx, MsgAck, MsgBeep, MsgLed, CllTon, CllVol, RngRsp, Callsign, Drafts, FM names.
@@ -106,7 +106,7 @@ struct {
   u8 noFskTx:1,
      noRoger:1,
      step:6;
-  u8 __UNUSED03;
+  u8 scrambler;
 
 } channel[1024];
 
@@ -171,7 +171,7 @@ struct {
   u8 noFskTx:1,
      noRoger:1,
      step:6;
-  u8 __UNUSED07;
+  u8 scrambler;
 
 } vfo_channel[14];
 
@@ -530,6 +530,11 @@ SET_TOT_EOT_LIST = ["OFF", "SOUND", "VISUAL", "ALL"]
 
 # SET_OFF_ON f4hwn
 SET_OFF_ON_LIST = ["OFF", "ON"]
+
+# Per-channel BK4819 voice inversion frequency.  The firmware stores OFF as
+# zero and 2600..3500 Hz as values 1..10 in the final channel-record byte.
+SCRAMBLER_LIST = ["OFF", "2600Hz", "2700Hz", "2800Hz", "2900Hz", "3000Hz",
+                  "3100Hz", "3200Hz", "3300Hz", "3400Hz", "3500Hz"]
 
 # SET_lck f4hwn
 SET_LCK_LIST = ["KEYS", "KEYS+PTT"]
@@ -1223,7 +1228,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
     """Quansheng UV-K5 (egzumer + f4hwn)"""
     VENDOR = "Quansheng"
     MODEL = "UV-K1 / UV-K5 V3 GOGUFW Messenger"
-    VARIANT = "2.0.2"
+    VARIANT = "2.0.3"
     BAUD_RATE = 38400
     NEEDS_COMPAT_SERIAL = False
     FIRMWARE_VERSION = ""
@@ -1524,10 +1529,10 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
 
         # Access the correct structure based on channel type
         if ch_num < MR_CHANNELS_MAX:
-            # Regular memory channel (0-249)
+            # Regular memory channel (0-1023)
             _mem = self._memobj.channel[ch_num]
         else:
-            # VFO channel (250-263) -> vfo_channel[0-13] at 0x0fa0
+            # VFO channel (1024-1037) -> vfo_channel[0-13] at 0x009000
             vfo_index = ch_num - MR_CHANNELS_MAX
             _mem = self._memobj.vfo_channel[vfo_index]
 
@@ -1565,6 +1570,10 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
 
             val = RadioSettingValueBoolean(False)
             rs = RadioSetting("noRoger", "No Roger", val)
+            mem.extra.append(rs)
+
+            val = RadioSettingValueList(SCRAMBLER_LIST)
+            rs = RadioSetting("scrambler", "Scrambler", val)
             mem.extra.append(rs)
 
             val = RadioSettingValueBoolean(False)
@@ -1705,6 +1714,16 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         val = RadioSettingValueBoolean(no_roger)
         rs = RadioSetting("noRoger", "No Roger", val)
         rs.set_doc('Suppresses the Roger beep or MDC burst on this channel even when Roger is enabled in the radio menu.')
+        mem.extra.append(rs)
+
+        # The last channel-record byte is the same 0..10 value used by the
+        # radio menu.  Treat erased and out-of-range legacy values as OFF.
+        scrambler = int(_mem.scrambler)
+        if scrambler >= len(SCRAMBLER_LIST):
+            scrambler = 0
+        val = RadioSettingValueList(SCRAMBLER_LIST, None, scrambler)
+        rs = RadioSetting("scrambler", "Scrambler", val)
+        rs.set_doc('Selects the per-channel voice inversion frequency.')
         mem.extra.append(rs)
 
         # BusyCL
@@ -3672,10 +3691,10 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         # Get a low-level memory object mapped to the image
         # Access the correct structure based on channel type
         if number < MR_CHANNELS_MAX:
-            # Regular memory channel (0-249)
+            # Regular memory channel (0-1023)
             _mem_chan = self._memobj.channel[number]
         else:
-            # VFO channel (250-263) -> vfo_channel[0-13] at 0x0fa0
+            # VFO channel (1024-1037) -> vfo_channel[0-13] at 0x009000
             vfo_index = number - MR_CHANNELS_MAX
             _mem_chan = self._memobj.vfo_channel[vfo_index]
 
@@ -3725,7 +3744,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
 #        _mem_attr.is_free = 0
         _mem_attr.band = band
 
-        # channels >200 are the 14 VFO chanells and don't have names
+        # Channels 1024-1037 are the 14 VFO records and don't have names.
         if number < MR_CHANNELS_MAX:
             _mem_chname = self._memobj.channelname[number]
             tag = memory.name.ljust(10) + "\x00"*6
@@ -3765,6 +3784,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         _mem_chan.txLock = get_setting("txLock", 0)
         _mem_chan.noFskTx = get_setting("noFskTx", False)
         _mem_chan.noRoger = get_setting("noRoger", False)
+        _mem_chan.scrambler = get_setting("scrambler", 0)
         _mem_chan.busyChLockout = get_setting("busyChLockout", False)
         _mem_chan.dtmf_pttid = get_setting("pttid", 0)
         _mem_chan.freq_reverse = get_setting("frev", False)

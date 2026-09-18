@@ -20,8 +20,8 @@
 #define INTF_DESC_bInterfaceNumber  2 /** Interface number offset */
 #define INTF_DESC_bAlternateSetting 3 /** Alternate setting offset */
 
-#define USB_EP_OUT_NUM 8
-#define USB_EP_IN_NUM  8
+#define USB_EP_OUT_NUM CONFIG_USBDEV_EP_COUNT
+#define USB_EP_IN_NUM  CONFIG_USBDEV_EP_COUNT
 
 USB_NOCACHE_RAM_SECTION struct usbd_core_cfg_priv {
     /** Setup packet */
@@ -517,6 +517,10 @@ static bool usbd_std_interface_req_handler(struct usb_setup_packet *setup,
  */
 static bool usbd_std_endpoint_req_handler(struct usb_setup_packet *setup, uint8_t **data, uint32_t *len)
 {
+    /* Reject high/reserved index bits as well as endpoints outside our tables. */
+    if ((setup->wIndex & ~0x80u) >= CONFIG_USBDEV_EP_COUNT) {
+        return false;
+    }
     uint8_t ep = (uint8_t)setup->wIndex;
     uint8_t stalled;
     bool ret = true;
@@ -528,7 +532,7 @@ static bool usbd_std_endpoint_req_handler(struct usb_setup_packet *setup, uint8_
 
     switch (setup->bRequest) {
         case USB_REQUEST_GET_STATUS:
-            usbd_ep_is_stalled(ep, &stalled);
+            if (usbd_ep_is_stalled(ep, &stalled) != 0) return false;
             (*data)[0] = stalled;
             (*data)[1] = 0x00;
             *len = 2;
@@ -537,7 +541,7 @@ static bool usbd_std_endpoint_req_handler(struct usb_setup_packet *setup, uint8_
             if (setup->wValue == USB_FEATURE_ENDPOINT_HALT) {
                 USB_LOG_ERR("ep:%02x clear halt\r\n", ep);
 
-                usbd_ep_clear_stall(ep);
+                if (usbd_ep_clear_stall(ep) != 0) return false;
                 break;
             } else {
                 ret = false;
@@ -548,7 +552,7 @@ static bool usbd_std_endpoint_req_handler(struct usb_setup_packet *setup, uint8_
             if (setup->wValue == USB_FEATURE_ENDPOINT_HALT) {
                 USB_LOG_ERR("ep:%02x set halt\r\n", ep);
 
-                usbd_ep_set_stall(ep);
+                if (usbd_ep_set_stall(ep) != 0) return false;
             } else {
                 ret = false;
             }
@@ -875,6 +879,7 @@ void usbd_event_ep0_setup_complete_handler(uint8_t *psetup)
 
 void usbd_event_ep_in_complete_handler(uint8_t ep, uint32_t nbytes)
 {
+    if (USB_EP_GET_IDX(ep) >= CONFIG_USBDEV_EP_COUNT) return;
     if (ep == USB_CONTROL_IN_EP0) {
         struct usb_setup_packet *setup = &usbd_core_cfg.setup;
 
@@ -913,6 +918,7 @@ void usbd_event_ep_in_complete_handler(uint8_t ep, uint32_t nbytes)
 
 void usbd_event_ep_out_complete_handler(uint8_t ep, uint32_t nbytes)
 {
+    if (USB_EP_GET_IDX(ep) >= CONFIG_USBDEV_EP_COUNT) return;
     if (ep == USB_CONTROL_OUT_EP0) {
         struct usb_setup_packet *setup = &usbd_core_cfg.setup;
 
@@ -949,6 +955,8 @@ void usbd_event_ep_out_complete_handler(uint8_t ep, uint32_t nbytes)
 
 void usbd_desc_register(const uint8_t *desc)
 {
+    /* .noncacheable is NOLOAD: initialize before endpoint registration / IRQs. */
+    memset(&usbd_core_cfg, 0, sizeof(usbd_core_cfg));
     usbd_core_cfg.descriptors = desc;
     usbd_core_cfg.intf_offset = 0;
 }
@@ -979,6 +987,7 @@ void usbd_add_interface(struct usbd_interface *intf)
 
 void usbd_add_endpoint(struct usbd_endpoint *ep)
 {
+    if (USB_EP_GET_IDX(ep->ep_addr) >= CONFIG_USBDEV_EP_COUNT) return;
     if (ep->ep_addr & 0x80) {
         usbd_core_cfg.in_ep_cb[ep->ep_addr & 0x7f] = ep->ep_cb;
     } else {

@@ -240,7 +240,7 @@ void UI_DisplayScreenSaver(uint8_t mode)
         PY25Q16_ReadBuffer(LOGO_BITMAP_ADDR, gStatusLine, sizeof(gStatusLine));
         PY25Q16_ReadBuffer(LOGO_BITMAP_ADDR + sizeof(gStatusLine), gFrameBuffer, sizeof(gFrameBuffer));
         if (mode == 2) {
-            UI_PrintStringSmallNormal("GOGUFW 1.1.2", 0, 127, 7);
+            UI_PrintStringSmallNormal(Version, 0, 127, 7);
         }
     } else if (mode == 3) {
         // Lightweight MATRIX placeholder: avoids RAM-heavy animation and keeps
@@ -361,10 +361,8 @@ void UI_DisplayWelcome(void)
 #ifdef ENABLE_FEAT_F4HWN
         UI_PrintStringSmallNormal(Version, 0, 127, 4);
 
-        /* GOGUFW 0.5.13: size the inverted version capsule from the actual
-         * rendered version string.  The old fixed 20..108 capsule was too
-         * narrow for longer labels like GOGUFW 0.5.12/0.5.13, making the last
-         * digits look outside the inverted area. */
+        /* Size the inverted capsule from the actual rendered version string
+         * so longer release labels stay inside the highlighted area. */
         {
             const uint8_t version_len = (uint8_t)strlen(Version);
             const uint8_t version_w = (uint8_t)(version_len * 7U);

@@ -258,6 +258,14 @@ static void FM_StartAutoScanNow(void)
 
 bool FM_IsNameEditActive(void) { return s_fmNameEdit; }
 bool FM_IsAutoScanConfirmActive(void) { return s_fmAutoScanConfirm; }
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+bool FM_ActionPickerAllowed(void)
+{
+    return !s_fmNameEdit && !s_fmAutoScanConfirm &&
+           !gAskToSave && !gAskToDelete &&
+           s_fmMenuMode == FM_MENU_NONE && gInputBoxIndex == 0u;
+}
+#endif
 uint8_t FM_GetMenuMode(void) { return (uint8_t)s_fmMenuMode; }
 const char *FM_GetNameEditBuffer(void) { return s_fmNameBuf; }
 uint8_t FM_GetNameEditorMode(void) { return s_fmNameEditor.mode; }
