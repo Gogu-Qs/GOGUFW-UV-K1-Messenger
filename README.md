@@ -6,6 +6,24 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3. It keeps the F4H
 [![Downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases)
 [![Stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers)
 
+## Firmware at a glance
+
+| Statistic | Project status |
+| --- | --- |
+| 📦 **Current stable release** | GOGUFW 2.0.3 |
+| 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
+| ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
+| ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
+| 🍴 **GitHub forks** | [![GitHub forks](https://img.shields.io/github/forks/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=forks&color=orange)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/forks) |
+| 🧩 **Firmware base** | F4HWN Fusion 5.9.0 with the official multiboot format |
+| 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
+| ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
+| 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
+| 💾 **FLASH usage** | 118,664 / 120,832 bytes · **98.21%** · 2,168 bytes free |
+| 🧠 **RAM usage** | 13,124 / 16,384 bytes · **80.08%** · 3,260 bytes free |
+| ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · Action Picker · FM names/RSSI · Scrambler |
+| 🔌 **CHIRP support** | Matching 2.0.3 module with 1024 memories, Messenger settings, FM names, channel policies and Scrambler |
+
 ## Compatibility and downloads
 
 GOGUFW is intended only for Quansheng **UV-K1 / UV-K5 V3** radios built around the **PY32F071 MCU and BK4829 RF IC**. Do not install it on UV-K5 V1/V2 or other BK4819-based radios.
