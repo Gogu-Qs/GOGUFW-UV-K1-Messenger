@@ -40,6 +40,9 @@
 #ifdef ENABLE_MESSENGER
     #include "app/messenger_ui.h"
 #endif
+#ifdef ENABLE_GOGUFW_RF_LOG
+    #include "app/rf_log.h"
+#endif
 #include "ui/ui.h"
 #include "../misc.h"
 
@@ -70,6 +73,9 @@ void (*const UI_DisplayFunctions[])(void) = {
 
 #ifdef ENABLE_MESSENGER
     [DISPLAY_MESSENGER] = &UI_DisplayMessenger,
+#endif
+#ifdef ENABLE_GOGUFW_RF_LOG
+    [DISPLAY_RF_LOG] = &UI_DisplayGoguRfLog,
 #endif
 };
 

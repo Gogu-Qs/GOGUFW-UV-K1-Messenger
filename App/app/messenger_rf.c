@@ -4,7 +4,6 @@
 #include "app/messenger_packet.h"
 #include "app/messenger_store.h"
 #include "app/messenger.h"
-#include "app/aircopy.h"
 #include "audio.h"
 #include "driver/bk4819.h"
 #include "driver/bk4819-regs.h"
@@ -16,8 +15,11 @@
 #include "radio.h"
 #include "settings.h"
 
-#ifdef ENABLE_AIRCOPY
-extern uint8_t gFSKWriteIndex;
+/* The legacy guards below protect the shared BK4819 FSK backend, not the
+ * AirCopy application.  Messenger now owns that backend and its FIFO buffer,
+ * so keep the known-good RF code compiled even when AirCopy is omitted. */
+#ifndef ENABLE_AIRCOPY
+#define ENABLE_AIRCOPY
 #endif
 
 /*
@@ -73,6 +75,11 @@ extern uint8_t gFSKWriteIndex;
 #define MSG_RF_REG59_TX_READY_LONG_PRE 0x00F8u
 #define MSG_RF_REG59_TX_START_LONG_PRE 0x28F8u
 #define MSG_RF_REG5D_LEN_100_BYTES    0x6300u
+
+/* Messenger owns its FSK FIFO storage.  AirCopy used to provide this buffer,
+ * which made disabling the unrelated channel-transfer UI also disable the
+ * Messenger RF path.  Keep the proven framing and FIFO size unchanged. */
+static uint16_t g_FSK_Buffer[MSG_RF_WORDS];
 
 static uint8_t s_rearm_delay_ticks;
 static uint8_t s_rx_stale_ticks;

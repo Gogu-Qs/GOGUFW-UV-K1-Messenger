@@ -23,6 +23,9 @@
 #include "app/main.h"
 #include "app/messenger_rf.h"
 #endif
+#ifdef ENABLE_GOGUFW_RF_LOG
+#include "app/rf_log.h"
+#endif
 #include "app/app.h"
 #include "app/chFrScanner.h"
 #include "app/common.h"
@@ -102,6 +105,18 @@ static void ACTION_OpenHeard(void)
 static void ACTION_CallTx(void)
 {
     MAIN_SendPmrCallToneAction();
+}
+#endif
+
+#ifdef ENABLE_GOGUFW_RF_LOG
+static void ACTION_OpenRfLog(void)
+{
+    if (gSurvivalMode) { gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL; return; }
+    if (gScreenToDisplay == DISPLAY_RF_LOG) {
+        gRequestDisplayScreen = DISPLAY_MAIN;
+        return;
+    }
+    GOGU_RFLOG_Open();
 }
 #endif
 
@@ -187,6 +202,9 @@ void (*const action_opt_table[ACTION_OPT_LEN])(void) = {
     [ACTION_OPT_HEARD]     = &ACTION_OpenHeard,
     [ACTION_OPT_CALLTX]    = &ACTION_CallTx,
 #endif
+#ifdef ENABLE_GOGUFW_RF_LOG
+    [ACTION_OPT_RF_LOG]       = &ACTION_OpenRfLog,
+#endif
 };
 
 static_assert(ARRAY_SIZE(action_opt_table) == ACTION_OPT_LEN);
@@ -194,6 +212,7 @@ static_assert(ACTION_OPT_BEAM == 23);
 static_assert(ACTION_OPT_MESSENGER == 24);
 static_assert(ACTION_OPT_HEARD == 25);
 static_assert(ACTION_OPT_CALLTX == 26);
+static_assert(ACTION_OPT_RF_LOG == 27);
 
 void ACTION_Power(void)
 {

@@ -17,6 +17,9 @@
 #include <string.h>
 
 #include "app/dtmf.h"
+#ifdef ENABLE_GOGUFW_RF_LOG
+    #include "app/rf_log.h"
+#endif
 #if defined(ENABLE_FMRADIO)
     #include "app/fm.h"
 #endif
@@ -239,7 +242,24 @@ void FUNCTION_Select(FUNCTION_Type_t Function)
     const FUNCTION_Type_t PreviousFunction = gCurrentFunction;
     const bool bWasPowerSave = PreviousFunction == FUNCTION_POWER_SAVE;
 
+#ifdef ENABLE_GOGUFW_RF_LOG
+    const bool previousWasActive = PreviousFunction == FUNCTION_TRANSMIT ||
+        PreviousFunction == FUNCTION_MONITOR || PreviousFunction == FUNCTION_RECEIVE;
+    const bool previousWasTx = PreviousFunction == FUNCTION_TRANSMIT;
+    const bool nextIsActive = Function == FUNCTION_TRANSMIT ||
+        Function == FUNCTION_MONITOR || Function == FUNCTION_RECEIVE;
+    const bool nextIsTx = Function == FUNCTION_TRANSMIT;
+
+    if (previousWasActive && (!nextIsActive || previousWasTx != nextIsTx))
+        GOGU_RFLOG_EndActive();
+#endif
+
     gCurrentFunction = Function;
+
+#ifdef ENABLE_GOGUFW_RF_LOG
+    if (nextIsActive && !nextIsTx && (!previousWasActive || previousWasTx))
+        GOGU_RFLOG_BeginRx(gRxVfo, Function);
+#endif
 
     if (bWasPowerSave && Function != FUNCTION_POWER_SAVE) {
         BK4819_Conditional_RX_TurnOn_and_GPIO6_Enable();

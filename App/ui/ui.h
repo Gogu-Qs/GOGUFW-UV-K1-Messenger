@@ -38,6 +38,10 @@ enum GUI_DisplayType_t
     DISPLAY_MESSENGER,
 #endif
 
+#ifdef ENABLE_GOGUFW_RF_LOG
+    DISPLAY_RF_LOG,
+#endif
+
 #ifdef ENABLE_REGA
     DISPLAY_REGA,
 #endif

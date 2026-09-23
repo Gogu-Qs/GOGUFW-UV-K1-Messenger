@@ -23,6 +23,9 @@
 #ifdef ENABLE_MESSENGER
     #include "app/messenger_rf.h"
 #endif
+#ifdef ENABLE_GOGUFW_RF_LOG
+    #include "app/rf_log.h"
+#endif
 #ifdef ENABLE_FMRADIO
     #include "app/fm.h"
 #endif
@@ -1294,6 +1297,10 @@ void RADIO_PrepareTX(void)
 #endif
 
     FUNCTION_Select(FUNCTION_TRANSMIT);
+
+#ifdef ENABLE_GOGUFW_RF_LOG
+    GOGU_RFLOG_BeginTx(gCurrentVfo);
+#endif
 
     gTxTimerCountdown_500ms = 0;            // no timeout
 

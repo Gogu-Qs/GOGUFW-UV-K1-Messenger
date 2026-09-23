@@ -230,6 +230,9 @@ enable_feature(ENABLE_FEAT_F4HWN_DEBUG)
 enable_feature(ENABLE_FEAT_F4HWN_MEM)
 enable_feature(ENABLE_FEAT_F4HWN_ACTION_PICKER)
 enable_feature(ENABLE_GOGUFW_SCRAMBLER)
+enable_feature(ENABLE_GOGUFW_RF_LOG
+    app/rf_log.c
+)
 enable_feature(ENABLE_FEAT_F4HWN_BEAM
     app/beam.c
 )

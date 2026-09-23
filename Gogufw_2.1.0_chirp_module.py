@@ -1,4 +1,4 @@
-# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v2.0.6
+# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v2.1.0
 # Based on F4HWN Fusion CHIRP 5.5.0 support.
 # Matches the GOGUFW external-flash EEPROM aliases:
 #   FM names: 0x00D000 alias -> firmware flash 0x013000
@@ -523,7 +523,6 @@ SET_PTT_LIST = ["CLASSIC", "ONEPUSH"]
 
 # SET_SCN f4hwn
 SET_SCN_LIST = ["FAST", "NORMAL"]
-SET_SAV_LIST = ["OFF", "LOGO", "LOGO+", "MATRIX"]
 
 # SET_TOT and SET_EOT f4hwn
 SET_TOT_EOT_LIST = ["OFF", "SOUND", "VISUAL", "ALL"]
@@ -806,7 +805,8 @@ KEYACTIONS_LIST = ["NONE",
                    "BEAM",
                    "MESSENGER",
                    "HEARD",
-                   "CALLTX"
+                   "CALLTX",
+                   "RF LOG"
                   ]
 
 # Keep BEAM at its historical numeric slot so later GOGUFW actions retain
@@ -1228,7 +1228,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
     """Quansheng UV-K5 (egzumer + f4hwn)"""
     VENDOR = "Quansheng"
     MODEL = "UV-K1 / UV-K5 V3 GOGUFW Messenger"
-    VARIANT = "2.0.6"
+    VARIANT = "2.1.0"
     BAUD_RATE = 38400
     NEEDS_COMPAT_SERIAL = False
     FIRMWARE_VERSION = ""
@@ -2762,16 +2762,6 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
                               '* NORMAL : classic scan mode, checks each channel or frequency with the usual full tune.\n' + \
                               '* FAST : faster scan mode using a quick signal precheck before the full tune.')
 
-        # Set_Sav f4hwn / GOGUFW 5.6 merge
-        tmpsetsav = list_def(_mem.set_sav, SET_SAV_LIST, 0)
-        val = RadioSettingValueList(SET_SAV_LIST, SET_SAV_LIST[tmpsetsav])
-        SetSavSetting = RadioSetting("set_sav", "Screen Saver (SetSav)", val)
-        SetSavSetting.set_doc('SetSav: Select screen saver mode after backlight timeout\n' + \
-                              '* OFF : disabled\n' + \
-                              '* LOGO : logo screen saver\n' + \
-                              '* LOGO+ : scrolling logo plus display buffer\n' + \
-                              '* MATRIX : matrix-style screen saver')
-
         # Set_Menu_Lock f4hwn
         tmpsetmenulock = list_def(_mem.set_menu_lock, SET_OFF_ON_LIST, 0)
         val = RadioSettingValueList(SET_OFF_ON_LIST, SET_OFF_ON_LIST[tmpsetmenulock])
@@ -3585,7 +3575,6 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         if _mem.BUILD_OPTIONS.ENABLE_FEAT_F4HWN_RESCUE_OPS:
             basic.append(SetKEYSetting)
         basic.append(SetScnSetting)
-        basic.append(SetSavSetting)
         if _mem.BUILD_OPTIONS.ENABLE_FEAT_F4HWN_RESCUE_OPS:
             basic.append(SetMenuLockSetting)
 

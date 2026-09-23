@@ -116,7 +116,6 @@ SpectrumSettings settings = {.stepsCount = STEPS_64,
 uint32_t fMeasure = 0;
 uint32_t currentFreq, tempFreq;
 uint16_t rssiHistory[128];
-
 // Peak hold: tracks the highest Y per column with timed decay
 static uint8_t  peakHoldY[128];       // Peak Y value per display column (0=top)
 static uint8_t  peakHoldAge[64];      // Shared decay timer (1 per 2 columns)
@@ -986,8 +985,7 @@ static void UpdateScanInfo()
         scanInfo.rssiMin = scanInfo.rssi;
 
     sweepRssiSum += scanInfo.rssi;
-    if (sweepRssiCount != UINT16_MAX)
-        sweepRssiCount++;
+    sweepRssiCount++;
 }
 
 static void UpdateCompletedSweepScale()
@@ -1105,7 +1103,7 @@ static void SetRssiHistory(uint16_t idx, uint16_t rssi)
         if (rssi >= prev)
             rssiHistory[slot] = rssi;
         else
-            rssiHistory[slot] = (uint16_t)((3u * prev + rssi) >> 2);
+            rssiHistory[slot] = prev - ((prev - rssi) >> 4);
         return;
     }
     // Attack/decay: instant rise, fast fall for stable display
@@ -2516,6 +2514,10 @@ static void Scan()
     )
     {
         SetFScan(scanInfo.f);
+        // Stored memories may jump hundreds of MHz between adjacent entries.
+        // Give the PLL/AGC a short settling window before reading RSSI.
+        if (spectrumChannelMode)
+            SYSTICK_DelayUs(1000);
         Measure();
         UpdateScanInfo();
     }
@@ -2772,15 +2774,12 @@ static void UpdateListening()
     redrawScreen = true;
     redrawStatus = true;
 
-    bool abruptDrop = false;
-    if (!monitorMode && listenPrevRssi != RSSI_MAX_VALUE &&
-        listenPrevRssi > LISTEN_DROP_EXIT_RSSI)
-    {
-        // End TX usually appears as a sharp RSSI fall; leave RX quickly and
-        // resume sweep instead of waiting for the debounce path.
-        abruptDrop = (scanInfo.rssi + LISTEN_DROP_EXIT_RSSI) <= listenPrevRssi;
-    }
-    listenPrevRssi = scanInfo.rssi;
+    // Compare with the strongest listening sample, not only the immediately
+    // preceding one, so a gradual AGC fall after carrier loss also releases.
+    bool abruptDrop = !monitorMode && listenPrevRssi != RSSI_MAX_VALUE &&
+        scanInfo.rssi + LISTEN_DROP_EXIT_RSSI <= listenPrevRssi;
+    if (scanInfo.rssi > listenPrevRssi)
+        listenPrevRssi = scanInfo.rssi;
 
     bool keepListening = monitorMode;
     if (!keepListening)

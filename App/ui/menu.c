@@ -178,7 +178,7 @@ const t_menu_item MenuList[] =
 #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
     {"SetScn",      MENU_SET_SCN       },
 #endif
-#ifdef ENABLE_FEAT_F4HWN_LOGO
+#ifdef ENABLE_FEAT_F4HWN_LOGO_SAV
     {"SetSav",      MENU_SET_SAV       },
 #endif
 #ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
@@ -456,7 +456,7 @@ const char gSubMenu_SCRAMBLER[][7] =
         };
     #endif
 
-    #ifdef ENABLE_FEAT_F4HWN_LOGO
+    #ifdef ENABLE_FEAT_F4HWN_LOGO_SAV
         const char gSubMenu_SET_SAV[][7] =
         {
             "OFF",
@@ -557,6 +557,9 @@ const t_sidefunction gSubMenu_SIDEFUNCTIONS[] =
     {"MESSENGER",       ACTION_OPT_MESSENGER},
     {"HEARD",           ACTION_OPT_HEARD},
     {"CALLTX",          ACTION_OPT_CALLTX},
+#endif
+#ifdef ENABLE_GOGUFW_RF_LOG
+    {"RF LOG",          ACTION_OPT_RF_LOG},
 #endif
 };
 
@@ -1582,7 +1585,7 @@ void UI_DisplayMenu(void)
                 break;
         #endif
 
-        #ifdef ENABLE_FEAT_F4HWN_LOGO
+        #ifdef ENABLE_FEAT_F4HWN_LOGO_SAV
             case MENU_SET_SAV:
                 strcpy(String, gSubMenu_SET_SAV[gSubMenuSelection]);
                 break;

@@ -44,6 +44,9 @@
     #include "app/messenger.h"
     #include "app/messenger_rf.h"
 #endif
+#ifdef ENABLE_GOGUFW_RF_LOG
+    #include "app/rf_log.h"
+#endif
 #include "app/scanner.h"
 #if defined(ENABLE_UART) || defined(ENABLE_USB)
     #include "app/uart.h"
@@ -124,6 +127,9 @@ void (*const ProcessKeysFunctions[])(KEY_Code_t Key, bool bKeyPressed, bool bKey
 
 #ifdef ENABLE_MESSENGER
     [DISPLAY_MESSENGER] = &MSG_ProcessKeys,
+#endif
+#ifdef ENABLE_GOGUFW_RF_LOG
+    [DISPLAY_RF_LOG] = &GOGU_RFLOG_ProcessKeys,
 #endif
 };
 
@@ -1881,6 +1887,9 @@ void cancelUserInputModes(void)
 void APP_TimeSlice500ms(void)
 {
     gNextTimeslice_500ms = false;
+#ifdef ENABLE_GOGUFW_RF_LOG
+    GOGU_RFLOG_Tick500ms();
+#endif
 #ifdef ENABLE_FEAT_F4HWN
     if (gSquelchDisplayCountdown_500ms > 0 &&
         --gSquelchDisplayCountdown_500ms == 0)
