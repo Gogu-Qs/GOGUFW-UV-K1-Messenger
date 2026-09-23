@@ -146,7 +146,7 @@ static void FM_UI_DrawRssiBars(void)
 
 void UI_UpdateFMRssiBar(void)
 {
-    if (FM_IsNameEditActive() || FM_IsAutoScanConfirmActive())
+    if (FM_IsNameEditActive() || FM_IsAutoScanConfirmActive() || FM_IsLiveRssiEditActive())
         return;
 
     /* The meter occupies x=106..124 entirely on framebuffer page 6
@@ -189,6 +189,19 @@ static void FM_UI_DrawAutoScanConfirm(void)
     GUI_DisplaySmallest("NO/EXIT", 100, 49, false, true);
 }
 
+static void FM_UI_DrawLiveRssiEdit(void)
+{
+    UI_DisplayClear();
+#ifdef ENABLE_FEAT_F4HWN
+    UI_DisplayUnlockKeyboard(5);
+#endif
+    UI_PrintString("LIVE RSSI", 0, 127, 0, 8);
+    UI_DrawLineBuffer(gFrameBuffer, 8, 17, 119, 17, 1);
+    UI_PrintString(FM_GetLiveRssiSelection() ? "ON" : "OFF", 0, 127, 3, 10);
+    GUI_DisplaySmallest("UP/DN:CHANGE", 0, 49, false, true);
+    GUI_DisplaySmallest("MENU:SAVE", 92, 49, false, true);
+}
+
 void UI_DisplayFM(void)
 {
     char String[20] = {0};
@@ -204,6 +217,11 @@ void UI_DisplayFM(void)
     }
     if (FM_IsAutoScanConfirmActive()) {
         FM_UI_DrawAutoScanConfirm();
+        ST7565_BlitFullScreen();
+        return;
+    }
+    if (FM_IsLiveRssiEditActive()) {
+        FM_UI_DrawLiveRssiEdit();
         ST7565_BlitFullScreen();
         return;
     }
@@ -224,9 +242,19 @@ void UI_DisplayFM(void)
     if (gAskToSave) {
         centerLabel = "SAVE?";
         strcpy(modeLabel, "SAVE");
-    } else if (gEeprom.FM_IsMrMode && FM_GetMenuMode() != 0U) {
-        FM_UI_ChannelLabel(modeLabel, sizeof(modeLabel));
-        centerLabel = (FM_GetMenuMode() == 2U) ? "CH-NAME" : "CH-DEL?";
+    } else if (FM_GetMenuMode() != 0U) {
+        if (gEeprom.FM_IsMrMode)
+            FM_UI_ChannelLabel(modeLabel, sizeof(modeLabel));
+        else
+            strcpy(modeLabel, "VFO");
+        if (FM_GetMenuMode() == 3U)
+            centerLabel = "LIVE RSSI";
+        else if (FM_GetMenuMode() == 2U)
+            centerLabel = "CH-NAME";
+        else if (FM_GetMenuMode() == 1U)
+            centerLabel = "CH-DEL?";
+        else
+            centerLabel = "SAVE?";
     } else if (gAskToDelete) {
         centerLabel = "DEL?";
         strcpy(modeLabel, "DEL");
@@ -275,7 +303,8 @@ void UI_DisplayFM(void)
         UI_DisplayFrequency(String, FM_UI_BigFreqCenterX(String), 1, false);
     }
 
-    if (gEeprom.FM_IsMrMode || gAskToSave || gAskToDelete || (gFM_ScanState != FM_SCAN_OFF && gFM_AutoScan)) {
+    if (gEeprom.FM_IsMrMode || FM_GetMenuMode() != 0U || gAskToSave || gAskToDelete ||
+        (gFM_ScanState != FM_SCAN_OFF && gFM_AutoScan)) {
         /* Memory/menu/save/autoscan panel: full rectangle with centered label. */
         UI_DrawLineBuffer(gFrameBuffer, 8, 29, 119, 29, 1);
         UI_DrawLineBuffer(gFrameBuffer, 8, 43, 119, 43, 1);
@@ -301,6 +330,10 @@ void UI_DisplayFM(void)
             gEeprom.FM_Band == 0 ? ".5" : "",
             BK1080_GetFreqHiLimit(gEeprom.FM_Band) / 10);
     FM_UI_PrintBandLimitTiny(bandText);
+    /* Same 3x5 font and baseline as the band text.  The final LIVE pixel is
+     * x=103, leaving x=104..105 clear before the first meter pixel at x=106. */
+    if (FM_IsLiveRssiEnabled())
+        GUI_DisplaySmallest("LIVE", 89, 50, false, true);
     FM_UI_DrawRssiBars();
 
     ST7565_BlitFullScreen();

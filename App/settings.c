@@ -229,6 +229,7 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
             uint8_t  selChn;
             uint8_t  isMrMode:1;
             uint8_t  band:2;
+            uint8_t  liveRssi:1;
             //uint8_t  space:2;
         } __attribute__((packed)) fmCfg;
         PY25Q16_ReadBuffer(0x00A020, &fmCfg, 4);
@@ -244,6 +245,8 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
             
         gEeprom.FM_SelectedChannel = fmCfg.selChn;
         gEeprom.FM_IsMrMode        = fmCfg.isMrMode;
+        /* This bit was unused (erased/set) in older FM records: default ON. */
+        FM_SetLiveRssiEnabled(fmCfg.liveRssi != 0u);
     }
 
     // 0E40..0E67
@@ -831,6 +834,7 @@ void SETTINGS_SaveFM(void)
                 uint8_t  selChn;
                 uint8_t  isMrMode:1;
                 uint8_t  band:2;
+                uint8_t  liveRssi:1;
                 //uint8_t  space:2;
             };
             uint8_t __raw[8];
@@ -841,6 +845,7 @@ void SETTINGS_SaveFM(void)
         fmCfg.selFreq  = gEeprom.FM_SelectedFrequency;
         fmCfg.isMrMode = gEeprom.FM_IsMrMode;
         fmCfg.band     = gEeprom.FM_Band;
+        fmCfg.liveRssi = FM_IsLiveRssiEnabled();
         // fmCfg.space    = gEeprom.FM_Space;
         // 0E88
         PY25Q16_WriteBuffer(0x00A020, fmCfg.__raw, 8, false);

@@ -156,6 +156,13 @@ static uint16_t renderTimer = 0;
 
 // Disabling automatic DbMax and squelch trigger settings
 static bool manualSetFlag = false;
+// Every fresh/reset Spectrum session starts with one RX-free reference cycle.
+// MANUAL freezes the resulting scale/trigger; AUTO may adapt afterwards.
+static bool initialCalibrationPending = false;
+// Accumulate one sweep's background so AUTO does not mistake a single
+// unusually low bin for the noise floor and keep walking its trigger down.
+static uint32_t sweepRssiSum = 0;
+static uint16_t sweepRssiCount = 0;
 
 typedef enum AutoSensitivityProfile
 {
@@ -168,9 +175,9 @@ typedef enum AutoSensitivityProfile
 // Margin above the measured noise floor used by auto trigger.
 // 1 RSSI unit ~= 0.5 dB.
 static const uint8_t autoTriggerMarginRssi[AUTO_SENS_N_ELEM] = {
-    24, // weak  : +12 dB
-    16, // normal:  +8 dB (legacy behavior)
-    10, // strong:  +5 dB
+    60, // weak  : +30 dB
+    40, // normal: +20 dB
+    20, // strong: +10 dB
 };
 static const char *autoSensitivityLabel[AUTO_SENS_N_ELEM] = {"WEAK", "NORM", "STRG"};
 static AutoSensitivityProfile autoSensitivity = AUTO_SENS_NORMAL;
@@ -876,6 +883,8 @@ static void ResetScanStats()
     scanInfo.rssiMin = RSSI_MAX_VALUE;
     scanInfo.iPeak = 0;
     scanInfo.fPeak = 0;
+    sweepRssiSum = 0;
+    sweepRssiCount = 0;
 }
 
 // Resets scan position and stats without touching the radio — safe to call
@@ -947,6 +956,12 @@ static void RelaunchScan()
     InitScan();
     ResetPeak();
     ToggleRX(false);
+    /* ToggleRX(false) intentionally returns early when RX is already off.
+     * On entry/reset, however, RADIO_SetModulation()/listenBw may have left
+     * REG_43 in listening bandwidth.  Force the scan filter here so the
+     * initial noise reference is measured under the same conditions as every
+     * post-RX sweep. */
+    BK4819_WriteRegister(BK4819_REG_43, GetBWRegValueForScan());
 #ifdef SPECTRUM_AUTOMATIC_SQUELCH
     if (!manualSetFlag)
         settings.rssiTriggerLevel = RSSI_MAX_VALUE;
@@ -970,20 +985,54 @@ static void UpdateScanInfo()
     if (scanInfo.rssi < scanInfo.rssiMin)
         scanInfo.rssiMin = scanInfo.rssi;
 
+    sweepRssiSum += scanInfo.rssi;
+    if (sweepRssiCount != UINT16_MAX)
+        sweepRssiCount++;
+}
+
+static void UpdateCompletedSweepScale()
+{
+    if (initialCalibrationPending || manualSetFlag ||
+        scanInfo.rssiMin == RSSI_MAX_VALUE)
+        return;
+
+    // AUTO may adapt once per completed pass. MANUAL never changes its scale
+    // implicitly: entering/leaving RX must preserve exactly what the user saw.
+    settings.dbMin = Rssi2DBm(scanInfo.rssiMin);
+    const int dbMax = settings.dbMax - 10;
+    if (settings.dbMin > dbMax)
+        settings.dbMin = dbMax;
+    redrawStatus = true;
+}
+
+static uint16_t GetAutoNoiseEstimate()
+{
+    if (sweepRssiCount == 0)
+        return RSSI_MAX_VALUE;
+
+    // The strongest bin is normally the wanted carrier. Excluding it leaves
+    // a representative background level instead of F4HWN's single minimum,
+    // which could drag the trigger below ordinary neighbouring bins.
+    if (sweepRssiCount > 1 && sweepRssiSum >= scanInfo.rssiMax)
+        return (uint16_t)((sweepRssiSum - scanInfo.rssiMax) /
+                          (sweepRssiCount - 1));
+
+    return (uint16_t)(sweepRssiSum / sweepRssiCount);
 }
 
 static void AutoTriggerLevel()
 {
-    if (manualSetFlag)
+    if (initialCalibrationPending || manualSetFlag)
         return;
 
-    if (scanInfo.rssiMin == RSSI_MAX_VALUE)
+    const uint16_t noiseEstimate = GetAutoNoiseEstimate();
+    if (noiseEstimate == RSSI_MAX_VALUE)
         return; // no valid measurement yet
 
     if (autoNoiseFloor == RSSI_MAX_VALUE || settings.rssiTriggerLevel == RSSI_MAX_VALUE)
-        autoNoiseFloor = scanInfo.rssiMin;
+        autoNoiseFloor = noiseEstimate;
     else
-        autoNoiseFloor = (uint16_t)((3u * autoNoiseFloor + scanInfo.rssiMin + 2u) >> 2);
+        autoNoiseFloor = (uint16_t)((3u * autoNoiseFloor + noiseEstimate + 2u) >> 2);
 
     const uint16_t target = autoNoiseFloor + autoTriggerMarginRssi[autoSensitivity];
     const uint16_t oldTrigger = settings.rssiTriggerLevel;
@@ -1084,8 +1133,14 @@ static void RequestAutoTriggerRecalibration()
 
 static void RearmRuntimeState()
 {
-    settings.dbMin = -128;
-    settings.dbMax = -97;
+    /* AUTO starts from its runtime scale. In MANUAL both ends of the graph
+     * belong to the user/current view and must survive entry, modulation
+     * changes and RX re-arming unchanged. */
+    if (!manualSetFlag)
+    {
+        settings.dbMin = -128;
+        settings.dbMax = -97;
+    }
     memset(rssiHistory, 0, sizeof(rssiHistory));
     memset(peakHoldY,   PEAK_HOLD_INIT, sizeof(peakHoldY));
     memset(peakHoldAge, 0,              sizeof(peakHoldAge));
@@ -1103,6 +1158,7 @@ static void RearmRuntimeState()
 static void ResetSpectrumToDefaults()
 {
     manualSetFlag = spectrumChannelMode;
+    initialCalibrationPending = true;
     autoSensitivity = AUTO_SENS_NORMAL;
     monitorMode = false;
     menuState = 0;
@@ -2115,6 +2171,9 @@ static void OnKeyDown(uint8_t key) {
             break;
         // Short press toggles manual/auto.
         manualSetFlag = !manualSetFlag;
+        // Switching from AUTO to MANUAL freezes the current view immediately;
+        // the one-time reference cycle is only for opening MANUAL Spectrum.
+        initialCalibrationPending = false;
         if (!manualSetFlag)
         {
             settings.rssiTriggerLevel = RSSI_MAX_VALUE;
@@ -2514,25 +2573,44 @@ static bool NextScanStepInterlaced()
 
 static void FinalizeCompletedSweep()
 {
+    const bool wasInitialCalibration = initialCalibrationPending;
+
     if (! (scanInfo.measurementsCount >> 7)) // if (scanInfo.measurementsCount < 128)
         memset(&rssiHistory[scanInfo.measurementsCount], 0,
                sizeof(rssiHistory) - scanInfo.measurementsCount * sizeof(rssiHistory[0]));
 
-    // Use only the completed sweep's minimum. Updating dbMin from the first
-    // few samples of every new sweep made the whole graph collapse and then
-    // return as quieter bins were encountered later.
-    if (scanInfo.rssiMin != RSSI_MAX_VALUE)
+    if (initialCalibrationPending)
     {
-        settings.dbMin = Rssi2DBm(scanInfo.rssiMin);
-        if (settings.dbMin > settings.dbMax - 10)
-            settings.dbMin = settings.dbMax - 10;
+        // Build a useful initial view from the representative background, not
+        // from the strongest bin (which may already contain a real carrier).
+        const uint16_t noise = GetAutoNoiseEstimate();
+        if (noise != RSSI_MAX_VALUE)
+        {
+            const int noiseDbm = Rssi2DBm(noise);
+            settings.dbMin = noiseDbm - 5;
+            settings.dbMax = noiseDbm + 45;
+            if (settings.dbMax > 10)
+                settings.dbMax = 10;
+
+            // NORMAL is +20 dB over the measured background. The existing
+            // +2 dB open hysteresis means RX actually opens about 22 dB above
+            // noise. dbMax remains another 25 dB above the trigger so the
+            // threshold line is clearly separated from the top of the graph.
+            settings.rssiTriggerLevel =
+                noise + autoTriggerMarginRssi[AUTO_SENS_NORMAL];
+            autoNoiseFloor = noise;
+        }
+        initialCalibrationPending = false;
+        preventKeypress = false;
+        redrawScreen = true;
+        redrawStatus = true;
     }
 
     // Auto-adjust dbMax unless the user has overridden it manually.
     if (manualDbMaxTimer > 0) {
         if (--manualDbMaxTimer == 0)
             redrawStatus = true;
-    } else if (!manualSetFlag) {
+    } else if (!manualSetFlag && !wasInitialCalibration) {
         int newMax = Rssi2DBm(scanInfo.rssiMax) + 5;
         int dbMin = settings.dbMin + 10;
         if (newMax < dbMin)
@@ -2563,10 +2641,11 @@ static void UpdateScan()
             return;
         }
 
-        preventKeypress = false;
+        preventKeypress = initialCalibrationPending;
 
+        UpdateCompletedSweepScale();
         UpdatePeakInfo();
-        if (IsPeakOverOpenLevel())
+        if (!initialCalibrationPending && IsPeakOverOpenLevel())
         {
             ToggleRX(true);
             TuneToPeak();
@@ -2592,10 +2671,11 @@ static void UpdateScan()
     }
 
     // End of half-sweep: unlock keypad; Render() fires on its own timer.
-    preventKeypress = false;
+    preventKeypress = initialCalibrationPending;
 
+    UpdateCompletedSweepScale();
     UpdatePeakInfo();
-    if (IsPeakOverOpenLevel())
+    if (!initialCalibrationPending && IsPeakOverOpenLevel())
     {
         ToggleRX(true);
         TuneToPeak();
@@ -2934,6 +3014,7 @@ void APP_RunSpectrum()
 #endif
 
     // Keep F4HWN runtime scaling; MR mode has already been forced to manual.
+    initialCalibrationPending = true;
     RearmRuntimeState();
 
     isInitialized = true;

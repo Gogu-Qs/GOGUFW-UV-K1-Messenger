@@ -56,6 +56,11 @@ const char *FM_GetChannelName(uint8_t Channel);
 void    FM_Tick(void);
 bool    FM_UpdateRssiLevel(void);
 uint8_t FM_GetRssiLevel(void);
+void    FM_InvalidateRssi(void);
+bool    FM_IsLiveRssiEnabled(void);
+void    FM_SetLiveRssiEnabled(bool enabled);
+bool    FM_IsLiveRssiEditActive(void);
+bool    FM_GetLiveRssiSelection(void);
 bool    FM_IsNameEditActive(void);
 bool    FM_IsAutoScanConfirmActive(void);
 #ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER

@@ -44,6 +44,11 @@ uint8_t           gFM_ChannelPosition;
 bool              gFM_FoundFrequency;
 uint16_t          gFM_RestoreCountdown_10ms;
 static uint8_t     s_fmRssiLevel = 0xFFu;
+static bool        s_fmLiveRssi = true;
+static uint16_t    s_fmRssiFrequency = 0xFFFFu;
+static uint8_t     s_fmRssiChannel = 0xFFu;
+static uint8_t     s_fmRssiBand = 0xFFu;
+static bool        s_fmRssiMrMode;
 
 #define FM_NAMES_FLASH_ADDR 0x013000u
 #define FM_NAMES_MAGIC      0x4747464Du  /* "GGFM" */
@@ -66,11 +71,15 @@ typedef enum {
     FM_MENU_NONE = 0,
     FM_MENU_DELETE,
     FM_MENU_NAME,
+    FM_MENU_LIVE_RSSI,
+    FM_MENU_SAVE,
 } FM_MenuMode_t;
 
 static FM_MenuMode_t s_fmMenuMode;
 static bool s_fmNameEdit;
 static bool s_fmAutoScanConfirm;
+static bool s_fmLiveRssiEdit;
+static bool s_fmLiveRssiSelection;
 static MSG_T9Editor_t s_fmNameEditor;
 
 const uint8_t BUTTON_STATE_PRESSED = 1 << 0;
@@ -176,7 +185,23 @@ void FM_Tick(void)
 
 bool FM_UpdateRssiLevel(void)
 {
-    if (!gFmRadioMode || gFM_ScanState != FM_SCAN_OFF)
+    if (!gFmRadioMode)
+        return false;
+    if (gFM_ScanState != FM_SCAN_OFF) {
+        FM_InvalidateRssi();
+        return false;
+    }
+    if (s_fmRssiFrequency != gEeprom.FM_FrequencyPlaying ||
+        s_fmRssiChannel != gEeprom.FM_SelectedChannel ||
+        s_fmRssiBand != gEeprom.FM_Band ||
+        s_fmRssiMrMode != gEeprom.FM_IsMrMode) {
+        s_fmRssiFrequency = gEeprom.FM_FrequencyPlaying;
+        s_fmRssiChannel = gEeprom.FM_SelectedChannel;
+        s_fmRssiBand = gEeprom.FM_Band;
+        s_fmRssiMrMode = gEeprom.FM_IsMrMode;
+        FM_InvalidateRssi();
+    }
+    if (!s_fmLiveRssi && s_fmRssiLevel <= 5u)
         return false;
 
     const uint16_t status = BK1080_ReadRegister(BK1080_REG_10);
@@ -217,6 +242,12 @@ uint8_t FM_GetRssiLevel(void)
 {
     return (s_fmRssiLevel <= 5U) ? s_fmRssiLevel : 0U;
 }
+
+void FM_InvalidateRssi(void) { s_fmRssiLevel = 0xFFu; }
+bool FM_IsLiveRssiEnabled(void) { return s_fmLiveRssi; }
+void FM_SetLiveRssiEnabled(bool enabled) { s_fmLiveRssi = enabled; }
+bool FM_IsLiveRssiEditActive(void) { return s_fmLiveRssiEdit; }
+bool FM_GetLiveRssiSelection(void) { return s_fmLiveRssiSelection; }
 
 static void FM_NameEditStart(void)
 {
@@ -261,7 +292,7 @@ bool FM_IsAutoScanConfirmActive(void) { return s_fmAutoScanConfirm; }
 #ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
 bool FM_ActionPickerAllowed(void)
 {
-    return !s_fmNameEdit && !s_fmAutoScanConfirm &&
+    return !s_fmNameEdit && !s_fmAutoScanConfirm && !s_fmLiveRssiEdit &&
            !gAskToSave && !gAskToDelete &&
            s_fmMenuMode == FM_MENU_NONE && gInputBoxIndex == 0u;
 }
@@ -360,6 +391,7 @@ uint16_t FM_WrapFrequency(uint16_t Frequency) {
 
 void FM_Tune(uint16_t Frequency, int8_t Step, bool bFlag)
 {
+    FM_InvalidateRssi();
     AUDIO_AudioPathOff();
 
     gEnableSpeaker = false;
@@ -393,6 +425,7 @@ void FM_AudioPathOn(void) {
 
 void FM_PlayAndUpdate(void)
 {
+    FM_InvalidateRssi();
     gFM_ScanState = FM_SCAN_OFF;
 
     if (gFM_AutoScan) {
@@ -721,8 +754,17 @@ static void Key_MENU(uint8_t state)
             if (gAskToSave) {
                 gFM_Channels[gFM_ChannelPosition] = gEeprom.FM_FrequencyPlaying;
                 gRequestSaveFM = true;
+                gAskToSave = false;
+            } else if (s_fmMenuMode == FM_MENU_NONE) {
+                s_fmMenuMode = FM_MENU_SAVE;
+            } else if (s_fmMenuMode == FM_MENU_SAVE) {
+                s_fmMenuMode = FM_MENU_NONE;
+                gAskToSave = true;
+            } else if (s_fmMenuMode == FM_MENU_LIVE_RSSI) {
+                s_fmLiveRssiSelection = FM_IsLiveRssiEnabled();
+                s_fmLiveRssiEdit = true;
+                s_fmMenuMode = FM_MENU_NONE;
             }
-            gAskToSave = !gAskToSave;
         }
         else {
             if (s_fmMenuMode == FM_MENU_NONE) {
@@ -740,6 +782,10 @@ static void Key_MENU(uint8_t state)
                 gRequestSaveFM = true;
             } else if (s_fmMenuMode == FM_MENU_NAME) {
                 FM_NameEditStart();
+            } else if (s_fmMenuMode == FM_MENU_LIVE_RSSI) {
+                s_fmLiveRssiSelection = FM_IsLiveRssiEnabled();
+                s_fmLiveRssiEdit = true;
+                s_fmMenuMode = FM_MENU_NONE;
             }
         }
     }
@@ -789,7 +835,15 @@ static void Key_UP_DOWN(uint8_t state, int8_t Step)
     }
 
     if (s_fmMenuMode != FM_MENU_NONE) {
-        s_fmMenuMode = (s_fmMenuMode == FM_MENU_NAME) ? FM_MENU_DELETE : FM_MENU_NAME;
+        if (!gEeprom.FM_IsMrMode) {
+            s_fmMenuMode = (s_fmMenuMode == FM_MENU_SAVE) ? FM_MENU_LIVE_RSSI : FM_MENU_SAVE;
+        } else if (Step > 0) {
+            s_fmMenuMode = (s_fmMenuMode == FM_MENU_NAME) ? FM_MENU_DELETE :
+                           (s_fmMenuMode == FM_MENU_DELETE) ? FM_MENU_LIVE_RSSI : FM_MENU_NAME;
+        } else {
+            s_fmMenuMode = (s_fmMenuMode == FM_MENU_NAME) ? FM_MENU_LIVE_RSSI :
+                           (s_fmMenuMode == FM_MENU_LIVE_RSSI) ? FM_MENU_DELETE : FM_MENU_NAME;
+        }
         gAskToDelete = (s_fmMenuMode == FM_MENU_DELETE);
         gRequestDisplayScreen = DISPLAY_FM;
         return;
@@ -834,6 +888,26 @@ Bail:
 void FM_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
     uint8_t state = bKeyPressed + 2 * bKeyHeld;
+
+    if (s_fmLiveRssiEdit) {
+        if (Key == KEY_MENU && state == BUTTON_EVENT_SHORT) {
+            if (s_fmLiveRssiSelection != FM_IsLiveRssiEnabled()) {
+                FM_SetLiveRssiEnabled(s_fmLiveRssiSelection);
+                gRequestSaveFM = true;
+            }
+            s_fmLiveRssiEdit = false;
+            gRequestDisplayScreen = DISPLAY_FM;
+        } else if (Key == KEY_EXIT && state == BUTTON_EVENT_PRESSED) {
+            s_fmLiveRssiEdit = false;
+            gRequestDisplayScreen = DISPLAY_FM;
+        } else if ((Key == KEY_UP || Key == KEY_DOWN) && state == BUTTON_EVENT_PRESSED) {
+            s_fmLiveRssiSelection = !s_fmLiveRssiSelection;
+            gRequestDisplayScreen = DISPLAY_FM;
+        } else if (Key == KEY_F) {
+            GENERIC_Key_F(bKeyPressed, bKeyHeld);
+        }
+        return;
+    }
 
     if (s_fmNameEdit) {
         if (Key == KEY_MENU) { Key_MENU(state); return; }
@@ -931,6 +1005,8 @@ void FM_Play(void)
 void FM_Start(void)
 {
     s_fmRssiLevel = 0xFFu;
+    s_fmLiveRssiEdit = false;
+    s_fmMenuMode = FM_MENU_NONE;
     gDualWatchActive          = false;
     gFmRadioMode              = true;
     gFM_ScanState             = FM_SCAN_OFF;

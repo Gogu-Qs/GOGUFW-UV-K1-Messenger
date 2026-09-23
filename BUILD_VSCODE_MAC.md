@@ -1,4 +1,4 @@
-# GOGUFW 2.0.5 - VS Code build (macOS)
+# GOGUFW 2.0.6 - VS Code build (macOS)
 
 ## Requirements
 - CMake
