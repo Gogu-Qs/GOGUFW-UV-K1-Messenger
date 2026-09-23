@@ -1,4 +1,4 @@
-# GOGUFW 2.0.5
+# GOGUFW 2.0.6
 
 GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3. It keeps the F4HWN Fusion radio feature set and adds an integrated radio-to-radio Messenger, HEARD list, multi-radio Range Check, CALLTX melodies, named FM memories, an Action Picker, per-channel scrambling and a multiboot environment.
 
@@ -6,7 +6,7 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3. It keeps the F4H
 
 | Statistic | Project status |
 | --- | --- |
-| 📦 **Current stable release** | GOGUFW 2.0.5 |
+| 📦 **Current stable release** | GOGUFW 2.0.6 |
 | 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
 | ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
 | ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
@@ -15,10 +15,10 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3. It keeps the F4H
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **FLASH usage** | 118,800 / 120,832 bytes · **98.32%** · 2,032 bytes free |
-| 🧠 **RAM usage** | 13,312 / 16,384 bytes · **81.25%** · 3,072 bytes free |
+| 💾 **FLASH usage** | 119,884 / 120,832 bytes · **99.22%** · 948 bytes free |
+| 🧠 **RAM usage** | 13,352 / 16,384 bytes · **81.49%** · 3,032 bytes free |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · Action Picker · FM names/RSSI · Scrambler |
-| 🔌 **CHIRP support** | Matching 2.0.5 module with 1024 memories, Messenger settings, FM names, channel policies and Scrambler |
+| 🔌 **CHIRP support** | Matching 2.0.6 module with 1024 memories, Messenger settings, FM names, channel policies and Scrambler |
 
 ## Compatibility and downloads
 
@@ -26,10 +26,10 @@ GOGUFW is intended only for Quansheng **UV-K1 / UV-K5 V3** radios built around t
 
 The current release contains:
 
-- `f4hwn.gogufw.v2.0.5.bin` — the multiboot-compatible firmware image;
-- `Gogufw_2.0.5_chirp_module.py` — the matching custom CHIRP module.
+- `f4hwn.gogufw.v2.0.6.bin` — the multiboot-compatible firmware image;
+- `Gogufw_2.0.6_chirp_module.py` — the matching custom CHIRP module.
 
-[Download GOGUFW 2.0.5](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.0.5)
+[Download GOGUFW 2.0.6](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.0.6)
 
 Back up the radio with CHIRP before updating and keep a known-good DFU recovery image available.
 
@@ -161,10 +161,10 @@ Hold **PTT + SetKey while powering on**. The default SetKey is **MENU**, so the 
 
 ## CHIRP
 
-Use the module that matches the firmware release. For GOGUFW 2.0.5:
+Use the module that matches the firmware release. For GOGUFW 2.0.6:
 
 1. Start CHIRP and choose **File → Load Module**.
-2. Select `Gogufw_2.0.5_chirp_module.py`.
+2. Select `Gogufw_2.0.6_chirp_module.py`.
 3. Download the radio using **Quansheng → UV-K1 / UV-K5 V3 GOGUFW Messenger**.
 4. Edit channels, side-key actions, Messenger/Call settings, FM names, `No FSK TX`, `No Roger` and Scrambler as required.
 5. Upload the completed image to the radio.
@@ -180,7 +180,7 @@ cmake --preset Fusion --fresh
 cmake --build --preset Fusion
 ```
 
-The build emits the normal `gogufw.bin` and the canonical multiboot filename `f4hwn.gogufw.v2.0.5.bin`. See `BUILD_VSCODE_MAC.md` or `BUILD_WITH_VSCODE.md` for environment setup.
+The build emits the normal `gogufw.bin` and the canonical multiboot filename `f4hwn.gogufw.v2.0.6.bin`. See `BUILD_VSCODE_MAC.md` or `BUILD_WITH_VSCODE.md` for environment setup.
 
 ## Credits and license
 
