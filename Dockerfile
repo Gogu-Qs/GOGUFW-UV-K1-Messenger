@@ -12,7 +12,7 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list && \
 # Install ARM GNU Toolchain (host autodetect)
 # Works with or without TARGETARCH/BuildKit
 # ---------------------------------------------
-ARG ARM_GCC_VERSION=13.3.rel1
+ARG ARM_GCC_VERSION=15.2.rel1
 ARG TARGETARCH  # may be unset under legacy builder
 
 RUN set -e; \
@@ -25,7 +25,7 @@ RUN set -e; \
       *)             HOSTARCH="x86_64" ;; \
     esac; \
     TARBALL="arm-gnu-toolchain-${ARM_GCC_VERSION}-${HOSTARCH}-arm-none-eabi.tar.xz"; \
-    URL="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/${ARM_GCC_VERSION}/binrel/${TARBALL}"; \
+    URL="https://developer.arm.com/-/media/Files/downloads/gnu/${ARM_GCC_VERSION}/binrel/${TARBALL}"; \
     echo "Downloading ${URL}"; \
     curl -fL -O "${URL}"; \
     tar -xf "${TARBALL}"; \
