@@ -31,3 +31,8 @@ __pycache__/
 /*.hex
 /reports/
 /archive/
+
+# README/Wiki screenshots published with the repository.
+!/docs/
+!/docs/screenshots/
+!/docs/screenshots/*.png

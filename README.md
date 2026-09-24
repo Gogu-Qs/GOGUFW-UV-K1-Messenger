@@ -1,12 +1,12 @@
-# GOGUFW 2.0.6
+# GOGUFW 2.1.1
 
-GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3. It keeps the F4HWN Fusion radio feature set and adds an integrated radio-to-radio Messenger, HEARD list, multi-radio Range Check, CALLTX melodies, named FM memories, an Action Picker, per-channel scrambling and a multiboot environment.
+GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3. It keeps the F4HWN Fusion radio feature set and adds an integrated radio-to-radio Messenger, HEARD list, multi-radio Range Check, CALLTX melodies, RF Log Lite, named FM memories, an Action Picker, per-channel scrambling and a multiboot environment.
 
 ## Firmware at a glance
 
 | Statistic | Project status |
 | --- | --- |
-| 📦 **Current stable release** | GOGUFW 2.0.6 |
+| 📦 **Current stable release** | GOGUFW 2.1.1 |
 | 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
 | ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
 | ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
@@ -15,10 +15,10 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3. It keeps the F4H
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **FLASH usage** | 119,884 / 120,832 bytes · **99.22%** · 948 bytes free |
-| 🧠 **RAM usage** | 13,352 / 16,384 bytes · **81.49%** · 3,032 bytes free |
-| ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · Action Picker · FM names/RSSI · Scrambler |
-| 🔌 **CHIRP support** | Matching 2.0.6 module with 1024 memories, Messenger settings, FM names, channel policies and Scrambler |
+| 💾 **FLASH usage** | 119,008 / 120,832 bytes · **98.49%** · 1,824 bytes free |
+| 🧠 **RAM usage** | 13,504 / 16,384 bytes · **82.42%** · 2,880 bytes free |
+| ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · RF Log Lite · Action Picker · FM names/RSSI · Scrambler |
+| 🔌 **CHIRP support** | Matching 2.1.1 module with 1024 memories, Messenger settings, FM names, channel policies and Scrambler |
 
 ## Compatibility and downloads
 
@@ -26,10 +26,10 @@ GOGUFW is intended only for Quansheng **UV-K1 / UV-K5 V3** radios built around t
 
 The current release contains:
 
-- `f4hwn.gogufw.v2.0.6.bin` — the multiboot-compatible firmware image;
-- `Gogufw_2.0.6_chirp_module.py` — the matching custom CHIRP module.
+- `f4hwn.gogufw.v2.1.1.bin` — the multiboot-compatible firmware image;
+- `Gogufw_2.1.1_chirp_module.py` — the matching custom CHIRP module.
 
-[Download GOGUFW 2.0.6](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.0.6)
+[Download GOGUFW 2.1.1](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.1.1)
 
 Back up the radio with CHIRP before updating and keep a known-good DFU recovery image available.
 
@@ -85,6 +85,12 @@ Each side key remembers its last picker selection. The picker is available on th
 
 Some radio actions are unsafe while the FM receiver is active; selecting one of those actions in FM gives a double warning beep instead of changing radio state.
 
+### RF Log Lite
+
+RF Log Lite is GOGUFW's compact, low-memory activity history. It keeps the latest 20 completed analog RX/TX events and shows the channel name or VFO frequency, direction, `MM:SS` duration and age. The list is stored only in RAM and is cleared when the radio restarts, avoiding external-flash writes.
+
+Open **RF LOG** from the Action Picker, or assign it directly to a programmable side-key action. Use **UP/DOWN** to browse one entry at a time, **MENU / SELECT** to load the selected memory channel or frequency into the active VFO, and **EXIT** to return without changing it.
+
 ### CALLTX
 
 CALLTX transmits one of five selectable alert melodies using the existing radio TX path.
@@ -139,6 +145,38 @@ Hold **MENU while powering on** to open the firmware-slot selector.
 - Calibration and the boot logo remain shared.
 - GOGUFW can run as Main or from a slot and uses the official F4HWN multiboot image format.
 
+## Screens
+
+### Messenger
+
+| Messenger home | Inbox |
+| --- | --- |
+| ![Messenger home screen](docs/screenshots/uv-k5-screenshot17.png) | ![Messenger Inbox](docs/screenshots/uv-k5-screenshot18.png) |
+
+| Compose | Message details and delivery state |
+| --- | --- |
+| ![Compose a Messenger message](docs/screenshots/uv-k5-screenshot19.png) | ![Messenger message details](docs/screenshots/uv-k5-screenshot20.png) |
+
+### HEARD and Range Check
+
+| Recently heard stations | Range Check result |
+| --- | --- |
+| ![HEARD station list](docs/screenshots/heard.png) | ![Range Check result](docs/screenshots/rangecheck.png) |
+
+![Waiting for Range Check replies](docs/screenshots/waitpong.png)
+
+### FM broadcast radio
+
+| Live signal meter | Named station memory |
+| --- | --- |
+| ![FM radio signal meter](docs/screenshots/radio_vfo.png) | ![Named FM station memory](docs/screenshots/radio_name.png) |
+
+![FM radio menu](docs/screenshots/radio_menu.png)
+
+### Programmable key actions
+
+![Selecting a GOGUFW side-key action](docs/screenshots/f1short.png)
+
 ### Survival Mode
 
 Survival Mode is a temporary basic-radio session for voice operation with fewer background features. Messenger/FSK, HEARD/Range Check, scanning, FM radio, Spectrum, Dual Watch, cross-band operation and VOX are disabled for that session.
@@ -156,15 +194,16 @@ Hold **PTT + SetKey while powering on**. The default SetKey is **MENU**, so the 
 | Backlight override cycle | **F + 8**: always on → always off → saved strategy |
 | Keypad lock | Hold **F** |
 | Action Picker | Press **F**, then hold **SIDE1** or **SIDE2** |
+| RF Log Lite | Select **RF LOG** in the Action Picker or assign it to a side key |
 | Multiboot | Hold **MENU** while powering on |
 | Survival Mode | Hold **PTT + SetKey** while powering on |
 
 ## CHIRP
 
-Use the module that matches the firmware release. For GOGUFW 2.0.6:
+Use the module that matches the firmware release. For GOGUFW 2.1.1:
 
 1. Start CHIRP and choose **File → Load Module**.
-2. Select `Gogufw_2.0.6_chirp_module.py`.
+2. Select `Gogufw_2.1.1_chirp_module.py`.
 3. Download the radio using **Quansheng → UV-K1 / UV-K5 V3 GOGUFW Messenger**.
 4. Edit channels, side-key actions, Messenger/Call settings, FM names, `No FSK TX`, `No Roger` and Scrambler as required.
 5. Upload the completed image to the radio.
@@ -180,7 +219,7 @@ cmake --preset Fusion --fresh
 cmake --build --preset Fusion
 ```
 
-The build emits the normal `gogufw.bin` and the canonical multiboot filename `f4hwn.gogufw.v2.0.6.bin`. See `BUILD_VSCODE_MAC.md` or `BUILD_WITH_VSCODE.md` for environment setup.
+The build emits the normal `gogufw.bin` and the canonical multiboot filename `f4hwn.gogufw.v2.1.1.bin`. See `BUILD_VSCODE_MAC.md` or `BUILD_WITH_VSCODE.md` for environment setup.
 
 ## Credits and license
 
