@@ -25,6 +25,7 @@ target_sources(App INTERFACE
     app/main.c
     app/menu.c
     app/scanner.c
+    app/text_input.c
     audio.c
     bitmaps.c
     board.c
@@ -145,7 +146,6 @@ enable_feature(ENABLE_MESSENGER
     app/messenger.c
     app/messenger_store.c
     app/messenger_packet.c
-    app/messenger_t9.c
     app/messenger_ui.c
     app/messenger_rf.c
 )
@@ -155,6 +155,7 @@ enable_feature(ENABLE_FEAT_F4HWN_MULTIBOOT
     driver/mb_flash_logic.c
     ui/multiboot.c
 )
+
 enable_feature(ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY)
 
 if(ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY AND NOT ENABLE_FEAT_F4HWN_MULTIBOOT)
@@ -230,6 +231,9 @@ enable_feature(ENABLE_FEAT_F4HWN_DEBUG)
 enable_feature(ENABLE_FEAT_F4HWN_MEM)
 enable_feature(ENABLE_FEAT_F4HWN_ACTION_PICKER)
 enable_feature(ENABLE_GOGUFW_SCRAMBLER)
+enable_feature(ENABLE_GOGUFW_CALLTX
+    app/calltx_store.c
+)
 enable_feature(ENABLE_GOGUFW_RF_LOG
     app/rf_log.c
 )

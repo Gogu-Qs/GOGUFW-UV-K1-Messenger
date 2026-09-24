@@ -20,12 +20,16 @@
 #include <stdint.h>
 #include "driver/keyboard.h"
 
+#ifdef ENABLE_GOGUFW_CALLTX
 extern bool gCallToneTxActive;
+#endif
 
 void MAIN_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
+#ifdef ENABLE_GOGUFW_CALLTX
 KEY_Code_t MAIN_PlayCallTonePreview(uint8_t tone);
-KEY_Code_t MAIN_PlayRogerPreview(uint8_t mode);
 void MAIN_SendPmrCallToneAction(void);
+#endif
+KEY_Code_t MAIN_PlayRogerPreview(uint8_t mode);
 void channelMoveSwitch(void);
 
 #endif

@@ -1369,7 +1369,11 @@ void RADIO_SendEndOfTransmission(void)
     /* CALLTX already consists entirely of an alert melody.  Its shared TX
      * shutdown path must still send DTMF/CSS tails and restore RX, but must
      * not append the normal voice PTT Roger/MDC signal. */
+#ifdef ENABLE_GOGUFW_CALLTX
     if (!gCallToneTxActive && !gCurrentVfo->NO_ROGER)
+#else
+    if (!gCurrentVfo->NO_ROGER)
+#endif
         BK4819_PlayRoger(Bandwidth);
     DTMF_SendEndOfTransmission();
 

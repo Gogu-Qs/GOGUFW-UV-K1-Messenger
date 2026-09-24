@@ -67,8 +67,6 @@ static void MSG_STORE_DefaultConfig(void)
     gMessengerConfig.msg_ack = 0;
     gMessengerConfig.msg_beep = 1;
     gMessengerConfig.msg_led = 1;
-    gMessengerConfig.call_tone = 0;
-    gMessengerConfig.call_vol = 1;
     gMessengerConfig.rng_rsp = 1;
     gMessengerConfig.next_msg_id = 1;
     strncpy(gMessengerConfig.callsign, "UVK1", MSG_CALLSIGN_EDIT_LEN);
@@ -98,14 +96,26 @@ static void MSG_STORE_SanitizeCallsign(void)
     }
 }
 
+static void MSG_STORE_WriteCallSettings(uint8_t tone, uint8_t volume)
+{
+    const uint8_t stored[2] = {tone, volume};
+    flash_write_struct(MSG_CFG_FLASH_ADDR + offsetof(MSG_ConfigFlash_t, call_tone),
+                       stored, sizeof(stored));
+}
+
 void MSG_STORE_SaveConfig(void)
 {
     MSG_ConfigPrefix_t prefix;
-    const uint8_t tail[3] = {
-        gMessengerConfig.call_tone,
-        gMessengerConfig.call_vol,
-        gMessengerConfig.rng_rsp,
-    };
+    uint8_t tail[3];
+
+    /* CALLTX owns these first two bytes. Read them immediately before saving
+     * Messenger settings so a Messenger menu change can never overwrite a
+     * newer CALLTX selection with stale runtime state. */
+    flash_read_struct(MSG_CFG_FLASH_ADDR + offsetof(MSG_ConfigFlash_t, call_tone),
+                      tail, 2u);
+    if (tail[0] > 4u) tail[0] = 0u;
+    if (tail[1] > 1u) tail[1] = 1u;
+    tail[2] = gMessengerConfig.rng_rsp;
 
     MSG_STORE_SanitizeCallsign();
     memset(&prefix, 0, sizeof(prefix));
@@ -133,8 +143,6 @@ static void MSG_STORE_LoadRuntime(const MSG_ConfigFlash_t *stored)
     gMessengerConfig.msg_led = stored->msg_led;
     gMessengerConfig.next_msg_id = stored->next_msg_id ? stored->next_msg_id : 1u;
     memcpy(gMessengerConfig.callsign, stored->callsign, sizeof(gMessengerConfig.callsign));
-    gMessengerConfig.call_tone = stored->call_tone;
-    gMessengerConfig.call_vol = stored->call_vol;
     gMessengerConfig.rng_rsp = stored->rng_rsp;
 }
 
@@ -184,6 +192,7 @@ void MSG_STORE_Init(void)
     flash_read_struct(MSG_CFG_FLASH_ADDR, &stored, sizeof(stored));
     if (stored.magic != MSG_CFG_MAGIC) {
         MSG_STORE_DefaultConfig();
+        MSG_STORE_WriteCallSettings(0u, 1u);
         MSG_STORE_SaveConfig();
         MSG_STORE_WriteDefaultDrafts();
     } else if (stored.version == 4u) {
@@ -191,8 +200,7 @@ void MSG_STORE_Init(void)
         // CllTon/CllVol are appended at the end only.
         MSG_STORE_DefaultConfig();
         MSG_STORE_LoadRuntime(&stored);
-        gMessengerConfig.call_tone = 0;
-        gMessengerConfig.call_vol = 1;
+        MSG_STORE_WriteCallSettings(0u, 1u);
         gMessengerConfig.rng_rsp = 1;
         MSG_STORE_SaveConfig();
     } else if (MSG_STORE_LooksLikeBadV5(&stored)) {
@@ -208,8 +216,8 @@ void MSG_STORE_Init(void)
         gMessengerConfig.msg_led = bad->msg_led;
         gMessengerConfig.next_msg_id = bad->next_msg_id ? bad->next_msg_id : 1u;
         memcpy(gMessengerConfig.callsign, bad->callsign, sizeof(gMessengerConfig.callsign));
-        gMessengerConfig.call_tone = (bad->call_tone <= 4u) ? bad->call_tone : 0u;
-        gMessengerConfig.call_vol = (bad->call_vol == 0u) ? 0u : 1u;
+        MSG_STORE_WriteCallSettings((bad->call_tone <= 4u) ? bad->call_tone : 0u,
+                                    (bad->call_vol == 0u) ? 0u : 1u);
         gMessengerConfig.rng_rsp = 1;
         memmove(stored.drafts, bad->drafts, sizeof(stored.drafts));
         flash_write_struct(MSG_CFG_FLASH_ADDR + offsetof(MSG_ConfigFlash_t, drafts),
@@ -219,19 +227,16 @@ void MSG_STORE_Init(void)
     } else if (stored.version == 6u) {
         /* v7 appends RngRsp at the end only; preserve all v6 offsets. */
         MSG_STORE_LoadRuntime(&stored);
-        if (gMessengerConfig.call_tone > 4u) gMessengerConfig.call_tone = 0;
-        if (gMessengerConfig.call_vol > 1u) gMessengerConfig.call_vol = 1;
         gMessengerConfig.rng_rsp = 1;
         MSG_STORE_SanitizeCallsign();
         MSG_STORE_SaveConfig();
     } else if (stored.version != MSG_CFG_VERSION) {
         MSG_STORE_DefaultConfig();
+        MSG_STORE_WriteCallSettings(0u, 1u);
         MSG_STORE_SaveConfig();
         MSG_STORE_WriteDefaultDrafts();
     } else {
         MSG_STORE_LoadRuntime(&stored);
-        if (gMessengerConfig.call_tone > 4u) gMessengerConfig.call_tone = 0;
-        if (gMessengerConfig.call_vol > 1u) gMessengerConfig.call_vol = 1;
         if (gMessengerConfig.rng_rsp > 1u) gMessengerConfig.rng_rsp = 1;
         MSG_STORE_SanitizeCallsign();
     }

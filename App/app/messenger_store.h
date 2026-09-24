@@ -48,12 +48,10 @@ typedef struct {
     uint8_t msg_led;
     uint16_t next_msg_id;
     char    callsign[MSG_CALLSIGN_LEN + 1];
-    uint8_t call_tone;   // 0..4, CllTon menu
-    uint8_t call_vol;    // 0=LOW, 1=HIGH, CALLTX tone-generator gain
     uint8_t rng_rsp;     // 0=OFF, 1=ON automatic Range Check PONG response
 } MSG_Config_t;
 
-_Static_assert(sizeof(MSG_Config_t) == 18u, "unexpected runtime config layout");
+_Static_assert(sizeof(MSG_Config_t) == 16u, "unexpected runtime config layout");
 
 extern MSG_Config_t gMessengerConfig;
 extern MSG_InboxMessage_t gMessengerInbox[MSG_INBOX_CAPACITY];

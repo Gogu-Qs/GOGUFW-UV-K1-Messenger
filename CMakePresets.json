@@ -70,6 +70,7 @@
                 "ENABLE_FEAT_F4HWN_MEM": false,
                 "ENABLE_FEAT_F4HWN_ACTION_PICKER": true,
                 "ENABLE_GOGUFW_SCRAMBLER": true,
+                "ENABLE_GOGUFW_CALLTX": false,
                 "ENABLE_GOGUFW_RF_LOG": false,
                 "ENABLE_FEAT_F4HWN_SCAN_PROGRESS": false,
                 "ENABLE_FEAT_F4HWN_SCAN_FASTER": false,
@@ -79,7 +80,7 @@
                 "ENABLE_UART_RW_BK_REGS": false,
                 "ENABLE_SWD": false,
                 "VERSION_STRING_1": "v0.22",
-                "VERSION_STRING_2": "v2.1.0"
+                "VERSION_STRING_2": "v2.1.1"
             }
         },
         {
@@ -110,6 +111,7 @@
                 "ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY": true,
                 "ENABLE_FEAT_F4HWN_LOGO": true,
                 "ENABLE_FEAT_F4HWN_LOGO_SAV": false,
+                "ENABLE_GOGUFW_CALLTX": true,
                 "ENABLE_GOGUFW_RF_LOG": true,
                 "ENABLE_SWD": true,
                 "EDITION_STRING": "GGFW",

@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include "app/messenger_store.h"
 #include "app/messenger.h"
-#include "app/messenger_t9.h"
+#include "app/text_input.h"
 #include "app/messenger_packet.h"
 #include "driver/st7565.h"
 #include "external/printf/printf.h"
@@ -18,7 +18,7 @@ extern uint8_t gMsgScroll;
 extern uint8_t gMsgReadIndex;
 extern uint8_t gMsgReadSource;
 extern char gMsgComposeBuf[];
-extern MSG_T9Editor_t gMsgEditor;
+extern TEXT_INPUT_Editor_t gMsgEditor;
 extern uint8_t gMsgScreen;
 
 extern uint8_t gMsgRangeCount;

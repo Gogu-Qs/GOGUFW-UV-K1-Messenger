@@ -20,8 +20,10 @@
 #include "app/action.h"
 #ifdef ENABLE_MESSENGER
 #include "app/messenger.h"
-#include "app/main.h"
 #include "app/messenger_rf.h"
+#endif
+#if defined(ENABLE_MESSENGER) || defined(ENABLE_GOGUFW_CALLTX)
+#include "app/main.h"
 #endif
 #ifdef ENABLE_GOGUFW_RF_LOG
 #include "app/rf_log.h"
@@ -102,6 +104,9 @@ static void ACTION_OpenHeard(void)
     MSG_RangeOpen();
 }
 
+#endif
+
+#ifdef ENABLE_GOGUFW_CALLTX
 static void ACTION_CallTx(void)
 {
     MAIN_SendPmrCallToneAction();
@@ -200,6 +205,8 @@ void (*const action_opt_table[ACTION_OPT_LEN])(void) = {
 #ifdef ENABLE_MESSENGER
     [ACTION_OPT_MESSENGER] = &ACTION_OpenMessenger,
     [ACTION_OPT_HEARD]     = &ACTION_OpenHeard,
+#endif
+#ifdef ENABLE_GOGUFW_CALLTX
     [ACTION_OPT_CALLTX]    = &ACTION_CallTx,
 #endif
 #ifdef ENABLE_GOGUFW_RF_LOG
@@ -829,7 +836,8 @@ void ACTION_BackLight(void)
 void ACTION_BackLightOnDemand(void)
 {
     /* GOGUFW 0.5.18 hotfix:
-     * Keep F+9 available for CALLTX and make F+8 a complete 3-step
+     * Keep this 3-step behavior even when CALLTX is disabled. F+9 must never
+     * regain the old backlight-cancel role. Make F+8 a complete 3-step
      * backlight cycle by moving the original F+9 "return to BackLt
      * strategy" behavior into the third F+8 press.
      *

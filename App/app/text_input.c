@@ -1,7 +1,7 @@
 #include <string.h>
-#include "app/messenger_t9.h"
+#include "app/text_input.h"
 
-#define MSG_T9_COMMIT_TICKS 80U  /* 800 ms at 10 ms MSG_Tick cadence */
+#define TEXT_INPUT_COMMIT_TICKS 80U  /* 800 ms at 10 ms tick cadence */
 
 static const char *map_chars(KEY_Code_t key)
 {
@@ -28,7 +28,7 @@ static char apply_case(char c, bool upper)
     return c;
 }
 
-void MSG_T9_Start(MSG_T9Editor_t *ed, char *buf, uint8_t max_len)
+void TEXT_INPUT_Start(TEXT_INPUT_Editor_t *ed, char *buf, uint8_t max_len)
 {
     ed->buffer = buf;
     ed->max_len = max_len;
@@ -42,7 +42,7 @@ void MSG_T9_Start(MSG_T9Editor_t *ed, char *buf, uint8_t max_len)
     ed->has_pending = false;
 }
 
-void MSG_T9_Commit(MSG_T9Editor_t *ed)
+void TEXT_INPUT_Commit(TEXT_INPUT_Editor_t *ed)
 {
     if (!ed) return;
     ed->pending_key = KEY_INVALID;
@@ -51,18 +51,18 @@ void MSG_T9_Commit(MSG_T9Editor_t *ed)
     ed->has_pending = false;
 }
 
-void MSG_T9_Tick(MSG_T9Editor_t *ed)
+void TEXT_INPUT_Tick(TEXT_INPUT_Editor_t *ed)
 {
     if (!ed || !ed->has_pending) return;
-    if (++ed->pending_ticks >= MSG_T9_COMMIT_TICKS) MSG_T9_Commit(ed);
+    if (++ed->pending_ticks >= TEXT_INPUT_COMMIT_TICKS) TEXT_INPUT_Commit(ed);
 }
 
-bool MSG_T9_HandleKey(MSG_T9Editor_t *ed, KEY_Code_t key)
+bool TEXT_INPUT_HandleKey(TEXT_INPUT_Editor_t *ed, KEY_Code_t key)
 {
     if (!ed || !ed->buffer) return false;
 
     if (key == KEY_STAR) {
-        MSG_T9_Commit(ed);
+        TEXT_INPUT_Commit(ed);
         ed->mode = (uint8_t)((ed->mode + 1U) % 3U);
         ed->upper = (ed->mode == 0U);
         return true;
@@ -70,7 +70,7 @@ bool MSG_T9_HandleKey(MSG_T9Editor_t *ed, KEY_Code_t key)
 
     if (key == KEY_F || key == KEY_EXIT) {
         if (ed->len > 0) ed->buffer[--ed->len] = 0;
-        MSG_T9_Commit(ed);
+        TEXT_INPUT_Commit(ed);
         return true;
     }
 
@@ -81,7 +81,7 @@ bool MSG_T9_HandleKey(MSG_T9Editor_t *ed, KEY_Code_t key)
     /* Numeric mode: STAR cycles B -> b -> 2.  In mode 2, each keypad
      * press inserts the digit immediately; no multi-tap pending state. */
     if (ed->mode == 2U) {
-        MSG_T9_Commit(ed);
+        TEXT_INPUT_Commit(ed);
         if (ed->len >= ed->max_len) return true;
         if (key >= KEY_0 && key <= KEY_9) {
             ed->buffer[ed->len++] = (char)('0' + (uint8_t)key);
@@ -98,7 +98,7 @@ bool MSG_T9_HandleKey(MSG_T9Editor_t *ed, KEY_Code_t key)
         return true;
     }
 
-    MSG_T9_Commit(ed);
+    TEXT_INPUT_Commit(ed);
     if (ed->len >= ed->max_len) return true;
     ed->cycle_index = 0;
     ed->pending_key = key;
@@ -109,7 +109,7 @@ bool MSG_T9_HandleKey(MSG_T9Editor_t *ed, KEY_Code_t key)
     return true;
 }
 
-bool MSG_T9_HandleLongKey(MSG_T9Editor_t *ed, KEY_Code_t key)
+bool TEXT_INPUT_HandleLongKey(TEXT_INPUT_Editor_t *ed, KEY_Code_t key)
 {
     if (!ed || !ed->buffer) return false;
     if (key < KEY_0 || key > KEY_9) return false;
@@ -117,7 +117,7 @@ bool MSG_T9_HandleLongKey(MSG_T9Editor_t *ed, KEY_Code_t key)
     /* 0.2.2: while in B/b modes, long-pressing a numeric key inserts its
      * digit directly.  This preserves the existing B/b/2 modes but removes
      * the need to switch to numeric mode just to type one number. */
-    MSG_T9_Commit(ed);
+    TEXT_INPUT_Commit(ed);
     if (ed->len >= ed->max_len) return true;
     ed->buffer[ed->len++] = (char)('0' + (uint8_t)key);
     ed->buffer[ed->len] = 0;

@@ -34,7 +34,9 @@
 #include "../settings.h"
 #ifdef ENABLE_MESSENGER
     #include "app/messenger_store.h"
-    #include "app/main.h"
+#endif
+#ifdef ENABLE_GOGUFW_CALLTX
+    #include "app/calltx_store.h"
 #endif
 
 #ifdef ENABLE_FEAT_F4HWN
@@ -185,9 +187,11 @@ const t_menu_item MenuList[] =
     {"SetCfg",      MENU_SET_CFG       },
 #endif
 #endif
-#ifdef ENABLE_MESSENGER
+#ifdef ENABLE_GOGUFW_CALLTX
     {"CllTon",      MENU_CALL_TONE    },
     {"CllVol",      MENU_CALL_VOL     },
+#endif
+#ifdef ENABLE_MESSENGER
     {"MsgRx",       MENU_MSG_RX       },
     {"MsgCsg",      MENU_MSG_CSG      },
     {"MsgAck",      MENU_MSG_ACK      },
@@ -556,6 +560,8 @@ const t_sidefunction gSubMenu_SIDEFUNCTIONS[] =
 #ifdef ENABLE_MESSENGER
     {"MESSENGER",       ACTION_OPT_MESSENGER},
     {"HEARD",           ACTION_OPT_HEARD},
+#endif
+#ifdef ENABLE_GOGUFW_CALLTX
     {"CALLTX",          ACTION_OPT_CALLTX},
 #endif
 #ifdef ENABLE_GOGUFW_RF_LOG
@@ -590,9 +596,7 @@ char    edit[17];
 int     edit_index;
 bool    edit_is_uppercase = false;
 
-#ifdef ENABLE_MESSENGER
 extern uint8_t gMenuTextEditorMode;
-#endif
 
 static uint8_t UI_MENU_TextEditMaxLenFor(const int m)
 {
@@ -605,10 +609,8 @@ static uint8_t UI_MENU_TextEditMaxLenFor(const int m)
 
 static const char *UI_MENU_TextEditModeLabel(void)
 {
-#ifdef ENABLE_MESSENGER
     if (gMenuTextEditorMode == 2u) return "2";
     if (gMenuTextEditorMode == 1u) return "b";
-#endif
     return edit_is_uppercase ? "B" : "b";
 }
 
@@ -1100,10 +1102,12 @@ void UI_DisplayMenu(void)
             strcpy(String, gSubMenu_OFF_ON[value]);
             break;
         }
+#endif
+#ifdef ENABLE_GOGUFW_CALLTX
         case MENU_CALL_TONE:
         {
             uint8_t value = (uint8_t)gSubMenuSelection;
-            if (!gIsInSubMenu) { MSG_STORE_Init(); value = gMessengerConfig.call_tone; }
+            if (!gIsInSubMenu) { CALLTX_STORE_Init(); value = gCallTxTone; }
             if (value > 4u) value = 0;
             sprintf(String, "TONE%u", (unsigned)(value + 1u));
             break;
@@ -1112,7 +1116,7 @@ void UI_DisplayMenu(void)
         {
             static const char * const names[] = { "LOW", "HIGH" };
             uint8_t value = (uint8_t)gSubMenuSelection;
-            if (!gIsInSubMenu) { MSG_STORE_Init(); value = gMessengerConfig.call_vol; }
+            if (!gIsInSubMenu) { CALLTX_STORE_Init(); value = gCallTxVol; }
             if (value > 1u) value = 1;
             strcpy(String, names[value]);
             break;

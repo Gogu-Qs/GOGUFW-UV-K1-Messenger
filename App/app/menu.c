@@ -28,8 +28,11 @@
 #include "app/main.h"
 #ifdef ENABLE_MESSENGER
     #include "app/messenger_store.h"
-    #include "app/messenger_t9.h"
 #endif
+#ifdef ENABLE_GOGUFW_CALLTX
+    #include "app/calltx_store.h"
+#endif
+#include "app/text_input.h"
 #include "app/scanner.h"
 #include "audio.h"
 #include "board.h"
@@ -497,14 +500,16 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
         case MENU_RNG_RSP:
             *pMax = 1;
             break;
+        case MENU_MSG_LED:
+            *pMax = 2;
+            break;
+#endif
+#ifdef ENABLE_GOGUFW_CALLTX
         case MENU_CALL_TONE:
             *pMax = 4;
             break;
         case MENU_CALL_VOL:
             *pMax = 1;
-            break;
-        case MENU_MSG_LED:
-            *pMax = 2;
             break;
 #endif
 
@@ -580,14 +585,16 @@ void MENU_AcceptSetting(void)
             gMessengerConfig.msg_ack = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
         case MENU_MSG_BEEP:
             gMessengerConfig.msg_beep = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
-        case MENU_CALL_TONE:
-            gMessengerConfig.call_tone = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
-        case MENU_CALL_VOL:
-            gMessengerConfig.call_vol = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
         case MENU_MSG_LED:
             gMessengerConfig.msg_led = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
         case MENU_RNG_RSP:
             gMessengerConfig.rng_rsp = gSubMenuSelection; MSG_STORE_SaveConfig(); break;
+#endif
+#ifdef ENABLE_GOGUFW_CALLTX
+        case MENU_CALL_TONE:
+            gCallTxTone = gSubMenuSelection; CALLTX_STORE_Save(); break;
+        case MENU_CALL_VOL:
+            gCallTxVol = gSubMenuSelection; CALLTX_STORE_Save(); break;
 #endif
 
         case MENU_SQL:
@@ -1156,14 +1163,16 @@ void MENU_ShowCurrentSetting(void)
             MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.msg_ack; break;
         case MENU_MSG_BEEP:
             MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.msg_beep; break;
-        case MENU_CALL_TONE:
-            MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.call_tone; break;
-        case MENU_CALL_VOL:
-            MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.call_vol; break;
         case MENU_MSG_LED:
             MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.msg_led; break;
         case MENU_RNG_RSP:
             MSG_STORE_Init(); gSubMenuSelection = gMessengerConfig.rng_rsp; break;
+#endif
+#ifdef ENABLE_GOGUFW_CALLTX
+        case MENU_CALL_TONE:
+            CALLTX_STORE_Init(); gSubMenuSelection = gCallTxTone; break;
+        case MENU_CALL_VOL:
+            CALLTX_STORE_Init(); gSubMenuSelection = gCallTxVol; break;
 #endif
 
         case MENU_SQL:
@@ -1627,10 +1636,8 @@ void MENU_ShowCurrentSetting(void)
 
 static KEY_Code_t edit_last_key = 255;
 static uint8_t edit_char_index = 0;
-#ifdef ENABLE_MESSENGER
-static MSG_T9Editor_t s_menuTextEditor;
+static TEXT_INPUT_Editor_t s_menuTextEditor;
 uint8_t gMenuTextEditorMode; /* 0=B, 1=b, 2=2; displayed by UI menu editor */
-#endif
 
 
 static bool MENU_IsTextEditMenuItemId(const int m)
@@ -1662,14 +1669,12 @@ static bool MENU_IsEditingName() {
 
 void MENU_TextEditTick10ms(void)
 {
-#ifdef ENABLE_MESSENGER
-    /* Compose already advances its T9 commit timeout from MSG_Tick().  The
-     * Callsign and ChName editors share the same T9 core, so advance their
+    /* Compose advances its own timeout from MSG_Tick(). Callsign and ChName
+     * editors share the independent text-input core, so advance their
      * pending key here as well.  After 800 ms, pressing the same number starts
      * a new character instead of cycling the previous one. */
     if (MENU_IsEditingName())
-        MSG_T9_Tick(&s_menuTextEditor);
-#endif
+        TEXT_INPUT_Tick(&s_menuTextEditor);
 }
 
 static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
@@ -1691,15 +1696,11 @@ static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
     if (MENU_IsTextEditMenuItemId(UI_MENU_GetCurrentMenuId()) && edit_index >= 0)
     {   // unified GGFW text editor path
-#ifdef ENABLE_MESSENGER
-        if (bKeyHeld) MSG_T9_HandleLongKey(&s_menuTextEditor, Key);
-        else          MSG_T9_HandleKey(&s_menuTextEditor, Key);
+        if (bKeyHeld) TEXT_INPUT_HandleLongKey(&s_menuTextEditor, Key);
+        else          TEXT_INPUT_HandleKey(&s_menuTextEditor, Key);
         edit_is_uppercase = s_menuTextEditor.upper;
         gMenuTextEditorMode = s_menuTextEditor.mode;
         edit_index = s_menuTextEditor.len;
-#else
-        (void)Key;
-#endif
         edit_last_key = 255;
         gRequestDisplayScreen = DISPLAY_MENU;
         return;
@@ -2026,19 +2027,16 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
             edit_last_key = 255;
             edit_char_index = 0;
             edit_is_uppercase = true;
-#ifdef ENABLE_MESSENGER
-            /* GGFW: use the same multi-tap/T9 core as Messenger/FM naming for
-             * all menu text fields instead of the old per-menu editor feel. */
+            /* Use the shared multi-tap editor for every menu text field. */
             {
                 uint8_t tlen = edit_max_len;
                 while (tlen > 0u && (edit[tlen - 1u] == ' ' || edit[tlen - 1u] == 0xff)) tlen--;
                 edit[tlen] = 0;
-                MSG_T9_Start(&s_menuTextEditor, edit, edit_max_len);
+                TEXT_INPUT_Start(&s_menuTextEditor, edit, edit_max_len);
                 edit_is_uppercase = s_menuTextEditor.upper;
                 gMenuTextEditorMode = s_menuTextEditor.mode;
                 edit_index = s_menuTextEditor.len;
             }
-#endif
 
             // make a copy so we can test for change when exiting the menu item
             memcpy(edit_original, edit, sizeof(edit_original));
@@ -2049,9 +2047,7 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
         if (edit_index >= 0 && edit_index < edit_max_len)
         {   // finish editing text characters
             edit_last_key = 255;
-#ifdef ENABLE_MESSENGER
-            MSG_T9_Commit(&s_menuTextEditor);
-#endif
+            TEXT_INPUT_Commit(&s_menuTextEditor);
             edit_index = edit_max_len;
 
             // exit
@@ -2171,14 +2167,12 @@ static void MENU_Key_STAR(const bool bKeyPressed, const bool bKeyHeld)
 
     if (MENU_IsTextEditMenuItemId(UI_MENU_GetCurrentMenuId()) && edit_index >= 0)
     {
-#ifdef ENABLE_MESSENGER
         if (!bKeyHeld) {
-            MSG_T9_HandleKey(&s_menuTextEditor, KEY_STAR);
-                edit_is_uppercase = s_menuTextEditor.upper;
+            TEXT_INPUT_HandleKey(&s_menuTextEditor, KEY_STAR);
+            edit_is_uppercase = s_menuTextEditor.upper;
             gMenuTextEditorMode = s_menuTextEditor.mode;
             edit_index = s_menuTextEditor.len;
         }
-#endif
         edit_last_key = 255;
         gRequestDisplayScreen = DISPLAY_MENU;
         return;
@@ -2295,11 +2289,18 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
 
         default:
             MENU_ClampSelection(Direction);
-#ifdef ENABLE_MESSENGER
+#ifdef ENABLE_GOGUFW_CALLTX
             if (m == MENU_CALL_TONE || m == MENU_ROGER) {
+#else
+            if (m == MENU_ROGER) {
+#endif
                 for (;;) {
                     if (gSubMenuSelection < 0) gSubMenuSelection = 0;
+#ifdef ENABLE_GOGUFW_CALLTX
                     const int8_t preview_max = (m == MENU_CALL_TONE) ? 4 : 2;
+#else
+                    const int8_t preview_max = 2;
+#endif
                     if (gSubMenuSelection > preview_max) gSubMenuSelection = preview_max;
                     /* The melody itself replaces the normal navigation beep. */
                     gBeepToPlay = BEEP_NONE;
@@ -2308,9 +2309,13 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
                     gRequestDisplayScreen = DISPLAY_MENU;
                     GUI_DisplayScreen();
 
+#ifdef ENABLE_GOGUFW_CALLTX
                     const KEY_Code_t preview_key = (m == MENU_CALL_TONE)
                         ? MAIN_PlayCallTonePreview((uint8_t)gSubMenuSelection)
                         : MAIN_PlayRogerPreview((uint8_t)gSubMenuSelection);
+#else
+                    const KEY_Code_t preview_key = MAIN_PlayRogerPreview((uint8_t)gSubMenuSelection);
+#endif
 
                     if (preview_key == KEY_UP || preview_key == KEY_DOWN) {
                         int8_t preview_direction = preview_key == KEY_UP ? 1 : -1;
@@ -2330,7 +2335,6 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
                     break;
                 }
             }
-#endif
             gRequestDisplayScreen = DISPLAY_MENU;
             return;
     }
@@ -2408,12 +2412,10 @@ void MENU_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                     break;
 
                 gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
-#ifdef ENABLE_MESSENGER
-                MSG_T9_HandleKey(&s_menuTextEditor, KEY_F);
+                TEXT_INPUT_HandleKey(&s_menuTextEditor, KEY_F);
                 edit_is_uppercase = s_menuTextEditor.upper;
                 gMenuTextEditorMode = s_menuTextEditor.mode;
                 edit_index = s_menuTextEditor.len;
-#endif
                 edit_last_key = 255;
                 gRequestDisplayScreen = DISPLAY_MENU;
                 break;

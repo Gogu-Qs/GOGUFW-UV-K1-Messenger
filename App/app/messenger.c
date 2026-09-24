@@ -1,7 +1,7 @@
 #include <string.h>
 #include "app/messenger.h"
 #include "app/messenger_store.h"
-#include "app/messenger_t9.h"
+#include "app/text_input.h"
 #include "app/messenger_rf.h"
 #include "app/messenger_packet.h"
 #include "audio.h"
@@ -23,7 +23,7 @@ uint8_t gMsgCursor;
 uint8_t gMsgScroll;
 uint8_t gMsgHomeCursor;
 char gMsgComposeBuf[MSG_TEXT_LEN + 1];
-MSG_T9Editor_t gMsgEditor;
+TEXT_INPUT_Editor_t gMsgEditor;
 uint8_t gMsgReadIndex;
 uint8_t gMsgReadSource;
 
@@ -86,7 +86,7 @@ void MSG_Tick(void)
     if (gSurvivalMode) return;
     if (gMsgTxLockNoticeTicks > 0u && --gMsgTxLockNoticeTicks == 0u)
         gUpdateDisplay = true;
-    if (gMsgScreen == MSG_SCREEN_COMPOSE) MSG_T9_Tick(&gMsgEditor);
+    if (gMsgScreen == MSG_SCREEN_COMPOSE) TEXT_INPUT_Tick(&gMsgEditor);
     else if (gMsgScreen == MSG_SCREEN_RANGE && gMsgRangeStatus == 1u) {
         if (s_msgRangeWaitTicks > 0u) --s_msgRangeWaitTicks;
         if (s_msgRangeWaitTicks == 0u) {
@@ -261,7 +261,7 @@ static void open_compose(const char *seed)
     memset(gMsgComposeBuf, 0, sizeof(gMsgComposeBuf));
     if (seed) strncpy(gMsgComposeBuf, seed, MSG_TEXT_LEN);
     gMsgComposeBuf[MSG_TEXT_LEN] = 0;
-    MSG_T9_Start(&gMsgEditor, gMsgComposeBuf, MSG_TEXT_LEN);
+    TEXT_INPUT_Start(&gMsgEditor, gMsgComposeBuf, MSG_TEXT_LEN);
     gMsgScreen = MSG_SCREEN_COMPOSE;
 }
 
@@ -271,7 +271,7 @@ static void open_draft_edit(uint8_t index)
     gMsgComposeIsDraftEdit = true;
     gMsgComposeDraftIndex = index;
     MSG_STORE_GetDraft(index, gMsgComposeBuf);
-    MSG_T9_Start(&gMsgEditor, gMsgComposeBuf, MSG_TEXT_LEN);
+    TEXT_INPUT_Start(&gMsgEditor, gMsgComposeBuf, MSG_TEXT_LEN);
     gMsgScreen = MSG_SCREEN_COMPOSE;
 }
 
@@ -313,7 +313,7 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
     if (bKeyHeld) {
         if (bKeyPressed && gMsgScreen == MSG_SCREEN_COMPOSE && Key >= KEY_0 && Key <= KEY_9) {
-            MSG_T9_HandleLongKey(&gMsgEditor, Key);
+            TEXT_INPUT_HandleLongKey(&gMsgEditor, Key);
             gUpdateDisplay = true;
         }
         return;
@@ -382,7 +382,7 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
         case MSG_SCREEN_COMPOSE:
             if (Key == KEY_MENU) {
-                MSG_T9_Commit(&gMsgEditor);
+                TEXT_INPUT_Commit(&gMsgEditor);
                 if (gMsgComposeIsDraftEdit) {
                     /* Drafts are quick-message templates: MENU saves the edited
                      * draft persistently and immediately sends the same text.
@@ -398,8 +398,8 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                     open_sent_after_send();
                 }
             }
-            else if (Key == KEY_EXIT) { MSG_T9_Commit(&gMsgEditor); go_home(); }
-            else MSG_T9_HandleKey(&gMsgEditor, Key);
+            else if (Key == KEY_EXIT) { TEXT_INPUT_Commit(&gMsgEditor); go_home(); }
+            else TEXT_INPUT_HandleKey(&gMsgEditor, Key);
             break;
 
         case MSG_SCREEN_RANGE:

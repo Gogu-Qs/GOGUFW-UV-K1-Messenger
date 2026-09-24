@@ -1,4 +1,4 @@
-# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v2.1.0
+# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v2.1.1
 # Based on F4HWN Fusion CHIRP 5.5.0 support.
 # Matches the GOGUFW external-flash EEPROM aliases:
 #   FM names: 0x00D000 alias -> firmware flash 0x013000
@@ -1228,7 +1228,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
     """Quansheng UV-K5 (egzumer + f4hwn)"""
     VENDOR = "Quansheng"
     MODEL = "UV-K1 / UV-K5 V3 GOGUFW Messenger"
-    VARIANT = "2.1.0"
+    VARIANT = "2.1.1"
     BAUD_RATE = 38400
     NEEDS_COMPAT_SERIAL = False
     FIRMWARE_VERSION = ""

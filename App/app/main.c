@@ -28,7 +28,9 @@
 #ifdef ENABLE_MESSENGER
     #include "app/messenger.h"
     #include "app/messenger_rf.h"
-    #include "app/messenger_store.h"
+#endif
+#ifdef ENABLE_GOGUFW_CALLTX
+    #include "app/calltx_store.h"
 #endif
 #include "app/scanner.h"
 
@@ -54,7 +56,9 @@
 #include "ui/ui.h"
 #include <stdlib.h>
 
+#ifdef ENABLE_GOGUFW_CALLTX
 bool gCallToneTxActive = false;
+#endif
 
 // Full VFO backup for restore on EXIT
 static VFO_Info_t gVfoBackup;
@@ -122,6 +126,7 @@ static void toggle_chan_scanlist(void)
 
 
 
+#ifdef ENABLE_GOGUFW_CALLTX
 typedef struct {
     uint16_t hz;
     uint8_t  on_10ms;
@@ -158,19 +163,20 @@ static const CallToneNote_t *MAIN_GetCallToneNote(const CallToneMelody_t *melody
     while (sequence >= melody->note_count) sequence -= melody->note_count;
     return &gCallToneNotes[melody->note_offset + sequence];
 }
+#endif
 
 static uint16_t MAIN_ScaleToneFreq(uint16_t freq)
 {
     return (uint16_t)((((uint32_t)freq * 1353245u) + (1u << 16)) >> 17);
 }
 
+#ifdef ENABLE_GOGUFW_CALLTX
 static uint8_t MAIN_GetCallToneTxGain(void)
 {
     /* Adjust only the BK4829 tone-generator amplitude.  Both values are used
      * by existing stable tone paths; do not touch REG_40 deviation or PA power. */
-#ifdef ENABLE_MESSENGER
-    if (gMessengerConfig.call_vol == 0u) return 4u;
-#endif
+    CALLTX_STORE_Init();
+    if (gCallTxVol == 0u) return 4u;
     return 66;
 }
 
@@ -184,6 +190,7 @@ static void MAIN_SetQuietLocalMonitor(void)
         ( 8u << 4)  |      /* AF Rx Gain-2: clearer local preview */
         ( 2u << 0));       /* AF DAC gain */
 }
+#endif
 
 typedef struct {
     bool released;
@@ -241,6 +248,7 @@ static void MAIN_CallTonePreviewWaitForRelease(void)
     }
 }
 
+#ifdef ENABLE_GOGUFW_CALLTX
 KEY_Code_t MAIN_PlayCallTonePreview(uint8_t tone)
 {
     if (tone > 4u) tone = 0u;
@@ -313,6 +321,7 @@ KEY_Code_t MAIN_PlayCallTonePreview(uint8_t tone)
 
     return interrupted_by;
 }
+#endif
 
 KEY_Code_t MAIN_PlayRogerPreview(uint8_t mode)
 {
@@ -388,6 +397,7 @@ KEY_Code_t MAIN_PlayRogerPreview(uint8_t mode)
     return interrupted_by;
 }
 
+#ifdef ENABLE_GOGUFW_CALLTX
 static void MAIN_SendCallToneNote(uint16_t hz, uint8_t on_10ms, uint8_t off_10ms)
 {
     if (hz == 0 || on_10ms == 0) return;
@@ -414,11 +424,8 @@ static void MAIN_SendPmrCallTone(void)
         return;
     }
 
-    uint8_t tone = 0;
-#ifdef ENABLE_MESSENGER
-    MSG_STORE_Init();
-    tone = gMessengerConfig.call_tone;
-#endif
+    CALLTX_STORE_Init();
+    uint8_t tone = gCallTxTone;
     if (tone > 4u) tone = 0;
 
 #ifdef ENABLE_MESSENGER
@@ -478,6 +485,7 @@ void MAIN_SendPmrCallToneAction(void)
 {
     MAIN_SendPmrCallTone();
 }
+#endif
 
 static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
 {
@@ -666,7 +674,11 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
 
         case KEY_9:
             if (!beep) {
+#ifdef ENABLE_GOGUFW_CALLTX
                 MAIN_SendPmrCallTone();
+#else
+                gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+#endif
             }
             else {
                 if (RADIO_CheckValidChannel(gEeprom.CHAN_1_CALL, false, 0)) {

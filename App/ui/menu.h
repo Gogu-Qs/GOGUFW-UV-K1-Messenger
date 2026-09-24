@@ -175,8 +175,12 @@ enum
     MENU_MSG_CSG,
     MENU_MSG_ACK,
     MENU_MSG_BEEP,
+#endif
+#ifdef ENABLE_GOGUFW_CALLTX
     MENU_CALL_TONE,
     MENU_CALL_VOL,
+#endif
+#ifdef ENABLE_MESSENGER
     MENU_MSG_LED,
     MENU_RNG_RSP,
 #endif

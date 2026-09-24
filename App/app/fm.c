@@ -21,7 +21,7 @@
 #include "app/action.h"
 #include "app/fm.h"
 #include "app/generic.h"
-#include "app/messenger_t9.h"
+#include "app/text_input.h"
 #include "audio.h"
 #include "external/printf/printf.h"
 #include "driver/bk1080.h"
@@ -80,7 +80,7 @@ static bool s_fmNameEdit;
 static bool s_fmAutoScanConfirm;
 static bool s_fmLiveRssiEdit;
 static bool s_fmLiveRssiSelection;
-static MSG_T9Editor_t s_fmNameEditor;
+static TEXT_INPUT_Editor_t s_fmNameEditor;
 
 const uint8_t BUTTON_STATE_PRESSED = 1 << 0;
 const uint8_t BUTTON_STATE_HELD = 1 << 1;
@@ -179,7 +179,7 @@ void FM_NamesErase(void)
 void FM_Tick(void)
 {
     if (s_fmNameEdit)
-        MSG_T9_Tick(&s_fmNameEditor);
+        TEXT_INPUT_Tick(&s_fmNameEditor);
 }
 
 
@@ -254,14 +254,14 @@ static void FM_NameEditStart(void)
     const char *cur = FM_GetChannelName(gEeprom.FM_SelectedChannel);
     if (!cur[0]) FM_MakeDefaultName(gEeprom.FM_SelectedChannel, s_fmNameBuf);
     s_fmNameBuf[FM_NAME_LEN - 1U] = 0;
-    MSG_T9_Start(&s_fmNameEditor, s_fmNameBuf, FM_NAME_LEN - 1U);
+    TEXT_INPUT_Start(&s_fmNameEditor, s_fmNameBuf, FM_NAME_LEN - 1U);
     s_fmNameEdit = true;
     gRequestDisplayScreen = DISPLAY_FM;
 }
 
 static void FM_NameEditSave(void)
 {
-    MSG_T9_Commit(&s_fmNameEditor);
+    TEXT_INPUT_Commit(&s_fmNameEditor);
     FM_SetChannelName(gEeprom.FM_SelectedChannel, s_fmNameBuf);
     s_fmNameEdit = false;
     s_fmMenuMode = FM_MENU_NONE;
@@ -270,7 +270,7 @@ static void FM_NameEditSave(void)
 
 static void FM_NameEditCancel(void)
 {
-    MSG_T9_Commit(&s_fmNameEditor);
+    TEXT_INPUT_Commit(&s_fmNameEditor);
     s_fmNameEdit = false;
     s_fmMenuMode = FM_MENU_NAME;
     gRequestDisplayScreen = DISPLAY_FM;
@@ -912,9 +912,9 @@ void FM_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
     if (s_fmNameEdit) {
         if (Key == KEY_MENU) { Key_MENU(state); return; }
         if (Key == KEY_EXIT) { Key_EXIT(state); return; }
-        if (state == BUTTON_EVENT_SHORT && Key >= KEY_0 && Key <= KEY_9) { MSG_T9_HandleKey(&s_fmNameEditor, Key); gRequestDisplayScreen = DISPLAY_FM; return; }
-        if (state == BUTTON_EVENT_LONG && Key >= KEY_0 && Key <= KEY_9) { MSG_T9_HandleLongKey(&s_fmNameEditor, Key); gRequestDisplayScreen = DISPLAY_FM; return; }
-        if (state == BUTTON_EVENT_SHORT && (Key == KEY_STAR || Key == KEY_F)) { MSG_T9_HandleKey(&s_fmNameEditor, Key); gRequestDisplayScreen = DISPLAY_FM; return; }
+        if (state == BUTTON_EVENT_SHORT && Key >= KEY_0 && Key <= KEY_9) { TEXT_INPUT_HandleKey(&s_fmNameEditor, Key); gRequestDisplayScreen = DISPLAY_FM; return; }
+        if (state == BUTTON_EVENT_LONG && Key >= KEY_0 && Key <= KEY_9) { TEXT_INPUT_HandleLongKey(&s_fmNameEditor, Key); gRequestDisplayScreen = DISPLAY_FM; return; }
+        if (state == BUTTON_EVENT_SHORT && (Key == KEY_STAR || Key == KEY_F)) { TEXT_INPUT_HandleKey(&s_fmNameEditor, Key); gRequestDisplayScreen = DISPLAY_FM; return; }
         return;
     }
 
