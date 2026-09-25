@@ -164,9 +164,7 @@ The analog voice scrambler is not encryption and may be restricted by local radi
 
 These settings appear as normal memory-list columns and under **Properties → Extra** in the custom CHIRP module.
 
-| Main radio screen | Per-VFO policy indicators |
-| --- | --- |
-| ![Main radio screen](docs/screenshots/main-radio-screen.png) | ![Main-screen FSK and Roger indicators](docs/screenshots/main-indicators.png) |
+![Main radio screen with per-channel policy indicators](docs/screenshots/main-radio-screen.png)
 
 ### Spectrum
 
