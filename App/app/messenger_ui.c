@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include "app/messenger_store.h"
 #include "app/messenger.h"
+#include "app/messenger_rf.h"
 #include "app/text_input.h"
 #include "app/messenger_packet.h"
 #include "driver/st7565.h"
@@ -10,7 +11,6 @@
 #include "ui/main.h"
 #include "ui/ui.h"
 #include "misc.h"
-#include "font.h"
 
 extern uint8_t gMsgHomeCursor;
 extern uint8_t gMsgCursor;
@@ -49,34 +49,22 @@ static const char *packet_type_short(uint8_t type)
     }
 }
 
-static void print_right_small(const char *s, uint8_t line)
+static const char *tx_block_reason_text(void)
 {
-    // SmallNormal pitch is 7 px.  Keep a wider right margin because the real
-    // LCD showed the final digit wrapping when drawn too close to x=127.
-    uint8_t len = (uint8_t)strlen(s);
-    uint8_t width = (uint8_t)(len * 7U);
-    uint8_t x = (width >= 120U) ? 0 : (uint8_t)(122U - width);
-    UI_PrintStringSmallNormal(s, x, 0, line);
+    switch (MSG_RF_LastSendBlockReason()) {
+        case MSG_RF_BLOCK_NO_FSK:       return "NO FSK SELECTED";
+        case MSG_RF_BLOCK_TX_FREQUENCY: return "TX FREQ BLOCKED";
+        case MSG_RF_BLOCK_MODULATION:   return "FM MODE REQUIRED";
+        case MSG_RF_BLOCK_CONFIG:       return "CONFIG IN PROGRESS";
+        case MSG_RF_BLOCK_BATTERY:      return "BATTERY BLOCK";
+        default:                        return "FSK NOT ALLOWED";
+    }
 }
 
 static void draw_title(const char *s)
 {
-    memset(gFrameBuffer, 0, sizeof(gFrameBuffer));
-    uint8_t len = (uint8_t)strlen(s);
-    /* SmallBold is visually closer to a 7 px pitch on the UV-K1 LCD.
-     * The previous 6 px estimate placed MESSENGER/INBOX/SENT titles
-     * slightly right of center. */
-    uint8_t x = (len >= 18) ? 0 : (uint8_t)((128U - (len * 7U)) / 2U);
-    UI_PrintStringSmallBold(s, x, 0, 0);
-}
-
-static void draw_dotted_separator(uint8_t y)
-{
-    /* Light message separator: one filled segment, one gap.  It is less
-     * visually heavy than a solid line and keeps the message text dominant. */
-    for (uint8_t x = 0; x < 128U; x = (uint8_t)(x + 4U)) {
-        UI_DrawLineBuffer(gFrameBuffer, x, y, (uint8_t)(x + 1U), y, 1);
-    }
+    UI_DisplayClear();
+    UI_GOGU_DrawHeader(s, NULL);
 }
 
 static void msg_set_pixel(uint8_t x, uint8_t y, bool on)
@@ -126,25 +114,9 @@ static void draw_rssi_bars(uint8_t x, uint8_t y, int8_t rssi)
 
 static void msg_draw_small_at_y(const char *s, uint8_t x, uint8_t y, bool inverted)
 {
-    const uint8_t pitch = 7U;
-    uint8_t len = (uint8_t)strlen(s);
-    if (inverted) {
-        uint8_t w = (uint8_t)(len * pitch + 2U);
-        msg_fill_rect(x ? (uint8_t)(x - 1U) : 0U, y ? (uint8_t)(y - 1U) : 0U,
-                      (uint8_t)(x + w), (uint8_t)(y + 7U), true);
-    }
-
-    for (uint8_t i = 0; s[i] && x < 128U; i++, x = (uint8_t)(x + pitch)) {
-        char c = s[i];
-        if (c <= ' ' || c >= 127) continue;
-        const uint8_t *glyph = gFontSmall[(uint8_t)c - ' ' - 1U];
-        for (uint8_t col = 0; col < 6U; col++) {
-            uint8_t bits = glyph[col];
-            for (uint8_t row = 0; row < 7U; row++) {
-                if (bits & (1U << row)) msg_set_pixel((uint8_t)(x + col), (uint8_t)(y + row), !inverted);
-            }
-        }
-    }
+    UI_GOGU_PrintSmallAtY(s, x, y, false);
+    if (inverted)
+        UI_GOGU_InvertBand(y > 0u ? (uint8_t)(y - 1u) : y, 9u);
 }
 
 static void print_line_y(const char *s, uint8_t y, bool sel)
@@ -295,16 +267,15 @@ static void draw_home(void)
 {
     static const char *items[] = { "INBOX", "COMPOSE", "SENT", "DRAFTS" };
     draw_title("MESSENGER");
-    /* 0.3.0: HOME list shifted 1 px up so SELECT keeps 2 px bottom
-     * clearance; right-side icon uses a fixed center shared by all states. */
+    UI_GOGU_DrawDottedSeparator(UI_GOGU_TOP_SEPARATOR_Y);
     for (uint8_t i = 0; i < 4; i++) {
-        print_line_y(items[i], (uint8_t)(10U + (i * 9U)), gMsgHomeCursor == i);
+        print_line_y(items[i], UI_GOGU_CONTENT_ROW_Y(i), false);
+        if (gMsgHomeCursor == i)
+            UI_GOGU_InvertArea(0u, 63u, (uint8_t)(UI_GOGU_CONTENT_ROW_Y(i) - 1u), 9u);
     }
     draw_home_icon(gMsgHomeCursor);
 
-    draw_dotted_separator(46);
-    GUI_DisplaySmallest("SELECT", 0, 49, false, true);
-
+    UI_GOGU_DrawFooter("SELECT", NULL, "EXIT");
 }
 
 static void current_list_info(uint8_t *count, const char **title)
@@ -320,11 +291,20 @@ static void draw_list(void)
     uint8_t count; const char *title;
     current_list_info(&count, &title);
     char buf[24];
-    draw_title(title);
     snprintf(buf, sizeof(buf), "%u/%u", count ? (gMsgCursor + 1) : 0, count);
-    print_right_small(buf, 0);
-    if (!count) { UI_PrintStringSmallNormal("EMPTY", 0, 0, 3); return; }
-    for (uint8_t row = 0; row < 6; row++) {
+    UI_DisplayClear();
+    UI_GOGU_DrawHeader(title, buf);
+    UI_GOGU_DrawDottedSeparator(UI_GOGU_TOP_SEPARATOR_Y);
+    if (!count) {
+        if (gMsgScreen == MSG_SCREEN_DRAFTS)
+            msg_draw_small_at_y("EMPTY", 47u, 25u, false);
+        else
+            msg_draw_small_at_y("NO MESSAGE", 29u, 25u, false);
+        UI_GOGU_DrawFooter(gMsgScreen == MSG_SCREEN_DRAFTS ? "EDIT" : "READ",
+                           gMsgScreen == MSG_SCREEN_DRAFTS ? NULL : "F:DEL", "EXIT");
+        return;
+    }
+    for (uint8_t row = 0; row < UI_GOGU_CONTENT_ROWS; row++) {
         uint8_t idx = gMsgScroll + row;
         if (idx >= count) break;
         if (gMsgScreen == MSG_SCREEN_DRAFTS) {
@@ -345,12 +325,21 @@ static void draw_list(void)
         } else {
             char age[5];
             format_age(gMessengerInbox[idx].age_seconds, age, sizeof(age));
-            snprintf(buf, sizeof(buf), "%c%-13.13s%4s", (gMessengerInbox[idx].unread ? '*' : ' '), gMessengerInbox[idx].text, age);
+            /* Keep an explicit unread marker before the sender.  The complete
+             * row remains 18 cells: marker, six-character callsign,
+             * five-character preview and age. */
+            snprintf(buf, sizeof(buf), "%c%-6.6s %-5.5s %4s",
+                     gMessengerInbox[idx].unread ? '*' : ' ',
+                     gMessengerInbox[idx].from,
+                     gMessengerInbox[idx].text,
+                     age);
         }
         /* Pixel-positioned renderer safely supports the complete 18-cell
          * row and keeps its selection capsule inside x=0..127. */
-        print_line_y(buf, (uint8_t)((row + 1U) * 8U), idx == gMsgCursor);
+        print_line_y(buf, UI_GOGU_CONTENT_ROW_Y(row), idx == gMsgCursor);
     }
+    UI_GOGU_DrawFooter(gMsgScreen == MSG_SCREEN_DRAFTS ? "EDIT" : "READ",
+                       gMsgScreen == MSG_SCREEN_DRAFTS ? NULL : "F:DEL", "EXIT");
 }
 
 static void draw_read(void)
@@ -360,11 +349,11 @@ static void draw_read(void)
     const MSG_InboxMessage_t *inbox = sent ? 0 : &gMessengerInbox[gMsgReadIndex];
     const char *text = sent ? outbox->text : inbox->text;
     char buf[32];
-    draw_title(sent ? "SENT" : "READ");
     {
         uint8_t total = sent ? MSG_STORE_CountOutbox() : MSG_STORE_CountInbox();
         snprintf(buf, sizeof(buf), "%u/%u", total ? (uint8_t)(gMsgReadIndex + 1U) : 0U, total);
-        print_right_small(buf, 0);
+        UI_DisplayClear();
+        UI_GOGU_DrawHeader(sent ? "SENT" : "READ", buf);
     }
 
     char age[5];
@@ -374,23 +363,20 @@ static void draw_read(void)
         if (outbox->status == MSG_STATUS_ACKED) st = '+';
         else if (outbox->status == MSG_STATUS_FAILED) st = 'x';
 
-        snprintf(buf, sizeof(buf), "TO:%s %s", outbox->to, age);
-
-        /* Metadata is pixel-positioned: one pixel lower than 0.2.4 so it
-         * visually aligns with the large ACK marker and sits closer to the
-         * upper separator. */
-        GUI_DisplaySmallest(buf, 0, 9, false, true);
-        char stbuf[2] = { st, 0 };
-        UI_PrintStringSmallBold(stbuf, 120, 0, 1);
+        const char stbuf[2] = { st, 0 };
+        UI_PrintStringSmallNormal(stbuf, 0u, 0u, 0u);
+        snprintf(buf, sizeof(buf), "TO:%s", outbox->to);
     } else {
-        snprintf(buf, sizeof(buf), "FROM:%s %s", inbox->from, age);
-        GUI_DisplaySmallest(buf, 0, 9, false, true);
+        snprintf(buf, sizeof(buf), "FROM:%s", inbox->from);
     }
 
-    /* 0.2.6: tighter message box.  Metadata moved down 1 px, message text
-     * begins 4 px higher than before, and footer labels move up 1 px while
-     * keeping the real-LCD safe area. */
-    draw_dotted_separator(17);
+    UI_GOGU_DrawDottedSeparator(UI_GOGU_TOP_SEPARATOR_Y);
+    GUI_DisplaySmallest(buf, 0u, 12u, false, true);
+    {
+        const uint8_t age_width = (uint8_t)(strlen(age) * 4u);
+        GUI_DisplaySmallest(age, age_width >= 128u ? 0u : (uint8_t)(128u - age_width),
+                            12u, false, true);
+    }
     if (sent && outbox->ack_count > 0u) {
         print_wrapped_small_y(text, 20, 2);
         char ackbuf[32];
@@ -403,141 +389,108 @@ static void draw_read(void)
     } else {
         print_wrapped_small_y(text, 20, 3);
     }
-    draw_dotted_separator(46);
-
-    if (sent) {
-        GUI_DisplaySmallest("RESEND", 0, 49, false, true);
-    } else {
-        GUI_DisplaySmallest("REPLY", 0, 49, false, true);
-    }
-    GUI_DisplaySmallest("F:DEL", 104, 49, false, true);
+    UI_GOGU_DrawFooter(sent ? "RESEND" : "REPLY", "F:DEL", "EXIT");
 }
 
 static void draw_compose(void)
 {
-    char buf[12];
-    draw_title("COMPOSE");
+    UI_GOGU_DrawTextEditor("COMPOSE", gMsgComposeBuf, MSG_TEXT_LEN, "SEND",
+                           (gMsgEditor.mode == 2U) ? "2" : (gMsgEditor.upper ? "B" : "b"),
+                           true);
+}
 
-    /* Keep the compose title clean.  The message type and character counter
-     * use the same metadata row style as the READ/SENT screens: directly
-     * above the dotted top separator, in the 3x5 font. */
-    GUI_DisplaySmallest("NEW MESSAGE", 0, 10, false, true);
-    snprintf(buf, sizeof(buf), "%u/%u", (uint8_t)strlen(gMsgComposeBuf), (uint8_t)MSG_TEXT_LEN);
-    {
-        uint8_t w = (uint8_t)(strlen(buf) * 4U);
-        uint8_t x = (w >= 128U) ? 0U : (uint8_t)(127U - w);
-        GUI_DisplaySmallest(buf, x, 10, false, true);
-    }
-
-    draw_dotted_separator(17);
-    print_wrapped_small_y(gMsgComposeBuf, 20, 3);
-    draw_dotted_separator(46);
-    GUI_DisplaySmallest("SEND", 0, 49, false, true);
-    GUI_DisplaySmallest((gMsgEditor.mode == 2U) ? "2" : (gMsgEditor.upper ? "B" : "b"), 120, 49, false, true);
+static uint8_t range_window_start(uint8_t count, uint8_t cursor)
+{
+    if (count <= UI_GOGU_CONTENT_ROWS || cursor < 2u)
+        return 0u;
+    if (cursor + 1u >= count)
+        return (uint8_t)(count - UI_GOGU_CONTENT_ROWS);
+    return (uint8_t)(cursor - 1u);
 }
 
 static void draw_range(void)
 {
     char buf[28];
-    draw_title((gMsgRangeStatus == 1u || gMsgRangeStatus == 2u) ? "RANGE CHECK" : "HEARD");
-    if (gMsgRangeStatus == 1u) GUI_DisplaySmallest("WAIT", 0, 1, false, true);
-    else if (gMsgRangeStatus == 2u) GUI_DisplaySmallest("RESULT", 0, 1, false, true);
+    const bool active = gMsgRangeStatus == 1u || gMsgRangeStatus == 2u;
+    uint8_t order[MSG_RANGE_MAX_FOUND];
+    uint8_t count = 0u;
 
-    const uint8_t top_sep = 9u;
-    const uint8_t bottom_sep = 46u;
-    const uint8_t page_size = 3u;
-    draw_dotted_separator(top_sep);
-    draw_dotted_separator(bottom_sep);
-
-    if (gMsgRangeStatus == 1u || gMsgRangeStatus == 2u) {
-        /* Active Range Check result screen: show only PONG results from the
-         * current ping session, live as they arrive, strongest RSSI first.
-         * This is intentionally different from HEARD: no TYPE/AGE here. */
-        uint8_t session_count = 0u;
-        for (uint8_t i = 0; i < gMsgRangeCount; i++) {
-            if (gMsgRangeFound[i].used && gMsgRangeFound[i].range_session == gMsgRangeSession) session_count++;
-        }
-        if (session_count == 0u) {
-            if (gMsgRangeStatus == 1u) {
-                msg_draw_small_at_y("WAITING", 40, 20, false);
-                msg_draw_small_at_y("FOR PONG", 36, 29, false);
-            } else {
-                msg_draw_small_at_y("NOT FOUND", 33, 24, false);
-            }
-        } else {
-            GUI_DisplaySmallest("FOUND:", 0, 12, false, true);
-            bool used[MSG_RANGE_MAX_FOUND];
-            memset(used, 0, sizeof(used));
-            uint8_t drawn = 0u;
-            for (uint8_t row = 0; row < page_size; row++) {
-                int8_t best_rssi = -128;
-                uint8_t best = 0xFFu;
-                for (uint8_t i = 0; i < gMsgRangeCount && i < MSG_RANGE_MAX_FOUND; i++) {
-                    if (used[i]) continue;
-                    if (!gMsgRangeFound[i].used || gMsgRangeFound[i].range_session != gMsgRangeSession) continue;
-                    if (best == 0xFFu || gMsgRangeFound[i].rssi > best_rssi) {
-                        best = i;
-                        best_rssi = gMsgRangeFound[i].rssi;
-                    }
+    if (active) {
+        bool used[MSG_RANGE_MAX_FOUND];
+        memset(used, 0, sizeof(used));
+        for (;;) {
+            int8_t best_rssi = -128;
+            uint8_t best = 0xFFu;
+            for (uint8_t i = 0u; i < gMsgRangeCount && i < MSG_RANGE_MAX_FOUND; i++) {
+                if (used[i] || !gMsgRangeFound[i].used ||
+                    gMsgRangeFound[i].range_session != gMsgRangeSession)
+                    continue;
+                if (best == 0xFFu || gMsgRangeFound[i].rssi > best_rssi) {
+                    best = i;
+                    best_rssi = gMsgRangeFound[i].rssi;
                 }
-                if (best == 0xFFu) break;
-                used[best] = true;
-                const uint8_t y = (uint8_t)(19u + row * 9u);
-                /* Fixed-column Range row layout.  IMPORTANT: the Range
-                 * Check meter must be pixel-identical to the HEARD meter, so
-                 * do not use a compact/thinner variant here.  Columns are
-                 * shifted left enough to keep the full HEARD-width bar clear
-                 * of the fixed voltage column by at least one small-font
-                 * character width.
-                 *
-                 *   x=0..41   : 6-char callsign/msgid
-                 *   x=43..70  : RSSI, right aligned to 4 chars (-102)
-                 *   x=74..92  : HEARD-style 5-step RSSI bar, same pixels
-                 *   x=93..99  : one small-font char gap before voltage
-                 *   x=100..127: voltage, 4 chars (7.4V)
-                 */
-                snprintf(buf, sizeof(buf), "%-6s", gMsgRangeFound[best].callsign);
-                msg_draw_small_at_y(buf, 0, y, false);
-                snprintf(buf, sizeof(buf), "%4d", (int)gMsgRangeFound[best].rssi);
-                msg_draw_small_at_y(buf, 43, y, false);
-                draw_rssi_bars(74, y, gMsgRangeFound[best].rssi);
-                snprintf(buf, sizeof(buf), "%u.%uV", (unsigned)(gMsgRangeFound[best].battery_cv / 100u), (unsigned)((gMsgRangeFound[best].battery_cv / 10u) % 10u));
-                msg_draw_small_at_y(buf, 100, y, false);
-                drawn++;
             }
-            (void)drawn;
+            if (best == 0xFFu)
+                break;
+            used[best] = true;
+            order[count++] = best;
         }
     } else {
-        GUI_DisplaySmallest("LAST HEARD:", 0, 12, false, true);
-        uint8_t pages = 1u;
-        if (gMsgRangeCount > 0u) pages = (uint8_t)((gMsgRangeCount + page_size - 1u) / page_size);
-        if (gMsgRangeScroll >= pages) gMsgRangeScroll = (uint8_t)(pages - 1u);
-        snprintf(buf, sizeof(buf), "%u/%u", (uint8_t)(gMsgRangeScroll + 1u), pages);
-        uint8_t x = (uint8_t)(128u - (strlen(buf) * 4u));
-        GUI_DisplaySmallest(buf, x, 12, false, true);
+        count = gMsgRangeCount;
+        for (uint8_t i = 0u; i < count; i++)
+            order[i] = i;
+    }
 
-        if (gMsgRangeCount == 0u) {
-            msg_draw_small_at_y("NO HEARD", 36, 24, false);
+    if (count == 0u)
+        gMsgRangeScroll = 0u;
+    else if (gMsgRangeScroll >= count)
+        gMsgRangeScroll = (uint8_t)(count - 1u);
+
+    snprintf(buf, sizeof(buf), "%u/%u", count ? (uint8_t)(gMsgRangeScroll + 1u) : 0u, count);
+    UI_DisplayClear();
+    UI_GOGU_DrawHeader(active ? "RANGE CHECK" : "HEARD", buf);
+    UI_GOGU_DrawDottedSeparator(UI_GOGU_TOP_SEPARATOR_Y);
+
+    if (count == 0u) {
+        if (gMsgRangeStatus == 1u) {
+            msg_draw_small_at_y("WAIT", 50u, 25u, false);
+        } else {
+            msg_draw_small_at_y(active ? "NOT FOUND" : "NO HEARD", active ? 33u : 36u, 27u, false);
         }
-        for (uint8_t row = 0; row < page_size; row++) {
-            uint8_t idx = (uint8_t)(gMsgRangeScroll * page_size + row);
-            if (idx >= gMsgRangeCount) break;
-            uint8_t y = (uint8_t)(19u + row * 9u);
-            char age[5];
-            format_age(gMsgRangeFound[idx].age_seconds, age, sizeof(age));
-            /* Fixed-column HEARD row: use the full row while keeping
-             * callsign/bar/type/age separated on the small LCD. */
+    } else {
+        const uint8_t first = range_window_start(count, gMsgRangeScroll);
+        for (uint8_t row = 0u; row < UI_GOGU_CONTENT_ROWS; row++) {
+            const uint8_t position = (uint8_t)(first + row);
+            if (position >= count)
+                break;
+            const uint8_t idx = order[position];
+            const uint8_t y = UI_GOGU_CONTENT_ROW_Y(row);
+
             snprintf(buf, sizeof(buf), "%-6s", gMsgRangeFound[idx].callsign);
-            msg_draw_small_at_y(buf, 0, y, false);
-            draw_rssi_bars(48, y, gMsgRangeFound[idx].rssi);
-            msg_draw_small_at_y(packet_type_short(gMsgRangeFound[idx].packet_type), 76, y, false);
-            uint8_t age_x = (uint8_t)(127u - ((uint8_t)strlen(age) * 7u));
-            msg_draw_small_at_y(age, age_x, y, false);
+            msg_draw_small_at_y(buf, 0u, y, false);
+            if (active) {
+                snprintf(buf, sizeof(buf), "%4d", (int)gMsgRangeFound[idx].rssi);
+                msg_draw_small_at_y(buf, 43u, y, false);
+                draw_rssi_bars(74u, y, gMsgRangeFound[idx].rssi);
+                snprintf(buf, sizeof(buf), "%u.%uV",
+                         (unsigned)(gMsgRangeFound[idx].battery_cv / 100u),
+                         (unsigned)((gMsgRangeFound[idx].battery_cv / 10u) % 10u));
+                msg_draw_small_at_y(buf, 100u, y, false);
+            } else {
+                char age[5];
+                format_age(gMsgRangeFound[idx].age_seconds, age, sizeof(age));
+                draw_rssi_bars(48u, y, gMsgRangeFound[idx].rssi);
+                msg_draw_small_at_y(packet_type_short(gMsgRangeFound[idx].packet_type), 76u, y, false);
+                const uint8_t age_x = (uint8_t)(127u - ((uint8_t)strlen(age) * 7u));
+                msg_draw_small_at_y(age, age_x, y, false);
+            }
+
+            if (position == gMsgRangeScroll)
+                UI_GOGU_InvertBand((uint8_t)(y - 1u), 9u);
         }
     }
 
-    GUI_DisplaySmallest("PING", 0, 49, false, true);
-    GUI_DisplaySmallest("EXIT", 112, 49, false, true);
+    UI_GOGU_DrawFooter(gMsgRangeStatus == 1u ? "WAIT" : "PING", NULL, "EXIT");
 }
 
 void UI_DisplayMessenger(void)
@@ -566,7 +519,12 @@ void UI_DisplayMessenger(void)
         msg_draw_vline(19u, 19u, 43u, true);
         msg_draw_vline(108u, 19u, 43u, true);
         msg_draw_small_at_y("TX BLOCKED", 29u, 23u, false);
-        GUI_DisplaySmallest("SEND CANCELLED", 38u, 34u, false, true);
+        {
+            const char *reason = tx_block_reason_text();
+            const uint8_t width = (uint8_t)(strlen(reason) * 4u);
+            GUI_DisplaySmallest(reason, width >= 128u ? 0u : (uint8_t)((128u - width) / 2u),
+                                34u, false, true);
+        }
     }
     ST7565_BlitFullScreen();
 }

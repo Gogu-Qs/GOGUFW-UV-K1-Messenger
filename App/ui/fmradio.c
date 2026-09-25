@@ -22,8 +22,9 @@
 
 static uint8_t text_width_3x5(const char *s) { return (uint8_t)(strlen(s) * 4U); }
 static uint8_t center_x_3x5(const char *s) { uint8_t w = text_width_3x5(s); return (w >= 128U) ? 0U : (uint8_t)((128U - w) / 2U); }
+#ifndef ENABLE_FEAT_F4HWN
 static uint8_t text_width_small(const char *s) { return (uint8_t)(strlen(s) * 7U); }
-static uint8_t right_x_small(const char *s) { uint8_t w = text_width_small(s); return (w >= 128U) ? 0U : (uint8_t)(128U - w); }
+#endif
 
 static uint8_t FM_UI_BigFreqWidth(const char *s)
 {
@@ -69,7 +70,7 @@ static void FM_UI_DrawVfoScale(uint16_t freq10)
 {
     const uint8_t x1 = 12U;
     const uint8_t x2 = 116U;
-    const uint8_t y = 32U;
+    const uint8_t y = 35U;
     uint8_t x;
     uint8_t i;
     char loText[8];
@@ -89,10 +90,8 @@ static void FM_UI_DrawVfoScale(uint16_t freq10)
     snprintf(loText, sizeof(loText), "%u.%u", BK1080_GetFreqLoLimit(gEeprom.FM_Band) / 10U, BK1080_GetFreqLoLimit(gEeprom.FM_Band) % 10U);
     snprintf(hiText, sizeof(hiText), "%u", BK1080_GetFreqHiLimit(gEeprom.FM_Band) / 10U);
 #ifdef ENABLE_FEAT_F4HWN
-    /* VFO ruler and its lower labels are both shifted up by the same 4 px
-       from the original F4HWN positions (ruler 36->32, labels 42->38). */
-    GUI_DisplaySmallest(loText, x1, 38, false, true);
-    GUI_DisplaySmallest(hiText, (uint8_t)(x2 - text_width_3x5(hiText) + 1U), 38, false, true);
+    GUI_DisplaySmallest(loText, x1, 39, false, true);
+    GUI_DisplaySmallest(hiText, (uint8_t)(x2 - text_width_3x5(hiText) + 1U), 39, false, true);
 #else
     UI_PrintStringSmallNormal(loText, x1, 0, 5);
     UI_PrintStringSmallNormal(hiText, (uint8_t)(x2 - text_width_small(hiText) + 1U), 0, 5);
@@ -107,13 +106,17 @@ static void FM_UI_ChannelLabel(char *buf, size_t len)
     snprintf(buf, len, "CH%02u", (unsigned)(gEeprom.FM_SelectedChannel + 1U));
 }
 
-static void FM_UI_PrintBandLimitTiny(const char *text)
+static void FM_UI_DrawMenuArrows(void)
 {
-#ifdef ENABLE_FEAT_F4HWN
-    GUI_DisplaySmallest(text, 1, 50, false, true);
-#else
-    UI_PrintStringSmallNormal(text, 1, 0, 6);
-#endif
+    const uint8_t center_y = 36u;
+    for (uint8_t depth = 0u; depth < 5u; depth++) {
+        UI_DrawLineBuffer(gFrameBuffer, (uint8_t)(10u + depth),
+                          (uint8_t)(center_y - depth), (uint8_t)(10u + depth),
+                          (uint8_t)(center_y + depth), 1);
+        UI_DrawLineBuffer(gFrameBuffer, (uint8_t)(117u - depth),
+                          (uint8_t)(center_y - depth), (uint8_t)(117u - depth),
+                          (uint8_t)(center_y + depth), 1);
+    }
 }
 
 static uint8_t FM_UI_ReadRssiLevel(void)
@@ -124,11 +127,9 @@ static uint8_t FM_UI_ReadRssiLevel(void)
 static void FM_UI_DrawRssiBars(void)
 {
     const uint8_t level = FM_UI_ReadRssiLevel();
-    /* Pixel-identical to the HEARD RSSI meter geometry, but using the FM
-       BK1080 RSSI level mapping above.  Baseline is aligned with the bottom
-       of the left "87.5-108M" text (GUI_DisplaySmallest at y=50 => bottom y=54). */
-    const uint8_t x0 = 106U;
-    const uint8_t yBase = 54U;
+    /* Header meter: same five-step geometry as HEARD, above the y=9 line. */
+    const uint8_t x0 = 0U;
+    const uint8_t yBase = 6U;
 
     for (uint8_t i = 0U; i < 5U; i++) {
         const uint8_t h = (uint8_t)(2U + i);
@@ -149,30 +150,18 @@ void UI_UpdateFMRssiBar(void)
     if (FM_IsNameEditActive() || FM_IsAutoScanConfirmActive() || FM_IsLiveRssiEditActive())
         return;
 
-    /* The meter occupies x=106..124 entirely on framebuffer page 6
-     * (LCD page 7, after the status page).  Transfer only those 19 columns;
-     * even a full 128-column page produces an audible pulse in quiet FM audio. */
-    memset(&gFrameBuffer[6][106], 0, 19);
+    /* Update only the left header strip to avoid audible full-page FM writes. */
+    memset(&gFrameBuffer[0][0], 0, 36);
     FM_UI_DrawRssiBars();
-    ST7565_DrawLine(106, 7, &gFrameBuffer[6][106], 19);
+    ST7565_DrawLine(0, 1, &gFrameBuffer[0][0], 36);
 }
 
 static void FM_UI_DrawEditName(void)
 {
-    char buf[20];
     const char *edit = FM_GetNameEditBuffer();
-    UI_DisplayClear();
-#ifdef ENABLE_FEAT_F4HWN
-    UI_DisplayUnlockKeyboard(5);
-#endif
-    UI_PrintString("CH-NAME", 0, 127, 0, 8);
-    UI_DrawLineBuffer(gFrameBuffer, 8, 17, 119, 17, 1);
-    UI_PrintStringSmallBold(edit && edit[0] ? edit : " ", 4, 123, 3);
-    UI_DrawLineBuffer(gFrameBuffer, 8, 46, 119, 46, 1);
-    GUI_DisplaySmallest("SAVE", 0, 49, false, true);
-    snprintf(buf, sizeof(buf), "%u/15", (uint8_t)strlen(edit ? edit : ""));
-    GUI_DisplaySmallest(buf, 56, 49, false, true);
-    GUI_DisplaySmallest((FM_GetNameEditorMode() == 2U) ? "2" : (FM_GetNameEditorUpper() ? "B" : "b"), 120, 49, false, true);
+    UI_GOGU_DrawTextEditor("CH-NAME", edit, 15u, "SAVE",
+                           (FM_GetNameEditorMode() == 2U) ? "2" : (FM_GetNameEditorUpper() ? "B" : "b"),
+                           false);
 }
 
 static void FM_UI_DrawAutoScanConfirm(void)
@@ -181,12 +170,12 @@ static void FM_UI_DrawAutoScanConfirm(void)
 #ifdef ENABLE_FEAT_F4HWN
     UI_DisplayUnlockKeyboard(5);
 #endif
-    UI_PrintString("AUTO SCAN", 0, 127, 0, 8);
-    GUI_DisplaySmallest("SAVED CHANNELS", center_x_3x5("SAVED CHANNELS"), 17, false, true);
-    GUI_DisplaySmallest("WILL BE ERASED", center_x_3x5("WILL BE ERASED"), 25, false, true);
-    GUI_DisplaySmallest("SURE?", center_x_3x5("SURE?"), 35, false, true);
-    GUI_DisplaySmallest("YES/SCAN", 0, 49, false, true);
-    GUI_DisplaySmallest("NO/EXIT", 100, 49, false, true);
+    UI_GOGU_DrawHeader("AUTO SCAN", NULL);
+    UI_GOGU_DrawDottedSeparator(9u);
+    GUI_DisplaySmallest("SAVED CHANNELS", center_x_3x5("SAVED CHANNELS"), 17u, false, true);
+    GUI_DisplaySmallest("WILL BE ERASED", center_x_3x5("WILL BE ERASED"), 27u, false, true);
+    GUI_DisplaySmallest("SURE?", center_x_3x5("SURE?"), 37u, false, true);
+    UI_GOGU_DrawFooter("SCAN", NULL, "EXIT");
 }
 
 static void FM_UI_DrawLiveRssiEdit(void)
@@ -195,11 +184,10 @@ static void FM_UI_DrawLiveRssiEdit(void)
 #ifdef ENABLE_FEAT_F4HWN
     UI_DisplayUnlockKeyboard(5);
 #endif
-    UI_PrintString("LIVE RSSI", 0, 127, 0, 8);
-    UI_DrawLineBuffer(gFrameBuffer, 8, 17, 119, 17, 1);
+    UI_GOGU_DrawHeader("LIVE RSSI", NULL);
+    UI_GOGU_DrawDottedSeparator(9u);
     UI_PrintString(FM_GetLiveRssiSelection() ? "ON" : "OFF", 0, 127, 3, 10);
-    GUI_DisplaySmallest("UP/DN:CHANGE", 0, 49, false, true);
-    GUI_DisplaySmallest("MENU:SAVE", 92, 49, false, true);
+    UI_GOGU_DrawFooter("SAVE", "UP/DN", "EXIT");
 }
 
 void UI_DisplayFM(void)
@@ -208,7 +196,9 @@ void UI_DisplayFM(void)
     char centerText[20] = {0};
     char modeLabel[8] = {0};
     char bandText[16] = {0};
+    char saveName[19] = {0};
     const char *centerLabel = NULL;
+    bool showSaveName = false;
 
     if (FM_IsNameEditActive()) {
         FM_UI_DrawEditName();
@@ -237,9 +227,23 @@ void UI_DisplayFM(void)
     UI_DisplayUnlockKeyboard(5);
 #endif
 
-    UI_PrintStringSmallNormal("FM", 0, 0, 0);
-
     if (gAskToSave) {
+        const bool occupied = FM_CheckValidChannel(gFM_ChannelPosition);
+        const char *name = occupied ? FM_GetChannelName(gFM_ChannelPosition) : NULL;
+        if (name != NULL && name[0] != '\0') {
+            const uint8_t name_len = (uint8_t)strlen(name);
+            snprintf(saveName, sizeof(saveName), "%02u - ",
+                     (unsigned)(gFM_ChannelPosition + 1u));
+            if (name_len <= 13u) {
+                memcpy(&saveName[5], name, name_len + 1u);
+            } else {
+                memcpy(&saveName[5], name, 11u);
+                saveName[16] = '.';
+                saveName[17] = '.';
+                saveName[18] = '\0';
+            }
+            showSaveName = true;
+        }
         centerLabel = "SAVE?";
         strcpy(modeLabel, "SAVE");
     } else if (FM_GetMenuMode() != 0U) {
@@ -283,14 +287,16 @@ void UI_DisplayFM(void)
         centerLabel = "M-SCAN";
     }
 
-    UI_PrintStringSmallNormal(modeLabel, right_x_small(modeLabel), 0, 0);
+    UI_GOGU_DrawHeader("FM RADIO", modeLabel);
 
     if (gAskToSave || (gEeprom.FM_IsMrMode && gInputBoxIndex > 0)) {
-        UI_GenerateChannelString(String, gFM_ChannelPosition);
-        UI_PrintString(String, 0, 127, 2, 10);
+        if (!showSaveName) {
+            UI_GenerateChannelString(String, gFM_ChannelPosition);
+            UI_PrintString(String, 0, 127, 1, 10);
+        }
     } else if (gAskToDelete && !gEeprom.FM_IsMrMode) {
         snprintf(String, sizeof(String), "CH-%02u", gEeprom.FM_SelectedChannel + 1U);
-        UI_PrintString(String, 0, 127, 2, 10);
+        UI_PrintString(String, 0, 127, 1, 10);
     } else {
         if (gInputBoxIndex == 0) {
             snprintf(String, sizeof(String), "%u.%u", gEeprom.FM_FrequencyPlaying / 10U, gEeprom.FM_FrequencyPlaying % 10U);
@@ -298,9 +304,22 @@ void UI_DisplayFM(void)
             const char *ascii = INPUTBOX_GetAscii();
             snprintf(String, sizeof(String), "%.3s.%.1s", ascii, ascii + 3);
         }
-        /* Keep the main FM frequency in the original large F4HWN style and
-           original upper position.  Do not move the lower MR box / VFO ruler. */
         UI_DisplayFrequency(String, FM_UI_BigFreqCenterX(String), 1, false);
+    }
+
+    /* The stock big renderer starts at y=8. Move both frequency and CH entry
+       down four pixels so their shared baseline is centred in the content. */
+    for (uint8_t x = 0u; x < 128u; x++) {
+        const uint16_t bits = (uint16_t)gFrameBuffer[1][x] |
+                              ((uint16_t)gFrameBuffer[2][x] << 8u);
+        gFrameBuffer[1][x] = (uint8_t)(bits << 4u);
+        gFrameBuffer[2][x] = (uint8_t)(bits >> 4u);
+        gFrameBuffer[3][x] = (uint8_t)(bits >> 12u);
+    }
+    if (showSaveName) {
+        const uint8_t width = (uint8_t)(strlen(saveName) * 7u);
+        UI_GOGU_PrintSmallAtY(saveName, width >= 128u ? 0u : (uint8_t)((128u - width) / 2u),
+                              17u, false);
     }
 
     if (gEeprom.FM_IsMrMode || FM_GetMenuMode() != 0U || gAskToSave || gAskToDelete ||
@@ -310,6 +329,8 @@ void UI_DisplayFM(void)
         UI_DrawLineBuffer(gFrameBuffer, 8, 43, 119, 43, 1);
         UI_DrawLineBuffer(gFrameBuffer, 8, 29, 8, 43, 1);
         UI_DrawLineBuffer(gFrameBuffer, 119, 29, 119, 43, 1);
+        if (FM_GetMenuMode() != 0u)
+            FM_UI_DrawMenuArrows();
         if (centerLabel != NULL) {
             UI_PrintStringSmallBold(centerLabel, 10, 117, 4);
             /* Small-font rendering is page based. Shift only the label's
@@ -329,12 +350,11 @@ void UI_DisplayFM(void)
             BK1080_GetFreqLoLimit(gEeprom.FM_Band) / 10,
             gEeprom.FM_Band == 0 ? ".5" : "",
             BK1080_GetFreqHiLimit(gEeprom.FM_Band) / 10);
-    FM_UI_PrintBandLimitTiny(bandText);
-    /* Same 3x5 font and baseline as the band text.  The final LIVE pixel is
-     * x=103, leaving x=104..105 clear before the first meter pixel at x=106. */
-    if (FM_IsLiveRssiEnabled())
-        GUI_DisplaySmallest("LIVE", 89, 50, false, true);
+    UI_GOGU_DrawDottedSeparator(UI_GOGU_TOP_SEPARATOR_Y);
+    UI_GOGU_DrawFooter("MENU", bandText, "EXIT");
     FM_UI_DrawRssiBars();
+    if (FM_IsLiveRssiEnabled())
+        GUI_DisplaySmallest("LIVE", 0u, 11u, false, true);
 
     ST7565_BlitFullScreen();
 }

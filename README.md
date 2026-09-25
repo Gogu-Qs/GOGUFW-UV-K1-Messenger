@@ -1,4 +1,4 @@
-# GOGUFW 2.1.1
+# GOGUFW 2.3.0
 
 GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3. It keeps the F4HWN Fusion radio feature set and adds an integrated radio-to-radio Messenger, HEARD list, multi-radio Range Check, CALLTX melodies, RF Log Lite, named FM memories, an Action Picker, per-channel scrambling and a multiboot environment.
 
@@ -6,7 +6,7 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3. It keeps the F4H
 
 | Statistic | Project status |
 | --- | --- |
-| 📦 **Current stable release** | GOGUFW 2.1.1 |
+| 📦 **Current stable release** | GOGUFW 2.3.0 |
 | 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
 | ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
 | ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
@@ -15,10 +15,10 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3. It keeps the F4H
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **FLASH usage** | 119,008 / 120,832 bytes · **98.49%** · 1,824 bytes free |
-| 🧠 **RAM usage** | 13,504 / 16,384 bytes · **82.42%** · 2,880 bytes free |
+| 💾 **Multiboot image** | 119,648 / 120,832 bytes · **99.02%** · 1,184 bytes free |
+| 🧠 **RAM usage** | 13,520 / 16,384 bytes · **82.52%** · 2,864 bytes free |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · RF Log Lite · Action Picker · FM names/RSSI · Scrambler |
-| 🔌 **CHIRP support** | Matching 2.1.1 module with 1024 memories, Messenger settings, FM names, channel policies and Scrambler |
+| 🔌 **CHIRP support** | Matching 2.3.0 module with 1024 memories, Messenger settings, FM names, channel policies and Scrambler |
 
 ## Compatibility and downloads
 
@@ -26,10 +26,10 @@ GOGUFW is intended only for Quansheng **UV-K1 / UV-K5 V3** radios built around t
 
 The current release contains:
 
-- `f4hwn.gogufw.v2.1.1.bin` — the multiboot-compatible firmware image;
-- `Gogufw_2.1.1_chirp_module.py` — the matching custom CHIRP module.
+- `f4hwn.gogufw.v2.3.0.bin` — the multiboot-compatible firmware image;
+- `Gogufw_2.3.0_chirp_module.py` — the matching custom CHIRP module.
 
-[Download GOGUFW 2.1.1](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.1.1)
+[Download GOGUFW 2.3.0](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.3.0)
 
 Back up the radio with CHIRP before updating and keep a known-good DFU recovery image available.
 
@@ -47,7 +47,8 @@ Messenger sends and receives short text messages directly between compatible GOG
 - callsign, receive, ACK, alert-beep and LED settings;
 - a short wake frame before the first normal message attempt to improve reception while the destination radio is idle;
 - per-channel **No FSK TX** protection for channels where Messenger transmission must remain disabled;
-- TX-frequency, F Lock, modulation and channel-policy checks before every message, retry, ACK, PING or PONG.
+- TX-frequency, F Lock, modulation and channel-policy checks before every message, retry, ACK, PING or PONG;
+- a clear TX-blocked popup that identifies No FSK, frequency, modulation, configuration or battery restrictions.
 
 Open Messenger with **F + MENU**, or assign **MESSENGER** to a side key. The assigned Messenger action is a toggle: use it again on the Messenger home screen to return to the radio.
 
@@ -56,9 +57,9 @@ Open Messenger with **F + MENU**, or assign **MESSENGER** to a side key. The ass
 | Screen | Controls |
 | --- | --- |
 | Home | **UP/DOWN** selects Inbox, Compose, Sent or Drafts; **MENU** opens; **EXIT** returns to the radio. |
-| Inbox / Sent | **UP/DOWN** selects; **MENU** opens; **F** deletes; **EXIT** returns. |
+| Inbox / Sent | Four visible rows; **UP/DOWN** selects; **MENU** reads; **F** deletes; **EXIT** returns. Inbox rows show unread state, sender, preview and age; Sent rows show delivery state, preview and age. |
 | Read | **UP/DOWN** changes message; **MENU** replies or resends; **F** deletes; **EXIT** returns. |
-| Compose / Draft edit | Number keys enter text; hold a number for the digit; **STAR/F** changes text entry; **MENU** sends; **EXIT** returns. |
+| Compose / Draft edit | Number keys enter text; hold a number for the digit; **STAR** cycles `B`/`b`/`2`; **F** deletes; **MENU** sends; **EXIT** returns. |
 
 ### HEARD and Range Check
 
@@ -66,7 +67,7 @@ HEARD records recently received Messenger packets with callsign, RSSI, packet ty
 
 - Open HEARD with **F + 7**, or assign **HEARD** to a side key.
 - Press **MENU** on HEARD to start a 12-second Range Check.
-- Use **UP/DOWN** to move between result pages and **EXIT** to leave the result.
+- Use **UP/DOWN** to move through results one entry at a time. The first **EXIT** from Range Check returns to HEARD; the next returns to the radio.
 - `RngRsp` controls automatic PONG replies.
 - Randomized ACK and PONG timing reduces collisions when several radios answer together.
 
@@ -104,9 +105,17 @@ CALLTX transmits one of five selectable alert melodies using the existing radio 
 
 ### FM broadcast radio
 
-The FM radio includes named station memories, rename/delete controls and a continuously updated signal-strength display. FM RSSI drawing is cached to avoid unnecessary display and tuner activity.
+The FM radio includes named station memories, rename/delete controls and a signal-strength display. **LIVE RSSI** is the first menu item in both VFO and memory modes: ON updates the meter continuously and shows `LIVE`; OFF samples once after tuning and keeps the meter fixed to avoid periodic clicking on quiet broadcasts. Occupied save targets show their channel number and station name before confirmation.
 
 The Action Picker can also be opened from the normal FM screen. It is disabled while entering a frequency, editing a station name, choosing save/delete operations or confirming an automatic scan.
+
+### Search Frequency and Search Tone
+
+Open **Search Frequency** with **F + 4**, or **Search Tone** with **F + STAR**. Both screens use the same header, status, frequency/tone rows and footer controls as the other GOGUFW tools.
+
+After a result is found, press **MENU / SAVE**, choose a destination memory with **UP/DOWN** or the number keys, then press **MENU** and confirm `SAVE?`. Empty targets are marked `CH-xxxx`; occupied targets show the channel number and name, shortened with `..` when necessary. A saved result opens directly in MR mode without also opening the main menu.
+
+Scanner-created memories preserve the power setting that was active before the search, use **NARROW** bandwidth, and store airband results as **AM** rather than FM.
 
 ### Per-channel scrambler
 
@@ -200,10 +209,10 @@ Hold **PTT + SetKey while powering on**. The default SetKey is **MENU**, so the 
 
 ## CHIRP
 
-Use the module that matches the firmware release. For GOGUFW 2.1.1:
+Use the module that matches the firmware release. For GOGUFW 2.3.0:
 
 1. Start CHIRP and choose **File → Load Module**.
-2. Select `Gogufw_2.1.1_chirp_module.py`.
+2. Select `Gogufw_2.3.0_chirp_module.py`.
 3. Download the radio using **Quansheng → UV-K1 / UV-K5 V3 GOGUFW Messenger**.
 4. Edit channels, side-key actions, Messenger/Call settings, FM names, `No FSK TX`, `No Roger` and Scrambler as required.
 5. Upload the completed image to the radio.
@@ -219,7 +228,7 @@ cmake --preset Fusion --fresh
 cmake --build --preset Fusion
 ```
 
-The build emits the normal `gogufw.bin` and the canonical multiboot filename `f4hwn.gogufw.v2.1.1.bin`. See `BUILD_VSCODE_MAC.md` or `BUILD_WITH_VSCODE.md` for environment setup.
+The build emits the normal `gogufw.bin` and the canonical multiboot filename `f4hwn.gogufw.v2.3.0.bin`. See `BUILD_VSCODE_MAC.md` or `BUILD_WITH_VSCODE.md` for environment setup.
 
 ## Credits and license
 

@@ -616,33 +616,16 @@ static const char *UI_MENU_TextEditModeLabel(void)
 
 static void UI_MENU_DrawUnifiedTextEditor(const int m)
 {
-    char count[10];
     const uint8_t max_len = UI_MENU_TextEditMaxLenFor(m);
-    uint8_t used = (uint8_t)strlen(edit);
-    const char *title = MenuList[gMenuCursor].name;
-
-    if (used > max_len) used = max_len;
-
-    UI_DisplayClear();
-#ifdef ENABLE_FEAT_F4HWN
-    UI_DisplayUnlockKeyboard(5);
+    /* Keep the mixed-case labels in the main menu, but use the same
+     * all-caps heading style as COMPOSE once the shared editor is open. */
+    const char *title = m == MENU_MEM_NAME ? "CHNAME" :
+#ifdef ENABLE_MESSENGER
+                        m == MENU_MSG_CSG ? "MSGCSG" :
 #endif
-    UI_PrintString(title, 0, LCD_WIDTH - 1, 0, 8);
-    UI_DrawLineBuffer(gFrameBuffer, 8, 17, 119, 17, 1);
-    UI_PrintStringSmallBold(edit[0] ? edit : " ", 4, 123, 3);
-    UI_DrawLineBuffer(gFrameBuffer, 8, 46, 119, 46, 1);
-
-#ifdef ENABLE_FEAT_F4HWN
-    GUI_DisplaySmallest("SAVE", 0, 49, false, true);
-    sprintf(count, "%u/%u", (unsigned)used, (unsigned)max_len);
-    GUI_DisplaySmallest(count, 54, 49, false, true);
-    GUI_DisplaySmallest(UI_MENU_TextEditModeLabel(), 120, 49, false, true);
-#else
-    UI_PrintStringSmallNormal("SAVE", 0, 0, 6);
-    sprintf(count, "%u/%u", (unsigned)used, (unsigned)max_len);
-    UI_PrintStringSmallNormal(count, 54, 0, 6);
-    UI_PrintStringSmallNormal(UI_MENU_TextEditModeLabel(), 120, 0, 6);
-#endif
+                        MenuList[gMenuCursor].name;
+    UI_GOGU_DrawTextEditor(title, edit, max_len, "SAVE",
+                           UI_MENU_TextEditModeLabel(), false);
 }
 
 static void UI_MENU_DrawTopRightRoundedBadge(const char *text, const uint8_t line, const bool center_in_area, const uint8_t area_x1, const uint8_t area_x2)

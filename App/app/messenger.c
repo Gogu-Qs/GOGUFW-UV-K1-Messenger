@@ -5,6 +5,7 @@
 #include "app/messenger_rf.h"
 #include "app/messenger_packet.h"
 #include "audio.h"
+#include "ui/helper.h"
 #include "ui/ui.h"
 #include "misc.h"
 
@@ -27,7 +28,6 @@ TEXT_INPUT_Editor_t gMsgEditor;
 uint8_t gMsgReadIndex;
 uint8_t gMsgReadSource;
 
-#define MSG_RANGE_PAGE_SIZE 3u
 #define MSG_RANGE_WAIT_TICKS 1200u
 
 MSG_RangeFound_t gMsgRangeFound[MSG_RANGE_MAX_FOUND];
@@ -36,6 +36,7 @@ uint8_t gMsgRangeScroll;
 uint8_t gMsgRangeStatus; /* 0 idle, 1 wait, 2 ok */
 uint16_t gMsgRangeSession;
 static uint16_t s_msgRangeWaitTicks;
+static bool s_msgRangeReturnToHeard;
 static uint8_t s_msgAgeSubTicks;
 uint8_t gMsgTxLockNoticeTicks;
 
@@ -124,6 +125,7 @@ void MSG_RangeOpen(void)
     gMsgRangeScroll = 0;
     gMsgRangeStatus = 0;
     s_msgRangeWaitTicks = 0;
+    s_msgRangeReturnToHeard = false;
     gRequestDisplayScreen = DISPLAY_MESSENGER;
 }
 
@@ -214,7 +216,24 @@ static void list_move(int8_t dir)
     if (next >= count) next = 0;
     gMsgCursor = (uint8_t)next;
     if (gMsgCursor < gMsgScroll) gMsgScroll = gMsgCursor;
-    if (gMsgCursor >= gMsgScroll + 6) gMsgScroll = gMsgCursor - 5;
+    if (gMsgCursor >= gMsgScroll + UI_GOGU_CONTENT_ROWS)
+        gMsgScroll = (uint8_t)(gMsgCursor - (UI_GOGU_CONTENT_ROWS - 1u));
+}
+
+static void list_normalize_after_delete(void)
+{
+    const uint8_t count = current_count();
+    if (count == 0u) {
+        gMsgCursor = 0u;
+        gMsgScroll = 0u;
+        return;
+    }
+    if (gMsgCursor >= count)
+        gMsgCursor = (uint8_t)(count - 1u);
+    if (gMsgCursor < gMsgScroll)
+        gMsgScroll = gMsgCursor;
+    if (gMsgCursor >= (uint8_t)(gMsgScroll + UI_GOGU_CONTENT_ROWS))
+        gMsgScroll = (uint8_t)(gMsgCursor - (UI_GOGU_CONTENT_ROWS - 1u));
 }
 
 static void go_home(void)
@@ -251,7 +270,8 @@ static void return_to_read_source_list(void)
     }
     if (gMsgCursor >= count) gMsgCursor = (uint8_t)(count - 1u);
     if (gMsgCursor < gMsgScroll) gMsgScroll = gMsgCursor;
-    if (gMsgCursor >= (uint8_t)(gMsgScroll + 6u)) gMsgScroll = (uint8_t)(gMsgCursor - 5u);
+    if (gMsgCursor >= (uint8_t)(gMsgScroll + UI_GOGU_CONTENT_ROWS))
+        gMsgScroll = (uint8_t)(gMsgCursor - (UI_GOGU_CONTENT_ROWS - 1u));
 }
 
 static void open_compose(const char *seed)
@@ -299,6 +319,33 @@ static void read_move(int8_t dir)
     if (next >= count) next = 0;
     gMsgReadIndex = (uint8_t)next;
     if (gMsgReadSource == MSG_SCREEN_INBOX) MSG_STORE_MarkInboxRead(gMsgReadIndex);
+}
+
+static uint8_t range_current_count(void)
+{
+    if (gMsgRangeStatus != 1u && gMsgRangeStatus != 2u)
+        return gMsgRangeCount;
+
+    uint8_t count = 0u;
+    for (uint8_t i = 0u; i < gMsgRangeCount; i++)
+        if (gMsgRangeFound[i].used && gMsgRangeFound[i].range_session == gMsgRangeSession)
+            count++;
+    return count;
+}
+
+static void range_move(int8_t dir)
+{
+    const uint8_t count = range_current_count();
+    if (count == 0u) {
+        gMsgRangeScroll = 0u;
+        return;
+    }
+    int16_t next = (int16_t)gMsgRangeScroll + dir;
+    if (next < 0)
+        next = (int16_t)count - 1;
+    if (next >= count)
+        next = 0;
+    gMsgRangeScroll = (uint8_t)next;
 }
 
 void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
@@ -350,7 +397,11 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                     if (was_inbox) MSG_STORE_MarkInboxRead(gMsgReadIndex);
                 }
             } else if (Key == KEY_EXIT) go_home();
-            else if (Key == KEY_F) { if (gMsgScreen == MSG_SCREEN_INBOX) MSG_STORE_DeleteInbox(gMsgCursor); else if (gMsgScreen == MSG_SCREEN_OUTBOX) MSG_STORE_DeleteOutbox(gMsgCursor); }
+            else if (Key == KEY_F) {
+                if (gMsgScreen == MSG_SCREEN_INBOX) MSG_STORE_DeleteInbox(gMsgCursor);
+                else if (gMsgScreen == MSG_SCREEN_OUTBOX) MSG_STORE_DeleteOutbox(gMsgCursor);
+                list_normalize_after_delete();
+            }
             break;
 
         case MSG_SCREEN_READ:
@@ -405,9 +456,10 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
         case MSG_SCREEN_RANGE:
             if (Key == KEY_EXIT) {
                 MSG_RF_HardRestoreVoicePath();
-                if (gMsgRangeStatus == 2u) {
+                if (s_msgRangeReturnToHeard || gMsgRangeStatus != 0u) {
                     gMsgRangeStatus = 0u;
                     s_msgRangeWaitTicks = 0u;
+                    s_msgRangeReturnToHeard = false;
                 } else {
                     gRequestDisplayScreen = DISPLAY_MAIN;
                 }
@@ -417,6 +469,7 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                         gMsgRangeSession++;
                         if (gMsgRangeSession == 0u) gMsgRangeSession = 1u;
                         gMsgRangeStatus = 1u;
+                        s_msgRangeReturnToHeard = true;
                         s_msgRangeWaitTicks = MSG_RANGE_WAIT_TICKS;
                         gMsgRangeScroll = 0u;
                     } else if (MSG_RF_LastSendWasBlocked()) {
@@ -424,12 +477,9 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                     }
                 }
             } else if (Key == KEY_UP) {
-                if (gMsgRangeCount > 0u && gMsgRangeScroll > 0u) --gMsgRangeScroll;
+                range_move(-1);
             } else if (Key == KEY_DOWN) {
-                if (gMsgRangeCount > 0u) {
-                    uint8_t pages = (uint8_t)((gMsgRangeCount + MSG_RANGE_PAGE_SIZE - 1u) / MSG_RANGE_PAGE_SIZE);
-                    if (gMsgRangeScroll + 1u < pages) ++gMsgRangeScroll;
-                }
+                range_move(1);
             }
             break;
 

@@ -52,6 +52,8 @@ static SCAN_FrequencyVerifyState_t scanFreqVerifyState;
 static uint32_t scanVerifyFundamental;
 static uint32_t scanVerifyHarmonic;
 static uint16_t scanVerifyFundamentalRssi;
+static bool scannerSaveOnRelease;
+static uint8_t scannerSavePower;
 
 static bool SCANNER_ShouldVerifyVhfSecondHarmonic(const uint32_t frequency)
 {
@@ -162,7 +164,7 @@ static void SCANNER_Key_DIGITS(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 #ifdef ENABLE_VOICE
                 gAnotherVoiceID = (VOICE_ID_t)Key;
 #endif
-                gShowChPrefix = RADIO_CheckValidChannel(chan, false, 0);
+                gShowChPrefix = RADIO_CheckValidChannel(chan, false, gEeprom.TX_VFO);
                 gScanChannel  = chan;
                 return;
             }
@@ -203,10 +205,62 @@ static void SCANNER_Key_EXIT(bool bKeyPressed, bool bKeyHeld)
     }
 }
 
+static void SCANNER_SaveSelectedChannel(void)
+{
+    if (!gScanSingleFrequency) {
+        RADIO_InitInfo(gTxVfo, gScanChannel, gScanFrequency);
+        gTxVfo->Modulation = FREQUENCY_GetBand(gScanFrequency) == BAND2_108MHz
+            ? MODULATION_AM : MODULATION_FM;
+
+        if (gScanUseCssResult) {
+            gTxVfo->freq_config_RX.CodeType = gScanCssResultType;
+            gTxVfo->freq_config_RX.Code     = gScanCssResultCode;
+        }
+
+        gTxVfo->freq_config_TX = gTxVfo->freq_config_RX;
+        gTxVfo->STEP_SETTING = stepSetting;
+    } else {
+        RADIO_ConfigureChannel(0, VFO_CONFIGURE_RELOAD);
+        RADIO_ConfigureChannel(1, VFO_CONFIGURE_RELOAD);
+
+        gTxVfo->freq_config_RX.CodeType = gScanCssResultType;
+        gTxVfo->freq_config_RX.Code     = gScanCssResultCode;
+        gTxVfo->freq_config_TX.CodeType = gScanCssResultType;
+        gTxVfo->freq_config_TX.Code     = gScanCssResultCode;
+    }
+
+    /* RADIO_InitInfo() deliberately creates a LOW1/WIDE default profile for
+     * generic callers.  A scanner save must instead preserve the user's TX
+     * power selection and create a normal narrow-band memory channel. */
+    gTxVfo->OUTPUT_POWER = scannerSavePower;
+    gTxVfo->CHANNEL_BANDWIDTH = BANDWIDTH_NARROW;
+    RADIO_ConfigureSquelchAndOutputPower(gTxVfo);
+
+    gTxVfo->CHANNEL_SAVE = gScanChannel;
+    gEeprom.MrChannel[gEeprom.TX_VFO] = gScanChannel;
+    gEeprom.ScreenChannel[gEeprom.TX_VFO] = gScanChannel;
+#ifdef ENABLE_VOICE
+    gAnotherVoiceID = VOICE_ID_CONFIRM;
+#endif
+    gRequestSaveChannel = 2;
+    gRequestSaveVFO = true;
+    gVfoConfigureMode = VFO_CONFIGURE_RELOAD;
+    gRequestDisplayScreen = DISPLAY_MAIN;
+    gScannerSaveState = SCAN_SAVE_NO_PROMPT;
+}
+
 static void SCANNER_Key_MENU(bool bKeyPressed, bool bKeyHeld)
 {
-    if (bKeyHeld || !bKeyPressed) // ignore long press or release button events
+    if (bKeyHeld)
         return;
+
+    if (!bKeyPressed) {
+        if (scannerSaveOnRelease) {
+            scannerSaveOnRelease = false;
+            SCANNER_SaveSelectedChannel();
+        }
+        return;
+    }
 
     /*
     if (gScanCssState == SCAN_CSS_STATE_OFF && !gScanSingleFrequency) {
@@ -255,14 +309,13 @@ static void SCANNER_Key_MENU(bool bKeyPressed, bool bKeyHeld)
                 }
             }
 
-            if (IS_MR_CHANNEL(gTxVfo->CHANNEL_SAVE)) {
-                gScannerSaveState = SCAN_SAVE_CHAN_SEL;
-                gScanChannel      = gTxVfo->CHANNEL_SAVE;
-                gShowChPrefix     = RADIO_CheckValidChannel(gTxVfo->CHANNEL_SAVE, false, 0);
-            }
-            else {
-                gScannerSaveState = SCAN_SAVE_CHANNEL;
-            }
+            gScannerSaveState = SCAN_SAVE_CHAN_SEL;
+            gScanChannel = IS_MR_CHANNEL(gTxVfo->CHANNEL_SAVE)
+                ? gTxVfo->CHANNEL_SAVE
+                : gEeprom.MrChannel[gEeprom.TX_VFO];
+            if (!IS_MR_CHANNEL(gScanChannel))
+                gScanChannel = 0u;
+            gShowChPrefix = RADIO_CheckValidChannel(gScanChannel, false, gEeprom.TX_VFO);
 
             gScanCssState         = SCAN_CSS_STATE_FOUND;
 #ifdef ENABLE_VOICE
@@ -282,45 +335,9 @@ static void SCANNER_Key_MENU(bool bKeyPressed, bool bKeyHeld)
             break;
 
         case SCAN_SAVE_CHANNEL:
-            if (!gScanSingleFrequency) {
-                RADIO_InitInfo(gTxVfo, gTxVfo->CHANNEL_SAVE, gScanFrequency);
-
-                if (gScanUseCssResult) {
-                    gTxVfo->freq_config_RX.CodeType = gScanCssResultType;
-                    gTxVfo->freq_config_RX.Code     = gScanCssResultCode;
-                }
-
-                gTxVfo->freq_config_TX     = gTxVfo->freq_config_RX;
-                gTxVfo->STEP_SETTING = stepSetting;
-            }
-            else {
-                RADIO_ConfigureChannel(0, VFO_CONFIGURE_RELOAD);
-                RADIO_ConfigureChannel(1, VFO_CONFIGURE_RELOAD);
-
-                gTxVfo->freq_config_RX.CodeType = gScanCssResultType;
-                gTxVfo->freq_config_RX.Code     = gScanCssResultCode;
-                gTxVfo->freq_config_TX.CodeType = gScanCssResultType;
-                gTxVfo->freq_config_TX.Code     = gScanCssResultCode;
-            }
-
-            uint16_t chan;
-            if (IS_MR_CHANNEL(gTxVfo->CHANNEL_SAVE)) {
-                chan = gScanChannel;
-                gEeprom.MrChannel[gEeprom.TX_VFO] = chan;
-            }
-            else {
-                chan = gTxVfo->Band + FREQ_CHANNEL_FIRST;
-                gEeprom.FreqChannel[gEeprom.TX_VFO] = chan;
-            }
-
-            gTxVfo->CHANNEL_SAVE = chan;
-            gEeprom.ScreenChannel[gEeprom.TX_VFO] = chan;
-#ifdef ENABLE_VOICE 
-            gAnotherVoiceID = VOICE_ID_CONFIRM;
-#endif
-            gRequestDisplayScreen = DISPLAY_SCANNER;
-            gRequestSaveChannel = 2;
-            gScannerSaveState = SCAN_SAVE_NO_PROMPT;
+            /* Complete the transition on key release.  Otherwise the same
+             * MENU release reaches the main screen and opens the main menu. */
+            scannerSaveOnRelease = true;
             break;
 
         default:
@@ -355,7 +372,7 @@ static void SCANNER_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Directio
 
     if (gScannerSaveState == SCAN_SAVE_CHAN_SEL) {
         gScanChannel          = NUMBER_AddWithWraparound(gScanChannel, Direction, 0, MR_CHANNEL_LAST);
-        gShowChPrefix         = RADIO_CheckValidChannel(gScanChannel, false, 0);
+        gShowChPrefix         = RADIO_CheckValidChannel(gScanChannel, false, gEeprom.TX_VFO);
         gRequestDisplayScreen = DISPLAY_SCANNER;
     }
     else if (!bKeyHeld)
@@ -393,6 +410,7 @@ void SCANNER_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
 void SCANNER_Start(bool singleFreq)
 {
+    scannerSaveOnRelease = false;
     gScanSingleFrequency = singleFreq;
     gMonitor = false;
 
@@ -402,6 +420,7 @@ void SCANNER_Start(bool singleFreq)
 
     BK4819_StopScan();
     RADIO_SelectVfos();
+    scannerSavePower = gTxVfo->OUTPUT_POWER;
 
 #ifdef ENABLE_NOAA
     if (IS_NOAA_CHANNEL(gRxVfo->CHANNEL_SAVE))

@@ -154,6 +154,7 @@ static uint16_t s_ack_collect_ticks;
 static uint16_t s_ack_jitter_seed;
 static uint32_t s_range_jitter_seed;
 static bool s_last_send_blocked;
+static MSG_RF_BlockReason_t s_last_send_block_reason;
 
 static bool MSG_RF_FrequencyBlocked(const VFO_Info_t *vfo)
 {
@@ -163,18 +164,37 @@ static bool MSG_RF_FrequencyBlocked(const VFO_Info_t *vfo)
     return !vfo || TX_freq_check(vfo->pTX->Frequency) != 0;
 }
 
+static MSG_RF_BlockReason_t MSG_RF_TxBlockReason(const VFO_Info_t *vfo)
+{
+    if (!vfo)
+        return MSG_RF_BLOCK_UNKNOWN;
+    if (vfo->NO_FSK_TX)
+        return MSG_RF_BLOCK_NO_FSK;
+    if (MSG_RF_FrequencyBlocked(vfo))
+        return MSG_RF_BLOCK_TX_FREQUENCY;
+    if (vfo->Modulation != MODULATION_FM)
+        return MSG_RF_BLOCK_MODULATION;
+    if (SerialConfigInProgress())
+        return MSG_RF_BLOCK_CONFIG;
+    if (gBatteryDisplayLevel == 0u || gBatteryDisplayLevel > 6u)
+        return MSG_RF_BLOCK_BATTERY;
+    return MSG_RF_BLOCK_NONE;
+}
+
 /* Check the actual RF target before any FSK TX, including warmup/wake. */
 static bool MSG_RF_TxAllowed(const VFO_Info_t *vfo)
 {
-    return vfo && !vfo->NO_FSK_TX && !MSG_RF_FrequencyBlocked(vfo) &&
-           vfo->Modulation == MODULATION_FM &&
-           !SerialConfigInProgress() && gBatteryDisplayLevel > 0 &&
-           gBatteryDisplayLevel <= 6;
+    return MSG_RF_TxBlockReason(vfo) == MSG_RF_BLOCK_NONE;
 }
 
 bool MSG_RF_LastSendWasBlocked(void)
 {
     return s_last_send_blocked;
+}
+
+MSG_RF_BlockReason_t MSG_RF_LastSendBlockReason(void)
+{
+    return s_last_send_block_reason;
 }
 
 static bool MSG_RF_ReplyValid(uint8_t vfo, uint32_t rx, uint32_t tx)
@@ -1668,12 +1688,14 @@ static void MSG_RF_RangeForceRxReprime(void)
 bool MSG_RF_SendRangePing(void)
 {
     s_last_send_blocked = false;
+    s_last_send_block_reason = MSG_RF_BLOCK_NONE;
     if (gSurvivalMode) return false;
     MSG_RF_EnsureStoreInitialized();
 #ifdef ENABLE_AIRCOPY
     const VFO_Info_t *target = &gEeprom.VfoInfo[gEeprom.TX_VFO & 1u];
     if (!MSG_RF_TxAllowed(target)) {
         s_last_send_blocked = true;
+        s_last_send_block_reason = MSG_RF_TxBlockReason(target);
         return false;
     }
 
@@ -1735,11 +1757,13 @@ static void MSG_RF_SendInitialWakeFrame(uint16_t id)
 bool MSG_RF_SendText(const char *text)
 {
     s_last_send_blocked = false;
+    s_last_send_block_reason = MSG_RF_BLOCK_NONE;
     if (gSurvivalMode) return false;
     MSG_RF_EnsureStoreInitialized();
 #ifdef ENABLE_AIRCOPY
     if (!MSG_RF_TxAllowed(gCurrentVfo)) {
         s_last_send_blocked = true;
+        s_last_send_block_reason = MSG_RF_TxBlockReason(gCurrentVfo);
         return false;
     }
 

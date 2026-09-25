@@ -20,6 +20,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define UI_GOGU_TOP_SEPARATOR_Y     9u
+#define UI_GOGU_BOTTOM_SEPARATOR_Y 46u
+#define UI_GOGU_CONTENT_ROW_Y(row) ((uint8_t)(11u + ((row) * 9u)))
+#define UI_GOGU_CONTENT_ROWS        4u
+
 void UI_GenerateChannelString(char *pString, const uint16_t Channel);
 void UI_GenerateChannelStringEx(char *pString, const bool bShowPrefix, const uint16_t ChannelNumber);
 void UI_PrintString(const char *pString, uint8_t Start, uint8_t End, uint8_t Line, uint8_t Width);
@@ -31,6 +36,19 @@ void UI_PrintStringSmallBufferBold(const char *pString, uint8_t * buffer);
 void UI_DisplayFrequency(const char *string, uint8_t X, uint8_t Y, bool center);
 
 void UI_DisplayPopup(const char *string);
+
+/* Shared GOGUFW screen chrome.  Keep feature screens visually consistent and
+ * centralise the small drawing primitives so optional builds do not carry
+ * several private copies of the same code. */
+void UI_GOGU_DrawHeader(const char *title, const char *badge);
+void UI_GOGU_DrawDottedSeparator(uint8_t y);
+void UI_GOGU_DrawFooter(const char *left, const char *center, const char *right);
+void UI_GOGU_PrintSmallAtY(const char *text, uint8_t x, uint8_t y, bool inverted);
+void UI_GOGU_InvertArea(uint8_t x0, uint8_t x1, uint8_t y, uint8_t height);
+void UI_GOGU_InvertBand(uint8_t y, uint8_t height);
+void UI_GOGU_DrawTextEditor(const char *title, const char *text, uint8_t max_len,
+                            const char *primary_action, const char *mode,
+                            bool multiline);
 
 void UI_DrawPixelBuffer(uint8_t (*buffer)[128], uint8_t x, uint8_t y, bool black);
 #ifdef ENABLE_FEAT_F4HWN

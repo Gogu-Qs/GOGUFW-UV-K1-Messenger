@@ -14,7 +14,7 @@
 #include "ui/ui.h"
 
 #define RFLOG_CAPACITY       20u
-#define RFLOG_VISIBLE_ROWS    5u
+#define RFLOG_VISIBLE_ROWS UI_GOGU_CONTENT_ROWS
 #define RFLOG_CHANNEL_NONE 0xFFFFu
 #define RFLOG_FLAG_TX       (1u << 0)
 
@@ -261,34 +261,18 @@ static void RFLOG_FormatAge(uint16_t seconds, char *buffer)
         sprintf(buffer, "%uh", seconds / 3600u);
 }
 
-static void RFLOG_InvertRow(uint8_t line)
-{
-    for (uint8_t x = 0u; x < 128u; x++) {
-        gFrameBuffer[line][x] ^= 0xFFu;
-        gFrameBuffer[line - 1u][x] ^= 0x80u;
-    }
-}
-
-static void RFLOG_DrawFooter(void)
-{
-    for (uint8_t x = 0u; x < 128u; x = (uint8_t)(x + 4u))
-        UI_DrawLineBuffer(gFrameBuffer, x, 47, (uint8_t)(x + 1u), 47, true);
-    GUI_DisplaySmallest("SELECT", 0, 49, false, true);
-    GUI_DisplaySmallest("EXIT", 112, 49, false, true);
-}
-
 void UI_DisplayGoguRfLog(void)
 {
     UI_DisplayClear();
 
-    UI_PrintStringSmallBold("RF LOG", 0, 127, 0);
     char counter[6];
     sprintf(counter, "%u/%u", gCount ? (uint8_t)(gCursor + 1u) : 0u, gCount);
-    GUI_DisplaySmallest(counter, (uint8_t)(127u - strlen(counter) * 4u), 1, false, true);
+    UI_GOGU_DrawHeader("RF LOG", counter);
+    UI_GOGU_DrawDottedSeparator(UI_GOGU_TOP_SEPARATOR_Y);
 
     if (gCount == 0u) {
-        UI_PrintString("NO RF LOG", 0, 127, 2, 8);
-        RFLOG_DrawFooter();
+        UI_GOGU_PrintSmallAtY("NO RF LOG", 36u, 25u, false);
+        UI_GOGU_DrawFooter("SELECT", NULL, "EXIT");
         ST7565_BlitFullScreen();
         return;
     }
@@ -307,18 +291,22 @@ void UI_DisplayGoguRfLog(void)
         RFLOG_FormatDuration(entry->duration_seconds, duration);
         RFLOG_FormatAge(entry->age_seconds, age);
 
-        const uint8_t line = (uint8_t)(row + 1u);
+        const uint8_t y = UI_GOGU_CONTENT_ROW_Y(row);
         GUI_DisplaySmallest((entry->flags & RFLOG_FLAG_TX) ? "TX" : "RX",
-                            1, (uint8_t)(line * 8u + 1u), false, true);
-        UI_PrintStringSmallNormal(title, 11, 0, line);
-        GUI_DisplaySmallest(duration, 83, (uint8_t)(line * 8u + 1u), false, true);
-        GUI_DisplaySmallest(age, 111, (uint8_t)(line * 8u + 1u), false, true);
+                            1u, (uint8_t)(y + 1u), false, true);
+        UI_GOGU_PrintSmallAtY(title, 11u, y, false);
+        GUI_DisplaySmallest(duration, 91u, (uint8_t)(y + 1u), false, true);
+        {
+            const uint8_t age_width = (uint8_t)(strlen(age) * 4u);
+            GUI_DisplaySmallest(age, age_width >= 128u ? 0u : (uint8_t)(128u - age_width),
+                                (uint8_t)(y + 1u), false, true);
+        }
 
         if (index == gCursor)
-            RFLOG_InvertRow(line);
+            UI_GOGU_InvertBand((uint8_t)(y - 1u), 9u);
     }
 
-    RFLOG_DrawFooter();
+    UI_GOGU_DrawFooter("SELECT", NULL, "EXIT");
 
     ST7565_BlitFullScreen();
 }

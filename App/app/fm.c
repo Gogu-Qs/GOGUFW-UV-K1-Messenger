@@ -756,7 +756,7 @@ static void Key_MENU(uint8_t state)
                 gRequestSaveFM = true;
                 gAskToSave = false;
             } else if (s_fmMenuMode == FM_MENU_NONE) {
-                s_fmMenuMode = FM_MENU_SAVE;
+                s_fmMenuMode = FM_MENU_LIVE_RSSI;
             } else if (s_fmMenuMode == FM_MENU_SAVE) {
                 s_fmMenuMode = FM_MENU_NONE;
                 gAskToSave = true;
@@ -768,7 +768,7 @@ static void Key_MENU(uint8_t state)
         }
         else {
             if (s_fmMenuMode == FM_MENU_NONE) {
-                s_fmMenuMode = FM_MENU_NAME;
+                s_fmMenuMode = FM_MENU_LIVE_RSSI;
                 gAskToDelete = false;
             } else if (s_fmMenuMode == FM_MENU_DELETE) {
                 gFM_Channels[gEeprom.FM_SelectedChannel] = 0xFFFF;

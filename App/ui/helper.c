@@ -215,6 +215,148 @@ void UI_DisplayFrequency(const char *string, uint8_t X, uint8_t Y, bool center)
     }
 }
 
+void UI_GOGU_DrawHeader(const char *title, const char *badge)
+{
+    if (title != NULL)
+        UI_PrintStringSmallBold(title, 0, 127, 0);
+
+    if (badge != NULL && badge[0] != '\0') {
+#ifdef ENABLE_FEAT_F4HWN
+        const uint8_t width = (uint8_t)(strlen(badge) * 4u);
+        const uint8_t x = width >= 128u ? 0u : (uint8_t)(128u - width);
+        GUI_DisplaySmallest(badge, x, 1, false, true);
+#else
+        const uint8_t width = (uint8_t)(strlen(badge) * 7u);
+        const uint8_t x = width >= 128u ? 0u : (uint8_t)(128u - width);
+        UI_PrintStringSmallNormal(badge, x, 0, 0);
+#endif
+    }
+}
+
+void UI_GOGU_DrawDottedSeparator(uint8_t y)
+{
+    for (uint8_t x = 0u; x < 128u; x = (uint8_t)(x + 4u))
+        UI_DrawLineBuffer(gFrameBuffer, x, y, (uint8_t)(x + 1u), y, true);
+}
+
+static uint8_t UI_GOGU_TinyWidth(const char *text)
+{
+    return text == NULL ? 0u : (uint8_t)(strlen(text) * 4u);
+}
+
+void UI_GOGU_DrawFooter(const char *left, const char *center, const char *right)
+{
+    UI_GOGU_DrawDottedSeparator(UI_GOGU_BOTTOM_SEPARATOR_Y);
+#ifdef ENABLE_FEAT_F4HWN
+    if (left != NULL)
+        GUI_DisplaySmallest(left, 0u, 49u, false, true);
+    if (center != NULL) {
+        const uint8_t width = UI_GOGU_TinyWidth(center);
+        GUI_DisplaySmallest(center, width >= 128u ? 0u : (uint8_t)((128u - width) / 2u), 49u, false, true);
+    }
+    if (right != NULL) {
+        const uint8_t width = UI_GOGU_TinyWidth(right);
+        GUI_DisplaySmallest(right, width >= 128u ? 0u : (uint8_t)(128u - width), 49u, false, true);
+    }
+#else
+    if (left != NULL) UI_PrintStringSmallNormal(left, 0u, 0u, 6u);
+    if (center != NULL) UI_PrintStringSmallNormal(center, 0u, 127u, 6u);
+    if (right != NULL) {
+        const uint8_t width = (uint8_t)(strlen(right) * 7u);
+        UI_PrintStringSmallNormal(right, width >= 128u ? 0u : (uint8_t)(128u - width), 0u, 6u);
+    }
+#endif
+}
+
+void UI_GOGU_PrintSmallAtY(const char *text, uint8_t x, uint8_t y, bool inverted)
+{
+    if (text == NULL)
+        return;
+
+    const uint8_t pitch = 7u;
+    if (inverted)
+        UI_GOGU_InvertBand(y > 0u ? (uint8_t)(y - 1u) : y, 9u);
+    for (uint8_t i = 0u; text[i] != '\0' && x < 128u; i++, x = (uint8_t)(x + pitch)) {
+        const char c = text[i];
+        if (c <= ' ' || c >= 127)
+            continue;
+        const uint8_t *glyph = gFontSmall[(uint8_t)c - ' ' - 1u];
+        for (uint8_t col = 0u; col < 6u && (uint8_t)(x + col) < 128u; col++) {
+            uint8_t bits = glyph[col];
+            for (uint8_t row = 0u; row < 7u && (uint8_t)(y + row) < 56u; row++) {
+                if ((bits & (1u << row)) != 0u)
+                    UI_DrawPixelBuffer(gFrameBuffer, (uint8_t)(x + col), (uint8_t)(y + row), !inverted);
+            }
+        }
+    }
+}
+
+void UI_GOGU_InvertArea(uint8_t x0, uint8_t x1, uint8_t y, uint8_t height)
+{
+    if (x1 > 127u)
+        x1 = 127u;
+    uint8_t end = (uint8_t)(y + height);
+    if (end > 56u)
+        end = 56u;
+    for (uint8_t py = y; py < end; py++) {
+        const uint8_t mask = (uint8_t)(1u << (py & 7u));
+        for (uint8_t x = x0; x <= x1; x++)
+            gFrameBuffer[py >> 3][x] ^= mask;
+    }
+}
+
+void UI_GOGU_InvertBand(uint8_t y, uint8_t height)
+{
+    UI_GOGU_InvertArea(0u, 127u, y, height);
+}
+
+void UI_GOGU_DrawTextEditor(const char *title, const char *text, uint8_t max_len,
+                            const char *primary_action, const char *mode,
+                            bool multiline)
+{
+    char counter[10];
+    char mode_label[4] = "*:B";
+    uint8_t used = text == NULL ? 0u : (uint8_t)strlen(text);
+    if (used > max_len)
+        used = max_len;
+    if (mode != NULL && mode[0] != '\0')
+        mode_label[2] = mode[0];
+
+    UI_DisplayClear();
+#ifdef ENABLE_FEAT_F4HWN
+    UI_DisplayUnlockKeyboard(5u);
+#endif
+    sprintf(counter, "%u/%u", (unsigned)used, (unsigned)max_len);
+    UI_GOGU_DrawHeader(title, counter);
+#ifdef ENABLE_FEAT_F4HWN
+    GUI_DisplaySmallest(mode_label, 0u, 1u, false, true);
+#else
+    UI_PrintStringSmallNormal(mode_label, 0u, 0u, 0u);
+#endif
+    UI_GOGU_DrawDottedSeparator(UI_GOGU_TOP_SEPARATOR_Y);
+
+    if (text != NULL && text[0] != '\0') {
+        if (multiline) {
+            char line[18];
+            const char *p = text;
+            for (uint8_t row = 0u; row < 3u && *p != '\0'; row++) {
+                uint8_t n = 0u;
+                while (p[n] != '\0' && n < 17u) {
+                    line[n] = p[n];
+                    n++;
+                }
+                line[n] = '\0';
+                UI_GOGU_PrintSmallAtY(line, 1u, (uint8_t)(13u + row * 10u), false);
+                p += n;
+            }
+        } else {
+            UI_PrintStringSmallBold(text, 4u, 123u, 3u);
+        }
+    }
+
+    UI_GOGU_DrawFooter(primary_action, "F:DEL", "EXIT");
+}
+
 /*
 void UI_DisplayFrequency(const char *string, uint8_t X, uint8_t Y, bool center)
 {
