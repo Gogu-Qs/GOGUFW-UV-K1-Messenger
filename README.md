@@ -85,9 +85,7 @@ The assigned HEARD action also behaves as a toggle.
 
 | Empty HEARD list | Recently heard packet |
 | --- | --- |
-| ![Empty HEARD screen](docs/screenshots/heard-empty.png) | ![HEARD packet details](docs/screenshots/heard-entry.png) |
-
-![HEARD packet list](docs/screenshots/heard-list.png)
+| ![Empty HEARD screen](docs/screenshots/heard-empty.png) | ![HEARD packet details](docs/screenshots/heard-list.png) |
 
 | Waiting for PONG replies | Range Check result |
 | --- | --- |
