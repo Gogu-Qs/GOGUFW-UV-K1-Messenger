@@ -114,6 +114,8 @@ RF Log Lite is GOGUFW's compact, low-memory activity history. It keeps the lates
 
 Open **RF LOG** from the Action Picker, or assign it directly to a programmable side-key action. Use **UP/DOWN** to browse one entry at a time, **MENU / SELECT** to load the selected memory channel or frequency into the active VFO, and **EXIT** to return without changing it.
 
+![RF Log Lite activity history](docs/screenshots/rf-log-lite.png)
+
 ### CALLTX
 
 CALLTX transmits one of five selectable alert melodies using the existing radio TX path.
