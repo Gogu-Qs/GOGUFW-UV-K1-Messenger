@@ -52,6 +52,16 @@ Messenger sends and receives short text messages directly between compatible GOG
 
 Open Messenger with **F + MENU**, or assign **MESSENGER** to a side key. The assigned Messenger action is a toggle: use it again on the Messenger home screen to return to the radio.
 
+| Messenger home | Sent messages |
+| --- | --- |
+| ![Messenger home screen](docs/screenshots/messenger-home.png) | ![Messenger Sent list](docs/screenshots/messenger-sent.png) |
+
+| Empty Compose screen | Composing a message |
+| --- | --- |
+| ![Empty Messenger Compose screen](docs/screenshots/messenger-compose-empty.png) | ![Messenger text composition](docs/screenshots/messenger-compose.png) |
+
+![Messenger Drafts selection](docs/screenshots/messenger-drafts.png)
+
 #### Messenger controls
 
 | Screen | Controls |
@@ -73,6 +83,16 @@ HEARD records recently received Messenger packets with callsign, RSSI, packet ty
 
 The assigned HEARD action also behaves as a toggle.
 
+| Empty HEARD list | Recently heard packet |
+| --- | --- |
+| ![Empty HEARD screen](docs/screenshots/heard-empty.png) | ![HEARD packet details](docs/screenshots/heard-entry.png) |
+
+![HEARD packet list](docs/screenshots/heard-list.png)
+
+| Waiting for PONG replies | Range Check result |
+| --- | --- |
+| ![Range Check waiting screen](docs/screenshots/range-check-wait.png) | ![Range Check result](docs/screenshots/range-check-result.png) |
+
 ### Action Picker
 
 The Action Picker gives temporary access to the complete programmable side-key action list without repeatedly changing the saved side-key assignment.
@@ -85,6 +105,8 @@ The Action Picker gives temporary access to the complete programmable side-key a
 Each side key remembers its last picker selection. The picker is available on the main radio screen, Messenger Home, HEARD/idle Range Check and the normal FM radio screen. It deliberately stays out of Inbox, Sent, Read, Compose, active Range Check collection and FM edit/confirmation screens so their existing controls remain intact. **PTT** closes the picker and continues normally.
 
 Some radio actions are unsafe while the FM receiver is active; selecting one of those actions in FM gives a double warning beep instead of changing radio state.
+
+![Action Picker](docs/screenshots/action-picker.png)
 
 ### RF Log Lite
 
@@ -109,6 +131,10 @@ The FM radio includes named station memories, rename/delete controls and a signa
 
 The Action Picker can also be opened from the normal FM screen. It is disabled while entering a frequency, editing a station name, choosing save/delete operations or confirming an automatic scan.
 
+| Named FM memory | FM VFO and tuning scale |
+| --- | --- |
+| ![Named FM station memory](docs/screenshots/fm-memory.png) | ![FM VFO tuning screen](docs/screenshots/fm-vfo.png) |
+
 ### Search Frequency and Search Tone
 
 Open **Search Frequency** with **F + 4**, or **Search Tone** with **F + STAR**. Both screens use the same header, status, frequency/tone rows and footer controls as the other GOGUFW tools.
@@ -116,6 +142,10 @@ Open **Search Frequency** with **F + 4**, or **Search Tone** with **F + STAR**. 
 After a result is found, press **MENU / SAVE**, choose a destination memory with **UP/DOWN** or the number keys, then press **MENU** and confirm `SAVE?`. Empty targets are marked `CH-xxxx`; occupied targets show the channel number and name, shortened with `..` when necessary. A saved result opens directly in MR mode without also opening the main menu.
 
 Scanner-created memories preserve the power setting that was active before the search, use **NARROW** bandwidth, and store airband results as **AM** rather than FM.
+
+| Search Frequency scanning | Search Tone result |
+| --- | --- |
+| ![Search Frequency scanning](docs/screenshots/search-frequency.png) | ![Completed Search Tone result](docs/screenshots/search-tone-result.png) |
 
 ### Per-channel scrambler
 
@@ -132,6 +162,10 @@ The analog voice scrambler is not encryption and may be restricted by local radi
 
 These settings appear as normal memory-list columns and under **Properties → Extra** in the custom CHIRP module.
 
+| Main radio screen | Per-VFO policy indicators |
+| --- | --- |
+| ![Main radio screen](docs/screenshots/main-radio-screen.png) | ![Main-screen FSK and Roger indicators](docs/screenshots/main-indicators.png) |
+
 ### Spectrum
 
 Open Spectrum with **F + 5**.
@@ -142,6 +176,8 @@ Open Spectrum with **F + 5**.
 - Press **MENU** while listening to inspect or adjust LNA/PGA controls.
 - Press **PTT** again to open the stored MR channel or transfer a VFO peak to the active VFO; this does not transmit.
 - **UP/DOWN** resumes scanning, **EXIT** returns and **SIDE1** temporarily excludes the current peak.
+
+![Memory Spectrum](docs/screenshots/spectrum.png)
 
 ### Multiboot
 
@@ -154,37 +190,7 @@ Hold **MENU while powering on** to open the firmware-slot selector.
 - Calibration and the boot logo remain shared.
 - GOGUFW can run as Main or from a slot and uses the official F4HWN multiboot image format.
 
-## Screens
-
-### Messenger
-
-| Messenger home | Inbox |
-| --- | --- |
-| ![Messenger home screen](docs/screenshots/uv-k5-screenshot17.png) | ![Messenger Inbox](docs/screenshots/uv-k5-screenshot18.png) |
-
-| Compose | Message details and delivery state |
-| --- | --- |
-| ![Compose a Messenger message](docs/screenshots/uv-k5-screenshot19.png) | ![Messenger message details](docs/screenshots/uv-k5-screenshot20.png) |
-
-### HEARD and Range Check
-
-| Recently heard stations | Range Check result |
-| --- | --- |
-| ![HEARD station list](docs/screenshots/heard.png) | ![Range Check result](docs/screenshots/rangecheck.png) |
-
-![Waiting for Range Check replies](docs/screenshots/waitpong.png)
-
-### FM broadcast radio
-
-| Live signal meter | Named station memory |
-| --- | --- |
-| ![FM radio signal meter](docs/screenshots/radio_vfo.png) | ![Named FM station memory](docs/screenshots/radio_name.png) |
-
-![FM radio menu](docs/screenshots/radio_menu.png)
-
-### Programmable key actions
-
-![Selecting a GOGUFW side-key action](docs/screenshots/f1short.png)
+![Multiboot SetCfg screen](docs/screenshots/multiboot-setcfg.png)
 
 ### Survival Mode
 
