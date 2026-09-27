@@ -88,7 +88,8 @@ static void FM_UI_DrawVfoScale(uint16_t freq10)
     if (x < 127U) UI_DrawLineBuffer(gFrameBuffer, x + 1U, y - 4U, x + 1U, y - 1U, 1);
 
     snprintf(loText, sizeof(loText), "%u.%u", BK1080_GetFreqLoLimit(gEeprom.FM_Band) / 10U, BK1080_GetFreqLoLimit(gEeprom.FM_Band) % 10U);
-    snprintf(hiText, sizeof(hiText), "%u", BK1080_GetFreqHiLimit(gEeprom.FM_Band) / 10U);
+    snprintf(hiText, sizeof(hiText), "%u.%u", BK1080_GetFreqHiLimit(gEeprom.FM_Band) / 10U,
+             BK1080_GetFreqHiLimit(gEeprom.FM_Band) % 10U);
 #ifdef ENABLE_FEAT_F4HWN
     GUI_DisplaySmallest(loText, x1, 39, false, true);
     GUI_DisplaySmallest(hiText, (uint8_t)(x2 - text_width_3x5(hiText) + 1U), 39, false, true);
@@ -346,10 +347,11 @@ void UI_DisplayFM(void)
         FM_UI_DrawVfoScale(gEeprom.FM_FrequencyPlaying);
     }
 
-    snprintf(bandText, sizeof(bandText), "%d%s-%dM",
-            BK1080_GetFreqLoLimit(gEeprom.FM_Band) / 10,
-            gEeprom.FM_Band == 0 ? ".5" : "",
-            BK1080_GetFreqHiLimit(gEeprom.FM_Band) / 10);
+    snprintf(bandText, sizeof(bandText), "%u.%u-%u.%u",
+            BK1080_GetFreqLoLimit(gEeprom.FM_Band) / 10U,
+            BK1080_GetFreqLoLimit(gEeprom.FM_Band) % 10U,
+            BK1080_GetFreqHiLimit(gEeprom.FM_Band) / 10U,
+            BK1080_GetFreqHiLimit(gEeprom.FM_Band) % 10U);
     UI_GOGU_DrawDottedSeparator(UI_GOGU_TOP_SEPARATOR_Y);
     UI_GOGU_DrawFooter("MENU", bandText, "EXIT");
     FM_UI_DrawRssiBars();

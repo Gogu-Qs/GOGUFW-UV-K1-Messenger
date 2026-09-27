@@ -23,6 +23,7 @@
     #include "app/fm.h"
 #endif
 #include "driver/keyboard.h"
+#include "driver/st7565.h"
 #include "misc.h"
 #ifdef ENABLE_AIRCOPY
     #include "ui/aircopy.h"
@@ -34,6 +35,7 @@
     #include "app/rega.h"
 #endif
 #include "ui/inputbox.h"
+#include "ui/helper.h"
 #include "ui/main.h"
 #include "ui/menu.h"
 #include "ui/scanner.h"
@@ -85,6 +87,14 @@ void GUI_DisplayScreen(void)
 {
     if (gScreenToDisplay != DISPLAY_INVALID) {
         UI_DisplayFunctions[gScreenToDisplay]();
+#ifdef ENABLE_FEAT_F4HWN
+        if (gScreenToDisplay != DISPLAY_MAIN &&
+            gEeprom.KEY_LOCK && gKeypadLocked > 0u)
+        {
+            UI_GOGU_DrawFloatingPopup("UNLOCK", "KEYBOARD");
+            ST7565_BlitFullScreen();
+        }
+#endif
     }
 }
 

@@ -513,18 +513,7 @@ void UI_DisplayMessenger(void)
 
     if (gMsgTxLockNoticeTicks > 0u) {
         /* Floating modal: retain the current screen and cover only its centre. */
-        msg_fill_rect(19u, 19u, 108u, 43u, false);
-        msg_draw_hline(19u, 108u, 19u, true);
-        msg_draw_hline(19u, 108u, 43u, true);
-        msg_draw_vline(19u, 19u, 43u, true);
-        msg_draw_vline(108u, 19u, 43u, true);
-        msg_draw_small_at_y("TX BLOCKED", 29u, 23u, false);
-        {
-            const char *reason = tx_block_reason_text();
-            const uint8_t width = (uint8_t)(strlen(reason) * 4u);
-            GUI_DisplaySmallest(reason, width >= 128u ? 0u : (uint8_t)((128u - width) / 2u),
-                                34u, false, true);
-        }
+        UI_GOGU_DrawFloatingPopup("TX BLOCKED", tx_block_reason_text());
     }
     ST7565_BlitFullScreen();
 }

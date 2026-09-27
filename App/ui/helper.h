@@ -43,6 +43,7 @@ void UI_DisplayPopup(const char *string);
 void UI_GOGU_DrawHeader(const char *title, const char *badge);
 void UI_GOGU_DrawDottedSeparator(uint8_t y);
 void UI_GOGU_DrawFooter(const char *left, const char *center, const char *right);
+void UI_GOGU_DrawFloatingPopup(const char *title, const char *detail);
 void UI_GOGU_PrintSmallAtY(const char *text, uint8_t x, uint8_t y, bool inverted);
 void UI_GOGU_InvertArea(uint8_t x0, uint8_t x1, uint8_t y, uint8_t height);
 void UI_GOGU_InvertBand(uint8_t y, uint8_t height);

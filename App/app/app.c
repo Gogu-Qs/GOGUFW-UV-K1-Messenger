@@ -2440,6 +2440,22 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
     }
 #endif
 
+    /* Locked side keys must never reach the action picker or an assigned
+     * application.  Keep the existing in-TX behaviour and PTT/SetLck policy
+     * untouched. */
+    if (gEeprom.KEY_LOCK && gCurrentFunction != FUNCTION_TRANSMIT &&
+        (Key == KEY_SIDE1 || Key == KEY_SIDE2))
+    {
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+        gActionPickerKey = 0;
+#endif
+        if (bKeyPressed && !bKeyHeld) {
+            gKeypadLocked = 4;           // 2 seconds
+            gUpdateDisplay = true;
+        }
+        goto Skip;
+    }
+
 #ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
     bool actionPickerScreenAllowed = gScreenToDisplay == DISPLAY_MAIN;
 #ifdef ENABLE_MESSENGER
@@ -2529,7 +2545,8 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                 return;
 
             if (!bKeyHeld) { // keypad is locked, tell the user
-                AUDIO_PlayBeep(BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL);
+                if (!gEeprom.KEY_LOCK)
+                    AUDIO_PlayBeep(BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL);
                 gKeypadLocked  = 4;      // 2 seconds
                 gUpdateDisplay = true;
                 return;
@@ -2546,7 +2563,8 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                 return;
 
             // keypad is locked, tell the user
-            AUDIO_PlayBeep(BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL);
+            if (!gEeprom.KEY_LOCK)
+                AUDIO_PlayBeep(BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL);
             gKeypadLocked  = 4;          // 2 seconds
             gUpdateDisplay = true;
             return;

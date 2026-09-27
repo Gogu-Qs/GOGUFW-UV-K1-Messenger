@@ -21,6 +21,7 @@
 #include "font.h"
 #include "ui/helper.h"
 #include "ui/inputbox.h"
+#include "ui/ui.h"
 #include "misc.h"
 #include "settings.h"
 
@@ -235,7 +236,8 @@ void UI_GOGU_DrawHeader(const char *title, const char *badge)
 
 void UI_GOGU_DrawDottedSeparator(uint8_t y)
 {
-    for (uint8_t x = 0u; x < 128u; x = (uint8_t)(x + 4u))
+    /* One clear pixel at each edge keeps the shared chrome centred. */
+    for (uint8_t x = 1u; x < 127u; x = (uint8_t)(x + 4u))
         UI_DrawLineBuffer(gFrameBuffer, x, y, (uint8_t)(x + 1u), y, true);
 }
 
@@ -249,7 +251,7 @@ void UI_GOGU_DrawFooter(const char *left, const char *center, const char *right)
     UI_GOGU_DrawDottedSeparator(UI_GOGU_BOTTOM_SEPARATOR_Y);
 #ifdef ENABLE_FEAT_F4HWN
     if (left != NULL)
-        GUI_DisplaySmallest(left, 0u, 49u, false, true);
+        GUI_DisplaySmallest(left, 1u, 49u, false, true);
     if (center != NULL) {
         const uint8_t width = UI_GOGU_TinyWidth(center);
         GUI_DisplaySmallest(center, width >= 128u ? 0u : (uint8_t)((128u - width) / 2u), 49u, false, true);
@@ -259,11 +261,49 @@ void UI_GOGU_DrawFooter(const char *left, const char *center, const char *right)
         GUI_DisplaySmallest(right, width >= 128u ? 0u : (uint8_t)(128u - width), 49u, false, true);
     }
 #else
-    if (left != NULL) UI_PrintStringSmallNormal(left, 0u, 0u, 6u);
+    if (left != NULL) UI_PrintStringSmallNormal(left, 1u, 0u, 6u);
     if (center != NULL) UI_PrintStringSmallNormal(center, 0u, 127u, 6u);
     if (right != NULL) {
         const uint8_t width = (uint8_t)(strlen(right) * 7u);
         UI_PrintStringSmallNormal(right, width >= 128u ? 0u : (uint8_t)(128u - width), 0u, 6u);
+    }
+#endif
+}
+
+void UI_GOGU_DrawFloatingPopup(const char *title, const char *detail)
+{
+    const uint8_t x0 = 19u;
+    const uint8_t x1 = 108u;
+    const uint8_t y0 = 19u;
+    const uint8_t y1 = 43u;
+
+    for (uint8_t y = y0; y <= y1; y++)
+        for (uint8_t x = x0; x <= x1; x++)
+            UI_DrawPixelBuffer(gFrameBuffer, x, y, false);
+
+    UI_DrawRectangleBuffer(gFrameBuffer, x0, y0, x1, y1, true);
+
+#ifdef ENABLE_FEAT_F4HWN
+    if (title != NULL) {
+        const uint8_t width = UI_GOGU_TinyWidth(title);
+        GUI_DisplaySmallest(title, width >= 128u ? 0u : (uint8_t)((128u - width) / 2u),
+                            23u, false, true);
+    }
+    if (detail != NULL) {
+        const uint8_t width = UI_GOGU_TinyWidth(detail);
+        GUI_DisplaySmallest(detail, width >= 128u ? 0u : (uint8_t)((128u - width) / 2u),
+                            34u, false, true);
+    }
+#else
+    if (title != NULL) {
+        const uint8_t width = (uint8_t)(strlen(title) * 7u);
+        UI_GOGU_PrintSmallAtY(title, width >= 128u ? 0u : (uint8_t)((128u - width) / 2u),
+                              21u, false);
+    }
+    if (detail != NULL) {
+        const uint8_t width = (uint8_t)(strlen(detail) * 7u);
+        UI_GOGU_PrintSmallAtY(detail, width >= 128u ? 0u : (uint8_t)((128u - width) / 2u),
+                              33u, false);
     }
 #endif
 }
@@ -488,7 +528,7 @@ static void sort(int16_t *a, int16_t *b)
     }
 
     void UI_DisplayUnlockKeyboard(uint8_t shift) {
-        if (gEeprom.KEY_LOCK && gKeypadLocked > 0)
+        if (gScreenToDisplay == DISPLAY_MAIN && gEeprom.KEY_LOCK && gKeypadLocked > 0)
         {   // tell user how to unlock the keyboard
             
             //memcpy(gFrameBuffer[shift] + 2, gFontKeyLock, sizeof(gFontKeyLock));
