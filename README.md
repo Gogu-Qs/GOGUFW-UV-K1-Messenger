@@ -254,7 +254,9 @@ directly reached this project or served as a documented design reference.
 | [joaquimorg](https://github.com/joaquimorg/UV-KX-firmware) and [Kamil / NUNU](https://github.com/kamilsss655/uv-k5-firmware-custom) | Earlier UV-K5 radio-to-radio Messenger work that helped establish the feature and provided comparison material. NUNU's manual Spectrum behavior also served as a reference while correcting GOGUFW's manual mode. GOGUFW uses its own packet format, storage, UI, wake/ACK logic and multi-radio Range Check implementation. |
 | [Gogu-Qs](https://github.com/Gogu-Qs) | GOGUFW-specific Messenger, HEARD, multi-radio Range Check, wake/ACK/PONG reliability work, the CALLTX feature and melodies, FM names and Live RSSI, channel policies, UI adaptations and CHIRP integration. CALLTX uses the inherited low-level tone/TX audio path, but its feature design, melodies, selection/preview behavior and user interface are GOGUFW work. RF Log Lite was inspired by Armel's RF Log and independently reimplemented as a smaller 20-entry RAM-only version for GOGUFW. |
 
-Special thanks to [lohtse](https://github.com/lohtse) and the community members
+Special thanks to [lohtse](https://github.com/lohtse),
+[mkalin22](https://github.com/mkalin22), Konstantin Leibovitch and
+[Robby69](https://github.com/robby69), as well as the other community members
 who supplied reproducible real-radio reports, build-configuration feedback and
 regression testing for Messenger, Range Check, Spectrum, FM and radio safety.
 

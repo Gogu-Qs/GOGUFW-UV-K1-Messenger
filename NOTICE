@@ -69,10 +69,13 @@ are GOGUFW work.
 Community testing
 -----------------
 
-Thanks to lohtse and the other users who supplied reproducible real-radio bug
-reports, build-configuration feedback and regression testing:
+Thanks to lohtse, mkalin22, Konstantin Leibovitch, Robby69 and the other users
+who supplied reproducible real-radio bug reports, build-configuration feedback
+and regression testing:
 
   https://github.com/lohtse
+  https://github.com/mkalin22
+  https://github.com/robby69
 
 Bundled third-party components
 ------------------------------
