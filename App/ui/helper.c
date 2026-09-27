@@ -273,8 +273,8 @@ void UI_GOGU_DrawFooter(const char *left, const char *center, const char *right)
 void UI_GOGU_DrawFloatingPopup(const char *title, const char *detail)
 {
     const bool single_line = detail == NULL;
-    const uint8_t x0 = single_line ? 9u : 19u;
-    const uint8_t x1 = single_line ? 120u : 108u;
+    const uint8_t x0 = single_line ? 8u : 19u;
+    const uint8_t x1 = single_line ? 119u : 108u;
     const uint8_t y0 = single_line ? 20u : 19u;
     const uint8_t y1 = single_line ? 35u : 43u;
 
