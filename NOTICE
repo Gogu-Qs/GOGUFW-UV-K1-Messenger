@@ -1,0 +1,101 @@
+GOGUFW firmware for Quansheng UV-K1 and UV-K5 V3
+=================================================
+
+Copyright 2026 Gökhan Günalp / Gogu-Qs
+
+GOGUFW is distributed under the Apache License, Version 2.0. This NOTICE
+records the project's source lineage, feature references and bundled
+third-party components. It does not replace copyright or license notices in
+individual files and does not imply endorsement by any person or project named
+below.
+
+Firmware lineage
+----------------
+
+GOGUFW is based directly on Armel / F4HWN Fusion for the Quansheng UV-K1 and
+UV-K5 V3. The current platform and official multiboot implementation derive
+from the joint UV-K1/PY32F071 work of Armel / F4HWN and muzkr:
+
+  https://github.com/armel/uv-k1-k5v3-firmware-custom
+  https://github.com/muzkr/uv-k1-k5v3-firmware-custom
+
+Armel / F4HWN also created the original RF Log feature. GOGUFW's RF Log Lite
+was inspired by that work and independently reimplemented as a compact,
+20-entry, RAM-only activity log for the more constrained GOGUFW build.
+
+That work builds on the wider UV-K5 open-firmware lineage:
+
+  Dual Tachyon - original open UV-K5 firmware and hardware drivers
+  https://github.com/DualTachyon/uv-k5-firmware
+
+  OneOfEleven - custom radio features, AM-fix and scrambler foundations
+  https://github.com/OneOfEleven/uv-k5-firmware-custom
+
+  fagci - original Spectrum Analyzer implementation
+  https://github.com/fagci/uv-k5-firmware-fagci-mod
+
+  egzumer - integrated custom-firmware base and extended feature set
+  https://github.com/egzumer/uv-k5-firmware-custom
+
+The F4HWN base also contains optimization, FM/UI/Spectrum and hardware-support
+work by mrkusypl and Tunas1337, among many other upstream contributors:
+
+  https://github.com/mrkusypl/uv-k1-k5v3-firmware-custom
+  https://github.com/Tunas1337
+
+Feature-specific attribution
+----------------------------
+
+GOGUFW Messenger uses its own packet format, persistent storage, UI,
+wake-preamble behavior, ACK/retry logic and multi-radio Range Check protocol.
+Its BK4829 RF implementation adapts the AirCopy/FSK facilities inherited from
+the Dual Tachyon/egzumer/F4HWN codebase.
+
+Earlier radio-to-radio Messenger implementations by joaquimorg and Kamil / NUNU
+helped establish the feature on the UV-K5 family and served as comparison
+references. NUNU's manual Spectrum behavior also served as a design reference
+while correcting GOGUFW's manual Spectrum mode:
+
+  https://github.com/joaquimorg/UV-KX-firmware
+  https://github.com/kamilsss655/uv-k5-firmware-custom
+
+The GOGUFW-specific Messenger, HEARD, multi-radio Range Check, CALLTX feature
+and melodies, named FM memories, Live RSSI control, channel policies, UI
+adaptations and matching CHIRP support were developed by Gökhan Günalp /
+Gogu-Qs. CALLTX uses the inherited low-level tone-generator and TX audio path,
+but its feature design, melodies, selection/preview behavior and user interface
+are GOGUFW work.
+
+Community testing
+-----------------
+
+Thanks to lohtse and the other users who supplied reproducible real-radio bug
+reports, build-configuration feedback and regression testing:
+
+  https://github.com/lohtse
+
+Bundled third-party components
+------------------------------
+
+This repository includes Arm CMSIS, licensed under the Apache License,
+Version 2.0. Its license is included at:
+
+  App/external/CMSIS_5/LICENSE.txt
+
+This repository includes CherryUSB by sakumisu, licensed under the Apache
+License, Version 2.0. Its license is included at:
+
+  Middlewares/CherryUSB/LICENSE
+
+This repository includes the embedded printf implementation by Marco Paland,
+licensed under the MIT License. Its license is included at:
+
+  App/external/printf/LICENSE
+
+License notice
+--------------
+
+The main firmware is licensed under the Apache License, Version 2.0. Any
+redistribution must retain applicable copyright notices, modified-file notices,
+license texts and attribution notices as required by the corresponding
+licenses.
