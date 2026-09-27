@@ -91,7 +91,7 @@ void GUI_DisplayScreen(void)
         if (gScreenToDisplay != DISPLAY_MAIN &&
             gEeprom.KEY_LOCK && gKeypadLocked > 0u)
         {
-            UI_GOGU_DrawFloatingPopup("UNLOCK", "KEYBOARD");
+            UI_GOGU_DrawFloatingPopup("UNLOCK KEYBOARD", NULL);
             ST7565_BlitFullScreen();
         }
 #endif

@@ -272,16 +272,23 @@ void UI_GOGU_DrawFooter(const char *left, const char *center, const char *right)
 
 void UI_GOGU_DrawFloatingPopup(const char *title, const char *detail)
 {
-    const uint8_t x0 = 19u;
-    const uint8_t x1 = 108u;
-    const uint8_t y0 = 19u;
-    const uint8_t y1 = 43u;
+    const bool single_line = detail == NULL;
+    const uint8_t x0 = single_line ? 9u : 19u;
+    const uint8_t x1 = single_line ? 120u : 108u;
+    const uint8_t y0 = single_line ? 20u : 19u;
+    const uint8_t y1 = single_line ? 35u : 43u;
 
     for (uint8_t y = y0; y <= y1; y++)
         for (uint8_t x = x0; x <= x1; x++)
             UI_DrawPixelBuffer(gFrameBuffer, x, y, false);
 
     UI_DrawRectangleBuffer(gFrameBuffer, x0, y0, x1, y1, true);
+
+    if (single_line) {
+        /* Match the main-screen UNLOCK KEYBOARD font exactly. */
+        UI_PrintStringSmallBold(title, 0u, 127u, 3u);
+        return;
+    }
 
 #ifdef ENABLE_FEAT_F4HWN
     if (title != NULL) {
