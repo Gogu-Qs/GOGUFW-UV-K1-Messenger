@@ -1,7 +1,7 @@
 GOGUFW firmware for Quansheng UV-K1 and UV-K5 V3
 =================================================
 
-Copyright 2026 Gökhan Günalp / Gogu-Qs
+Copyright 2026 Gogu-Qs
 
 GOGUFW is distributed under the Apache License, Version 2.0. This NOTICE
 records the project's source lineage, feature references and bundled
@@ -61,8 +61,8 @@ while correcting GOGUFW's manual Spectrum mode:
 
 The GOGUFW-specific Messenger, HEARD, multi-radio Range Check, CALLTX feature
 and melodies, named FM memories, Live RSSI control, channel policies, UI
-adaptations and matching CHIRP support were developed by Gökhan Günalp /
-Gogu-Qs. CALLTX uses the inherited low-level tone-generator and TX audio path,
+adaptations and matching CHIRP support were developed by Gogu-Qs. CALLTX uses
+the inherited low-level tone-generator and TX audio path,
 but its feature design, melodies, selection/preview behavior and user interface
 are GOGUFW work.
 
