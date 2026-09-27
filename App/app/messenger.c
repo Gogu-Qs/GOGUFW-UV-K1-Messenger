@@ -4,6 +4,7 @@
 #include "app/text_input.h"
 #include "app/messenger_rf.h"
 #include "app/messenger_packet.h"
+#include "app/generic.h"
 #include "audio.h"
 #include "ui/helper.h"
 #include "ui/ui.h"
@@ -379,7 +380,7 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                     case 3: open_list(MSG_SCREEN_DRAFTS); break;
                 }
             } else if (Key == KEY_EXIT) {
-                gRequestDisplayScreen = DISPLAY_MAIN;
+                GENERIC_ExitApplication();
             }
             break;
 
@@ -461,7 +462,7 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                     s_msgRangeWaitTicks = 0u;
                     s_msgRangeReturnToHeard = false;
                 } else {
-                    gRequestDisplayScreen = DISPLAY_MAIN;
+                    GENERIC_ExitApplication();
                 }
             } else if (Key == KEY_MENU) {
                 if (gMsgRangeStatus != 1u) {

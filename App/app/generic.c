@@ -43,6 +43,15 @@
 #include "ui/inputbox.h"
 #include "ui/ui.h"
 
+void GENERIC_ExitApplication(void)
+{
+#ifdef ENABLE_FMRADIO
+    if (gFmRadioMode)
+        FM_TurnOff();
+#endif
+    gRequestDisplayScreen = DISPLAY_MAIN;
+}
+
 void GENERIC_Key_F(bool bKeyPressed, bool bKeyHeld)
 {
     if (gInputBoxIndex > 0 || gScreenToDisplay == DISPLAY_MENU) {

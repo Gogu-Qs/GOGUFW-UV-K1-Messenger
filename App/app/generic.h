@@ -21,6 +21,6 @@
 
 void GENERIC_Key_F(bool bKeyPressed, bool bKeyHeld);
 void GENERIC_Key_PTT(bool bKeyPressed);
+void GENERIC_ExitApplication(void);
 
 #endif
-

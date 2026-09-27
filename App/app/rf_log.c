@@ -4,6 +4,9 @@
 #include "app/common.h"
 #include "app/generic.h"
 #include "app/rf_log.h"
+#ifdef ENABLE_FMRADIO
+#include "app/fm.h"
+#endif
 #include "audio.h"
 #include "driver/st7565.h"
 #include "external/printf/printf.h"
@@ -177,6 +180,11 @@ static void RFLOG_SelectEntry(void)
         gVfoConfigureMode = VFO_CONFIGURE;
     }
 
+#ifdef ENABLE_FMRADIO
+    /* Selecting an RF entry leaves broadcast FM and tunes the selected VFO. */
+    if (gFmRadioMode)
+        FM_TurnOff();
+#endif
     gRequestSaveVFO = true;
     gRequestDisplayScreen = DISPLAY_MAIN;
     gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
@@ -217,7 +225,7 @@ void GOGU_RFLOG_ProcessKeys(KEY_Code_t key, bool isPressed, bool isHeld)
             break;
 
         case KEY_EXIT:
-            gRequestDisplayScreen = DISPLAY_MAIN;
+            GENERIC_ExitApplication();
             break;
 
         default:

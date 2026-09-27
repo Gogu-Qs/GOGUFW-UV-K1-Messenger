@@ -32,6 +32,7 @@
 #include "app/chFrScanner.h"
 #include "app/common.h"
 #include "app/dtmf.h"
+#include "app/generic.h"
 #ifdef ENABLE_FLASHLIGHT
     #include "app/flashlight.h"
 #endif
@@ -83,7 +84,7 @@ static void ACTION_OpenMessenger(void)
      * Press once to open; press again while already in Messenger (but not
      * HEARD/Range) to return to the main screen. */
     if (gScreenToDisplay == DISPLAY_MESSENGER && MSG_IsHomeOpen()) {
-        gRequestDisplayScreen = DISPLAY_MAIN;
+        GENERIC_ExitApplication();
         return;
     }
 
@@ -97,7 +98,7 @@ static void ACTION_OpenHeard(void)
     /* GOGUFW 1.0.2: HEARD shortcut toggles closed when HEARD/Range is
      * already on screen. CALLTX remains unchanged. */
     if (gScreenToDisplay == DISPLAY_MESSENGER && MSG_RangeIsOpen()) {
-        gRequestDisplayScreen = DISPLAY_MAIN;
+        GENERIC_ExitApplication();
         return;
     }
 
@@ -118,7 +119,7 @@ static void ACTION_OpenRfLog(void)
 {
     if (gSurvivalMode) { gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL; return; }
     if (gScreenToDisplay == DISPLAY_RF_LOG) {
-        gRequestDisplayScreen = DISPLAY_MAIN;
+        GENERIC_ExitApplication();
         return;
     }
     GOGU_RFLOG_Open();
