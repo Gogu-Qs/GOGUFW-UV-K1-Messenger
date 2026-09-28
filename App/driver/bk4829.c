@@ -911,18 +911,14 @@ void BK4819_DisableScramble(void)
 {
     const uint16_t Value = BK4819_ReadRegister(BK4819_REG_31);
     BK4819_WriteRegister(BK4819_REG_31, Value & ~(1u << 1));
-    BK4819_WriteRegister(BK4819_REG_2B, 0);
 }
 
 void BK4819_EnableScramble(uint8_t Type)
 {
-    uint16_t Value = BK4819_ReadRegister(BK4819_REG_31);
+    const uint16_t Value = BK4819_ReadRegister(BK4819_REG_31);
     BK4819_WriteRegister(BK4819_REG_31, Value | (1u << 1));
 
     BK4819_WriteRegister(BK4819_REG_71, 0x68DC + (Type * 1032));   // 0110 1000 1101 1100
-
-    Value = BK4819_ReadRegister(BK4819_REG_2B);
-    BK4819_WriteRegister(BK4819_REG_2B, Value | 1);
 }
 
 bool BK4819_CompanderEnabled(void)
