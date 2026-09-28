@@ -1,4 +1,4 @@
-# GOGUFW 2.3.0
+# GOGUFW 2.3.1
 
 GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3 based on **F4HWN 6.0.0 (Multiboot)**. It keeps the F4HWN radio feature set and adds an integrated radio-to-radio Messenger, HEARD list, multi-radio Range Check, CALLTX melodies, RF Log Lite, named FM memories, an Action Picker, per-channel scrambling and a multiboot environment.
 
@@ -6,7 +6,7 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3 based on **F4HWN 
 
 | Statistic | Project status |
 | --- | --- |
-| 📦 **Current stable release** | GOGUFW 2.3.0 |
+| 📦 **Current stable release** | GOGUFW 2.3.1 |
 | 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
 | ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
 | ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
@@ -15,10 +15,10 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3 based on **F4HWN 
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **Multiboot image** | 119,648 / 120,832 bytes · **99.02%** · 1,184 bytes free |
+| 💾 **Multiboot image** | 120,020 / 120,832 bytes · **99.33%** · 812 bytes free |
 | 🧠 **RAM usage** | 13,520 / 16,384 bytes · **82.52%** · 2,864 bytes free |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · RF Log Lite · Action Picker · FM names/RSSI · Scrambler |
-| 🔌 **CHIRP support** | Matching 2.3.0 module with 1024 memories, Messenger settings, FM names, channel policies and Scrambler |
+| 🔌 **CHIRP support** | Compatible 2.3.0 module with 1024 memories, Messenger settings, FM names, channel policies and Scrambler |
 
 ## Compatibility and downloads
 
@@ -26,10 +26,10 @@ GOGUFW is intended only for Quansheng **UV-K1 / UV-K5 V3** radios built around t
 
 The current release contains:
 
-- `f4hwn.gogufw.v2.3.0.bin` — the multiboot-compatible firmware image;
-- `Gogufw_2.3.0_chirp_module.py` — the matching custom CHIRP module.
+- `f4hwn.gogufw.v2.3.1.bin` — the multiboot-compatible firmware image;
+- `Gogufw_2.3.0_chirp_module.py` — the compatible custom CHIRP module (the EEPROM layout is unchanged in 2.3.1).
 
-[Download GOGUFW 2.3.0](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.3.0)
+[Download GOGUFW 2.3.1](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v2.3.1)
 
 Back up the radio with CHIRP before updating and keep a known-good DFU recovery image available.
 
@@ -215,7 +215,7 @@ Hold **PTT + SetKey while powering on**. The default SetKey is **MENU**, so the 
 
 ## CHIRP
 
-Use the module that matches the firmware release. For GOGUFW 2.3.0:
+GOGUFW 2.3.1 keeps the 2.3.0 EEPROM layout. Use the compatible 2.3.0 module:
 
 1. Start CHIRP and choose **File → Load Module**.
 2. Select `Gogufw_2.3.0_chirp_module.py`.
@@ -234,7 +234,7 @@ cmake --preset Fusion --fresh
 cmake --build --preset Fusion
 ```
 
-The build emits the normal `gogufw.bin` and the canonical multiboot filename `f4hwn.gogufw.v2.3.0.bin`. See `BUILD_VSCODE_MAC.md` or `BUILD_WITH_VSCODE.md` for environment setup.
+The build emits the normal `gogufw.bin` and the canonical multiboot filename `f4hwn.gogufw.v2.3.1.bin`. See `BUILD_VSCODE_MAC.md` or `BUILD_WITH_VSCODE.md` for environment setup.
 
 ## Credits and license
 
