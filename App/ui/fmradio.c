@@ -92,10 +92,10 @@ static void FM_UI_DrawVfoScale(uint16_t freq10)
              BK1080_GetFreqHiLimit(gEeprom.FM_Band) % 10U);
 #ifdef ENABLE_FEAT_F4HWN
     GUI_DisplaySmallest(loText, x1, 39, false, true);
-    GUI_DisplaySmallest(hiText, (uint8_t)(x2 - text_width_3x5(hiText) + 1U), 39, false, true);
+    GUI_DisplaySmallest(hiText, (uint8_t)(x2 - text_width_3x5(hiText) + 2U), 39, false, true);
 #else
     UI_PrintStringSmallNormal(loText, x1, 0, 5);
-    UI_PrintStringSmallNormal(hiText, (uint8_t)(x2 - text_width_small(hiText) + 1U), 0, 5);
+    UI_PrintStringSmallNormal(hiText, (uint8_t)(x2 - text_width_small(hiText) + 2U), 0, 5);
 #endif
 }
 
@@ -129,7 +129,7 @@ static void FM_UI_DrawRssiBars(void)
 {
     const uint8_t level = FM_UI_ReadRssiLevel();
     /* Header meter: same five-step geometry as HEARD, above the y=9 line. */
-    const uint8_t x0 = 0U;
+    const uint8_t x0 = 1U;
     const uint8_t yBase = 6U;
 
     for (uint8_t i = 0U; i < 5U; i++) {
@@ -356,7 +356,7 @@ void UI_DisplayFM(void)
     UI_GOGU_DrawFooter("MENU", bandText, "EXIT");
     FM_UI_DrawRssiBars();
     if (FM_IsLiveRssiEnabled())
-        GUI_DisplaySmallest("LIVE", 0u, 11u, false, true);
+        GUI_DisplaySmallest("LIVE", 1u, 11u, false, true);
 
     ST7565_BlitFullScreen();
 }

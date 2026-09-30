@@ -224,12 +224,12 @@ void UI_GOGU_DrawHeader(const char *title, const char *badge)
     if (badge != NULL && badge[0] != '\0') {
 #ifdef ENABLE_FEAT_F4HWN
         const uint8_t width = (uint8_t)(strlen(badge) * 4u);
-        const uint8_t x = width >= 128u ? 0u : (uint8_t)(128u - width);
-        GUI_DisplaySmallest(badge, x, 1, false, true);
+        const uint8_t x = width >= 127u ? 1u : (uint8_t)(127u - width);
+        GUI_DisplaySmallest(badge, x, 2u, false, true);
 #else
         const uint8_t width = (uint8_t)(strlen(badge) * 7u);
-        const uint8_t x = width >= 128u ? 0u : (uint8_t)(128u - width);
-        UI_PrintStringSmallNormal(badge, x, 0, 0);
+        const uint8_t x = width >= 127u ? 1u : (uint8_t)(127u - width);
+        UI_GOGU_PrintSmallAtY(badge, x, 1u, false);
 #endif
     }
 }
@@ -273,9 +273,11 @@ void UI_GOGU_DrawFooter(const char *left, const char *center, const char *right)
 void UI_GOGU_DrawFloatingPopup(const char *title, const char *detail)
 {
     const bool single_line = detail == NULL;
-    const uint8_t x0 = single_line ? 8u : 19u;
-    const uint8_t x1 = single_line ? 119u : 108u;
-    const uint8_t y0 = single_line ? 20u : 19u;
+    /* Both variants share the UNLOCK KEYBOARD popup's top and side edges.
+     * The detail variant only extends farther down for its second line. */
+    const uint8_t x0 = 8u;
+    const uint8_t x1 = 119u;
+    const uint8_t y0 = 20u;
     const uint8_t y1 = single_line ? 35u : 43u;
 
     for (uint8_t y = y0; y <= y1; y++)
@@ -291,11 +293,9 @@ void UI_GOGU_DrawFloatingPopup(const char *title, const char *detail)
     }
 
 #ifdef ENABLE_FEAT_F4HWN
-    if (title != NULL) {
-        const uint8_t width = UI_GOGU_TinyWidth(title);
-        GUI_DisplaySmallest(title, width >= 128u ? 0u : (uint8_t)((128u - width) / 2u),
-                            23u, false, true);
-    }
+    /* Match UNLOCK KEYBOARD's title font, weight and vertical placement. */
+    if (title != NULL)
+        UI_PrintStringSmallBold(title, 0u, 127u, 3u);
     if (detail != NULL) {
         const uint8_t width = UI_GOGU_TinyWidth(detail);
         GUI_DisplaySmallest(detail, width >= 128u ? 0u : (uint8_t)((128u - width) / 2u),
@@ -376,9 +376,9 @@ void UI_GOGU_DrawTextEditor(const char *title, const char *text, uint8_t max_len
     sprintf(counter, "%u/%u", (unsigned)used, (unsigned)max_len);
     UI_GOGU_DrawHeader(title, counter);
 #ifdef ENABLE_FEAT_F4HWN
-    GUI_DisplaySmallest(mode_label, 0u, 1u, false, true);
+    GUI_DisplaySmallest(mode_label, 1u, 2u, false, true);
 #else
-    UI_PrintStringSmallNormal(mode_label, 0u, 0u, 0u);
+    UI_GOGU_PrintSmallAtY(mode_label, 1u, 1u, false);
 #endif
     UI_GOGU_DrawDottedSeparator(UI_GOGU_TOP_SEPARATOR_Y);
 

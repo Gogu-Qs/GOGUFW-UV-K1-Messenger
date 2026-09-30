@@ -1146,7 +1146,6 @@ static void MAIN_Key_MENU(bool bKeyPressed, bool bKeyHeld)
         gWasFKeyPressed = false;
         if (!gSurvivalMode) {
             MSG_Open();
-            gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
         } else {
             gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
         }

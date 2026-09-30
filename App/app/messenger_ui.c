@@ -29,6 +29,9 @@ extern uint8_t gMsgTxLockNoticeTicks;
 
 enum { MSG_SCREEN_HOME = 0, MSG_SCREEN_INBOX, MSG_SCREEN_OUTBOX, MSG_SCREEN_DRAFTS, MSG_SCREEN_COMPOSE, MSG_SCREEN_READ, MSG_SCREEN_RANGE };
 
+/* Seven-pixel small text centred between the shared y=9/y=46 separators. */
+#define MSG_EMPTY_TEXT_Y 25u
+
 
 static void format_age(uint16_t seconds, char *buf, uint8_t len)
 {
@@ -297,9 +300,9 @@ static void draw_list(void)
     UI_GOGU_DrawDottedSeparator(UI_GOGU_TOP_SEPARATOR_Y);
     if (!count) {
         if (gMsgScreen == MSG_SCREEN_DRAFTS)
-            msg_draw_small_at_y("EMPTY", 47u, 25u, false);
+            msg_draw_small_at_y("EMPTY", 47u, MSG_EMPTY_TEXT_Y, false);
         else
-            msg_draw_small_at_y("NO MESSAGE", 29u, 25u, false);
+            msg_draw_small_at_y("NO MESSAGE", 29u, MSG_EMPTY_TEXT_Y, false);
         UI_GOGU_DrawFooter(gMsgScreen == MSG_SCREEN_DRAFTS ? "EDIT" : "READ",
                            gMsgScreen == MSG_SCREEN_DRAFTS ? NULL : "F:DEL", "EXIT");
         return;
@@ -364,7 +367,7 @@ static void draw_read(void)
         else if (outbox->status == MSG_STATUS_FAILED) st = 'x';
 
         const char stbuf[2] = { st, 0 };
-        UI_PrintStringSmallNormal(stbuf, 0u, 0u, 0u);
+        UI_GOGU_PrintSmallAtY(stbuf, 1u, 1u, false);
         snprintf(buf, sizeof(buf), "TO:%s", outbox->to);
     } else {
         snprintf(buf, sizeof(buf), "FROM:%s", inbox->from);
@@ -453,9 +456,10 @@ static void draw_range(void)
 
     if (count == 0u) {
         if (gMsgRangeStatus == 1u) {
-            msg_draw_small_at_y("WAIT", 50u, 25u, false);
+            msg_draw_small_at_y("WAIT", 50u, MSG_EMPTY_TEXT_Y, false);
         } else {
-            msg_draw_small_at_y(active ? "NOT FOUND" : "NO HEARD", active ? 33u : 36u, 27u, false);
+            msg_draw_small_at_y(active ? "NOT FOUND" : "NO HEARD",
+                                active ? 33u : 36u, MSG_EMPTY_TEXT_Y, false);
         }
     } else {
         const uint8_t first = range_window_start(count, gMsgRangeScroll);

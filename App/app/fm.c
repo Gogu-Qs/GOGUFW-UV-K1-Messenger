@@ -187,7 +187,11 @@ bool FM_UpdateRssiLevel(void)
 {
     if (!gFmRadioMode)
         return false;
-    if (gFM_ScanState != FM_SCAN_OFF) {
+    /* While the tuner is stepping, keep the five idle dashes.  A manual VFO
+     * scan keeps its direction in gFM_ScanState after it finds a station, so
+     * gFM_FoundFrequency -- not scan state alone -- decides when the first
+     * real RSSI sample may be shown. */
+    if (gFM_ScanState != FM_SCAN_OFF && !gFM_FoundFrequency) {
         FM_InvalidateRssi();
         return false;
     }

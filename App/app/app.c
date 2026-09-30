@@ -95,6 +95,11 @@
 static bool flagSaveVfo;
 static bool flagSaveSettings;
 static bool flagSaveChannel;
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+/* An EXIT used only to cancel an armed F key must consume the complete key
+ * gesture.  Messenger handles EXIT on release, while FM handles it on press. */
+static bool sSwallowFExit;
+#endif
 
 #ifdef ENABLE_FEAT_F4HWN_SLEEP
 static KEY_Code_t gSleepWakeKey = KEY_INVALID;
@@ -2334,6 +2339,21 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
     }
 #endif
 
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+    /* Once F+EXIT cancellation starts, consume held and release events before
+     * the generic long-EXIT path can cancel the application itself. */
+    if (sSwallowFExit)
+    {
+        if (Key == KEY_EXIT)
+        {
+            if (!bKeyPressed && !bKeyHeld)
+                sSwallowFExit = false;
+            goto Skip;
+        }
+        sSwallowFExit = false;
+    }
+#endif
+
     if (Key == KEY_EXIT && !BACKLIGHT_IsOn() && gEeprom.BACKLIGHT_TIME > 0)
     {   // just turn the light on for now so the user can see what's what
         BACKLIGHT_TurnOn();
@@ -2552,14 +2572,12 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                 return;
             }
         }
-        // KEY_MENU has a special treatment here, because we want to pass hold event to ACTION_Handle
-        // but we don't want it to complain when initial press happens
-        // we want to react on realese instead
-        else if (Key != KEY_SIDE1 && Key != KEY_SIDE2 &&        // pass side buttons
-                 !(Key == KEY_MENU && bKeyHeld)) // pass KEY_MENU held
+        // Keep the side-button behavior unchanged. All other locked keys,
+        // including MENU, show the notice on the initial press and swallow the
+        // subsequent held/release events so no assigned action can run.
+        else if (Key != KEY_SIDE1 && Key != KEY_SIDE2) // pass side buttons
         {
-            if ((!bKeyPressed || bKeyHeld || (Key == KEY_MENU && bKeyPressed)) && // prevent released or held, prevent KEY_MENU pressed
-                !(Key == KEY_MENU && !bKeyPressed))  // pass KEY_MENU released
+            if (!bKeyPressed || bKeyHeld) // prevent released or held
                 return;
 
             // keypad is locked, tell the user
@@ -2600,6 +2618,27 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
     }
 
 #ifdef ENABLE_FEAT_F4HWN // For F + SIDE1 or F + SIDE2
+#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+    if (gWasFKeyPressed && Key == KEY_EXIT && bKeyPressed && !bKeyHeld)
+    {
+        bool cancelOnly = false;
+#ifdef ENABLE_FMRADIO
+        if (gScreenToDisplay == DISPLAY_FM && FM_ActionPickerAllowed())
+            cancelOnly = true;
+#endif
+#ifdef ENABLE_MESSENGER
+        if (gScreenToDisplay == DISPLAY_MESSENGER && MSG_ActionPickerAllowed())
+            cancelOnly = true;
+#endif
+        if (cancelOnly)
+        {
+            HideFKeyIcon();
+            sSwallowFExit = true;
+            goto Skip;
+        }
+    }
+#endif
+
     if (gWasFKeyPressed && (Key == KEY_PTT || Key == KEY_EXIT)) { 
 #else
     if (gWasFKeyPressed && (Key == KEY_PTT || Key == KEY_EXIT || Key == KEY_SIDE1 || Key == KEY_SIDE2)) { 

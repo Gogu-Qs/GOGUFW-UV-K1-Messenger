@@ -1,4 +1,4 @@
-# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v2.3.0
+# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v2.3.3
 # Based on F4HWN Fusion CHIRP 5.5.0 support.
 # Matches the GOGUFW external-flash EEPROM aliases:
 #   FM names: 0x00D000 alias -> firmware flash 0x013000
@@ -219,6 +219,14 @@ ul16 MrChannel_B;
 ul16 FreqChannel_B;
 ul16 NoaaChannel_A;
 ul16 NoaaChannel_B;
+
+// --------------------
+
+#seekto 0x00A020;
+ul16 fm_selected_frequency;
+u8 fm_selected_channel;
+u8 fm_state;
+u8 fm_config_reserved[4];
 
 // --------------------
 
@@ -743,6 +751,15 @@ CAL_END =        0x00B190    # original end of calibration area
 FMMIN = 76.0
 FMMAX = 108.0
 
+# Firmware FM band limits, in 100 kHz units. The low four bits of fm_state
+# are MR mode (bit 0), band (bits 1..2), and live RSSI (bit 3).
+FM_BAND_LIMITS = (
+    (875, 1080),
+    (760, 1080),
+    (760, 900),
+    (640, 760),
+)
+
 # bands supported by the UV-K5
 BANDS_STANDARD = {
         0: [50.0, 76.0],
@@ -1166,6 +1183,48 @@ def _ggfw_fmnames_header_init(_mem):
     for i in range(0, 10):
         _mem.ggfw_fmnames_reserved[i] = 0xff
 
+
+def _ggfw_fm_config_ensure(_mem):
+    """Initialize an erased or inconsistent FM state from stored channels.
+
+    Reset All leaves 0x00A020..0x00A027 erased. If CHIRP then writes only
+    the frequency array at 0x00A028, firmware reads fm_state == 0xff and
+    interprets its band bits as band 3 (64.0-76.0 MHz). Normal 87.5-108.0
+    MHz memories are consequently rejected until the radio itself performs
+    an auto scan or manual save.
+    """
+    state = int(_mem.fm_state)
+    selected_frequency = int(_mem.fm_selected_frequency)
+    selected_channel = int(_mem.fm_selected_channel)
+    band = (state >> 1) & 0x03
+    is_mr_mode = (state & 0x01) != 0
+    lo, hi = FM_BAND_LIMITS[band]
+
+    if (state != 0xff and lo <= selected_frequency <= hi and
+            (not is_mr_mode or selected_channel < FM_CHANNELS_MAX)):
+        return
+
+    valid_channels = []
+    for i in range(0, FM_CHANNELS_MAX):
+        frequency = int(_mem.fmfreq[i])
+        if int(FMMIN * 10) <= frequency <= int(FMMAX * 10):
+            valid_channels.append((i, frequency))
+
+    if not valid_channels:
+        return
+
+    # Prefer the standard 87.5-108 MHz band. Band 1 is the widest broadcast
+    # range and also covers valid memories below 87.5 MHz.
+    first_channel, first_frequency = valid_channels[0]
+    band = 0 if all(frequency >= FM_BAND_LIMITS[0][0]
+                    for _, frequency in valid_channels) else 1
+    _mem.fm_selected_frequency = first_frequency
+    _mem.fm_selected_channel = first_channel
+    _mem.fm_state = 0xf0 | 0x08 | (band << 1) | 0x01
+    for i in range(0, 4):
+        _mem.fm_config_reserved[i] = 0xff
+
+
 def _ggfw_clean_text(value, maxlen, charset):
     value = str(value or "").strip("\x00\xff ")
     out = ""
@@ -1228,7 +1287,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
     """Quansheng UV-K5 (egzumer + f4hwn)"""
     VENDOR = "Quansheng"
     MODEL = "UV-K1 / UV-K5 V3 GOGUFW Messenger"
-    VARIANT = "2.3.0"
+    VARIANT = "2.3.3"
     BAUD_RATE = 38400
     NEEDS_COMPAT_SERIAL = False
     FIRMWARE_VERSION = ""
@@ -2072,7 +2131,10 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
 
                 fmnamename = "FMNAME_" + str(i)
                 if elname == fmnamename and i <= GGFW_FM_NAMES_COUNT:
-                    _ggfw_fmnames_header_init(_mem)
+                    if (_mem.ggfw_fmnames_magic != GGFW_FM_NAMES_MAGIC or
+                            _mem.ggfw_fmnames_version != GGFW_FM_NAMES_VERSION or
+                            _mem.ggfw_fmnames_count != GGFW_FM_NAMES_COUNT):
+                        _ggfw_fmnames_header_init(_mem)
                     _mem.ggfw_fmname[i-1].name = _ggfw_fmname_to_slot(element.value)
 
             # GGFW Messenger / Call settings
@@ -2218,6 +2280,8 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
 
             elif element.changed() and elname.startswith("_mem.cal."):
                 exec(elname + " = element.value.get_value()")
+
+        _ggfw_fm_config_ensure(_mem)
 
     def get_settings(self):
         _mem = self._memobj
@@ -3057,8 +3121,14 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
 
             if i <= GGFW_FM_NAMES_COUNT:
                 current_name = _ggfw_fmname_from_slot(_mem.ggfw_fmname[i-1].name)
-                val = RadioSettingValueString(0, GGFW_FM_NAME_LEN - 1, current_name)
-                val.set_charset(GGFW_FM_NAME_CHARS)
+                # Keep the editor value unpadded.  CHIRP's default autopad
+                # expands an empty name to 15 spaces; the property-grid editor
+                # then sees a full-length value and can reject normal typing.
+                # _ggfw_fmname_to_slot() performs the required flash padding
+                # when the setting is applied.
+                val = RadioSettingValueString(
+                    0, GGFW_FM_NAME_LEN - 1, current_name,
+                    autopad=False, charset=GGFW_FM_NAME_CHARS)
                 ns = RadioSetting("FMNAME_" + str(i), "Ch " + str(i) + " Name", val)
                 ns.set_doc('GGFW FM broadcast memory name. This is stored in the radio FM-name flash sector through the CHIRP alias.\n' + \
                            'Maximum 15 characters. Leave empty to use the radio default name.')

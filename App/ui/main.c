@@ -60,10 +60,10 @@ enum
 {
     VFO_CLASSIC_BANDWIDTH_X  = 88,
     VFO_CLASSIC_SCRAMBLER_X  = 105,
-    VFO_CLASSIC_FSK_ICON_X   = 110,
+    VFO_CLASSIC_FSK_ICON_X   = 109,
     VFO_TINY_SCRAMBLER_X     = 95,
-    VFO_TINY_FSK_ICON_X      = 107,
-    VFO_ROGER_ICON_X         = 120,
+    VFO_TINY_FSK_ICON_X      = 106,
+    VFO_ROGER_ICON_X         = 121,
 };
 #endif
 
@@ -2317,7 +2317,7 @@ void UI_DisplayMain(void)
                            BITMAP_FskTx, sizeof(BITMAP_FskTx));
                 if (gEeprom.ROGER != ROGER_MODE_OFF && !vfoInfo->NO_ROGER)
                     memcpy(policyLine + VFO_ROGER_ICON_X,
-                           BITMAP_NoRoger, sizeof(BITMAP_NoRoger));
+                           BITMAP_NoRoger, LCD_WIDTH - VFO_ROGER_ICON_X);
             }
         }
 #endif
