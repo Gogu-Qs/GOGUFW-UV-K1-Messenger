@@ -2,24 +2,6 @@
 
 GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3 based on **F4HWN 6.0.0 (Multiboot)** with Full Watch ported from **F4HWN 6.1.0**. It keeps the F4HWN radio feature set and adds an integrated radio-to-radio Messenger, HEARD list, multi-radio Range Check, CALLTX melodies, RF Log Lite, named FM memories and a multiboot environment.
 
-## Experimental BK4829 RDS-path probe
-
-The optional `RDSProbe` preset investigates whether any undocumented BK4829
-receive/AF route preserves FM-broadcast multiplex energy. It disables Messenger
-for flash headroom and shows live probe data in place of the FM VFO ruler.
-
-```sh
-cmake --preset RDSProbe --fresh
-cmake --build --preset RDSProbe -j 4
-```
-
-In FM VFO mode, press `F` + `2` repeatedly to cycle the eight profiles and
-return to normal reception. With the documented temporary `EARO` to `PB1`
-connection, the experimental build also measures 57 kHz energy and attempts
-RDS block synchronization plus PI/PS decoding. See [the investigation
-report](docs/rds-investigation.md) for the wiring, safety notes, profile
-meanings, and interpretation of the results.
-
 ## Firmware at a glance
 
 | Statistic | Project status |
