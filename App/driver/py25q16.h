@@ -26,6 +26,13 @@ void PY25Q16_WriteBuffer(uint32_t Address, const void *pBuffer, uint32_t Size, b
 void PY25Q16_SectorErase(uint32_t Address);
 void PY25Q16_InvalidateCache(void);
 
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+/* The 4 KiB sector cache, reused as the overlay-app execution workspace. */
+uint8_t *PY25Q16_OverlayBuffer(void);
+/* Program an aligned shared-flash sector from the overlay/cache buffer. */
+void PY25Q16_WriteOverlaySector(uint32_t Address);
+#endif
+
 #ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
 /* Addresses below 0x10000 are ordinary per-bank configuration. Calibration,
  * boot logo, firmware slots and multiboot state remain shared. */

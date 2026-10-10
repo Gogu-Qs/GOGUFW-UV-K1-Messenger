@@ -24,7 +24,6 @@ target_sources(App INTERFACE
     app/generic.c
     app/main.c
     app/menu.c
-    app/scanner.c
     app/text_input.c
     audio.c
     bitmaps.c
@@ -44,7 +43,6 @@ target_sources(App INTERFACE
     ui/inputbox.c
     ui/main.c
     ui/menu.c
-    ui/scanner.c
     ui/status.c
     ui/ui.c
     ui/welcome.c
@@ -52,6 +50,12 @@ target_sources(App INTERFACE
     main.c
     external/printf/printf.c
 )
+
+if(ENABLE_FEAT_F4HWN_OVERLAY_APPS)
+    target_sources(App INTERFACE app/scanner_overlay.c)
+else()
+    target_sources(App INTERFACE app/scanner.c ui/scanner.c)
+endif()
 
 
 macro(enable_feature feature)
@@ -118,11 +122,15 @@ endif()
 
 # ---- STOCK QUANSHENG FEATURES ----
 
+# GOGUFW keeps its customised FM radio resident. Search Freq/Tone are the
+# features moved into the 4 KiB overlay instead.
 enable_feature(ENABLE_FMRADIO
-    driver/bk1080.c 
-    app/fm.c 
-    ui/fmradio.c
+    driver/bk1080.c
 )
+if(ENABLE_FMRADIO)
+    target_compile_definitions(App INTERFACE ENABLE_FMRADIO_EMBEDDED)
+    target_sources(App INTERFACE app/fm_embedded.c ui/fmradio.c)
+endif()
 enable_feature(ENABLE_AIRCOPY
     app/aircopy.c
     ui/aircopy.c
@@ -187,6 +195,9 @@ enable_feature(ENABLE_FEAT_F4HWN_AUDIO_SCOPE)
 enable_feature(ENABLE_COPY_CHAN_TO_VFO)
 enable_feature(ENABLE_REDUCE_LOW_MID_TX_POWER)
 enable_feature(ENABLE_BYP_RAW_DEMODULATORS)
+enable_feature(ENABLE_RDS_PROBE
+    driver/rds_decoder.c
+)
 enable_feature(ENABLE_BLMIN_TMP_OFF)
 enable_feature(ENABLE_SCAN_RANGES)
 
@@ -202,9 +213,25 @@ enable_feature(ENABLE_EXTRA_UART_CMD)
 # ---- F4HWN MODS ----
 
 enable_feature(ENABLE_FEAT_F4HWN)
-enable_feature(ENABLE_FEAT_F4HWN_GAME 
-    app/breakout.c
+enable_feature(ENABLE_GOGUFW_DTMF_LIVE)
+# Overlay builds recover the resident Breakout flash; F+7 opens the app menu.
+if(ENABLE_FEAT_F4HWN_GAME)
+    target_compile_definitions(App INTERFACE ENABLE_FEAT_F4HWN_GAME)
+    if(NOT ENABLE_FEAT_F4HWN_OVERLAY_APPS)
+        target_sources(App INTERFACE app/breakout.c)
+    endif()
+endif()
+enable_feature(ENABLE_FEAT_F4HWN_OVERLAY_APPS
+    apps/app_overlay.c
+    apps/app_menu.c
 )
+if(ENABLE_FEAT_F4HWN_OVERLAY_APPS)
+    set_source_files_properties(apps/app_overlay.c apps/app_menu.c
+        PROPERTIES COMPILE_OPTIONS "-finline-small-functions")
+endif()
+if(ENABLE_FEAT_F4HWN_OVERLAY_APPS AND NOT ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY)
+    message(FATAL_ERROR "ENABLE_FEAT_F4HWN_OVERLAY_APPS requires ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY (the 4 KiB overlay workspace).")
+endif()
 enable_feature(ENABLE_FEAT_F4HWN_SCREENSHOT 
     screenshot.c
 )

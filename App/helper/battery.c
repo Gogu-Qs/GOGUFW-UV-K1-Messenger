@@ -17,6 +17,7 @@
 #include <assert.h>
 
 #include "battery.h"
+#include "board.h"
 #include "driver/backlight.h"
 #include "driver/st7565.h"
 #include "functions.h"
@@ -128,6 +129,16 @@ unsigned int BATTERY_VoltsToPercent(const unsigned int voltage_10mV)
 
     return 0;
 }
+
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+void BATTERY_Sample(const bool bDisplayBatteryLevel)
+{
+    BOARD_ADC_GetBatteryInfo(&gBatteryVoltages[gBatteryVoltageIndex++], &gBatteryCurrent);
+    if (gBatteryVoltageIndex > 3u)
+        gBatteryVoltageIndex = 0u;
+    BATTERY_GetReadings(bDisplayBatteryLevel);
+}
+#endif
 
 void BATTERY_GetReadings(const bool bDisplayBatteryLevel)
 {

@@ -622,3 +622,18 @@ void UI_StatusClear()
 {
     memset(gStatusLine, 0, sizeof(gStatusLine));
 }
+
+#if defined(ENABLE_FEAT_F4HWN_MULTIBOOT) || defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS)
+void UI_DrawMenuKeyHints(const char *act_menu, const char *act_exit)
+{
+    const uint8_t spacing = 6u;
+    const uint8_t exit_len = (uint8_t)strlen(act_exit);
+    const uint8_t menu_x = 4u;
+    const uint8_t exit_x = (uint8_t)(124u - exit_len * 4u - spacing - 16u);
+
+    GUI_DisplaySmallestInverse("MENU", menu_x, 6, false, true, (uint8_t)(menu_x + 16u));
+    GUI_DisplaySmallest(act_menu, (uint8_t)(menu_x + 16u + spacing), 49, false, true);
+    GUI_DisplaySmallestInverse("EXIT", exit_x, 6, false, true, (uint8_t)(exit_x + 16u));
+    GUI_DisplaySmallest(act_exit, (uint8_t)(exit_x + 16u + spacing), 49, false, true);
+}
+#endif

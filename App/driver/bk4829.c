@@ -1215,6 +1215,136 @@ void BK4819_ExitBypass(void)
     BK4819_WriteRegister(BK4819_REG_7E, (regVal & ~(0b111 << 3)) | (5u << 3));
 }
 
+#ifdef ENABLE_RDS_PROBE
+/*
+ * Experimental receive-path probe for FM-broadcast/RDS research.
+ *
+ * This does not claim that BK4829 can pass 57 kHz.  REG_43's documented
+ * receive-filter ceiling is only 11 kHz (5.5 kHz x2), so the profiles below
+ * are deliberately a mix of a control, the documented maximum, one reserved
+ * bandwidth encoding, and empirical AF mux selections inherited from BK4819
+ * work.  The caller must inspect EARO with suitable external test equipment.
+ */
+typedef struct
+{
+    uint16_t reg_2b;
+    uint16_t reg_30;
+    uint16_t reg_38;
+    uint16_t reg_39;
+    uint16_t reg_3d;
+    uint16_t reg_43;
+    uint16_t reg_47;
+    uint16_t reg_73;
+} BK4829_RdsProbeSaved_t;
+
+static BK4829_RdsProbeSaved_t gRdsProbeSaved;
+static bool gRdsProbeActive;
+
+static void BK4829_RdsProbeSave(void)
+{
+    if (gRdsProbeActive)
+        return;
+
+    gRdsProbeSaved.reg_2b = BK4819_ReadRegister(BK4819_REG_2B);
+    gRdsProbeSaved.reg_30 = BK4819_ReadRegister(BK4819_REG_30);
+    gRdsProbeSaved.reg_38 = BK4819_ReadRegister(BK4819_REG_38);
+    gRdsProbeSaved.reg_39 = BK4819_ReadRegister(BK4819_REG_39);
+    gRdsProbeSaved.reg_3d = BK4819_ReadRegister(BK4819_REG_3D);
+    gRdsProbeSaved.reg_43 = BK4819_ReadRegister(BK4819_REG_43);
+    gRdsProbeSaved.reg_47 = BK4819_ReadRegister(BK4819_REG_47);
+    gRdsProbeSaved.reg_73 = BK4819_ReadRegister((BK4819_REGISTER_t)0x73u);
+    gRdsProbeActive = true;
+}
+
+void BK4829_RestoreRdsProbe(void)
+{
+    if (!gRdsProbeActive)
+        return;
+
+    BK4819_SetAF(BK4819_AF_MUTE);
+    BK4819_WriteRegister(BK4819_REG_38, gRdsProbeSaved.reg_38);
+    BK4819_WriteRegister(BK4819_REG_39, gRdsProbeSaved.reg_39);
+    BK4819_WriteRegister(BK4819_REG_2B, gRdsProbeSaved.reg_2b);
+    BK4819_WriteRegister(BK4819_REG_3D, gRdsProbeSaved.reg_3d);
+    BK4819_WriteRegister(BK4819_REG_43, gRdsProbeSaved.reg_43);
+    BK4819_WriteRegister(BK4819_REG_47, gRdsProbeSaved.reg_47);
+    BK4819_WriteRegister((BK4819_REGISTER_t)0x73u, gRdsProbeSaved.reg_73);
+    BK4819_WriteRegister(BK4819_REG_30, gRdsProbeSaved.reg_30);
+    gRdsProbeActive = false;
+}
+
+bool BK4829_ConfigureRdsProbe(const uint32_t frequency, const uint8_t profile)
+{
+    if (profile == BK4829_RDS_PROBE_RESTORE)
+    {
+        BK4829_RestoreRdsProbe();
+        return true;
+    }
+
+    /* Frequencies use the firmware's normal 10 Hz unit. */
+    if (frequency < 8800000u || frequency > 10800000u ||
+        profile >= BK4829_RDS_PROBE_PROFILE_COUNT)
+        return false;
+
+    BK4829_RdsProbeSave();
+    BK4819_SetAF(BK4819_AF_MUTE);
+    BK4819_PickRXFilterPathBasedOnFrequency(frequency);
+    BK4819_SetFrequency(frequency);
+    BK4819_RX_TurnOn();
+
+    /* Always derive a profile from the first-entry snapshot.  This keeps
+       profile order from changing the experiment and makes P1 a real control. */
+    uint16_t reg2b = gRdsProbeSaved.reg_2b;
+    uint16_t reg3d = gRdsProbeSaved.reg_3d;
+    uint16_t reg73 = gRdsProbeSaved.reg_73;
+    uint16_t reg43 = 0x3028; /* Existing known-good 25/20 kHz preset. */
+    BK4819_AF_Type_t af = BK4819_AF_FM;
+
+    if (profile != BK4829_RDS_PROBE_STOCK_WIDE)
+    {
+        /* Disable the documented RX 300 Hz HPF, 3 kHz LPF and de-emphasis. */
+        reg2b |= (1u << 10) | (1u << 9) | (1u << 8);
+        /* REG_43: strong/weak RF fields=5.5 kHz, doubled in mode 10. */
+        reg43 = 0x7E28;
+    }
+
+    switch (profile)
+    {
+        case BK4829_RDS_PROBE_STOCK_WIDE:
+        case BK4829_RDS_PROBE_MAX_DOCUMENTED:
+            break;
+        case BK4829_RDS_PROBE_RESERVED_BW:
+            reg43 = 0x7E38; /* BW mode 11 is undocumented/reserved. */
+            break;
+        case BK4829_RDS_PROBE_AF_BASEBAND1:
+            af = BK4819_AF_BASEBAND1;
+            reg73 |= (1u << 4); /* Disable AFC for discriminator-like output. */
+            break;
+        case BK4829_RDS_PROBE_AF_SELECTOR_9:
+            af = BK4819_AF_UNKNOWN3;
+            break;
+        case BK4829_RDS_PROBE_AF_SELECTOR_13:
+            af = BK4819_AF_UNKNOWN7;
+            break;
+        case BK4829_RDS_PROBE_AF_SELECTOR_14:
+            af = BK4819_AF_UNKNOWN8;
+            break;
+        case BK4829_RDS_PROBE_REG3D_BYPASS:
+            reg3d = 0x2AAB; /* Existing BYP experiment; function undocumented. */
+            break;
+        default:
+            return false;
+    }
+
+    BK4819_WriteRegister(BK4819_REG_2B, reg2b);
+    BK4819_WriteRegister(BK4819_REG_3D, reg3d);
+    BK4819_WriteRegister(BK4819_REG_43, reg43);
+    BK4819_WriteRegister((BK4819_REGISTER_t)0x73u, reg73);
+    BK4819_SetAF(af);
+    return true;
+}
+#endif
+
 void BK4819_PrepareTransmit(void)
 {
     BK4819_ExitBypass();

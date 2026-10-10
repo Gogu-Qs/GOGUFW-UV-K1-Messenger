@@ -47,5 +47,8 @@ typedef enum {
 unsigned int BATTERY_VoltsToPercent(unsigned int voltage_10mV);
 void BATTERY_GetReadings(bool bDisplayBatteryLevel);
 void BATTERY_TimeSlice500ms(void);
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+void BATTERY_Sample(bool bDisplayBatteryLevel);
+#endif
 
 #endif

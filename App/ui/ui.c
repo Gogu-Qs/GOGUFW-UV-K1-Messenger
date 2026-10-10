@@ -19,7 +19,7 @@
 
 #include "app/chFrScanner.h"
 #include "app/dtmf.h"
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     #include "app/fm.h"
 #endif
 #include "driver/keyboard.h"
@@ -28,7 +28,7 @@
 #ifdef ENABLE_AIRCOPY
     #include "ui/aircopy.h"
 #endif
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     #include "ui/fmradio.h"
 #endif
 #ifdef ENABLE_REGA
@@ -61,7 +61,7 @@ void (*const UI_DisplayFunctions[])(void) = {
     [DISPLAY_MENU] = &UI_DisplayMenu,
     [DISPLAY_SCANNER] = &UI_DisplayScanner,
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     [DISPLAY_FM] = &UI_DisplayFM,
 #endif
 
@@ -111,7 +111,7 @@ void GUI_SelectNextDisplay(GUI_DisplayType_t Display)
         gIsInSubMenu         = false;
         gCssBackgroundScan   = false;
         gScanStateDir        = SCAN_OFF;
-        #ifdef ENABLE_FMRADIO
+        #ifdef ENABLE_FMRADIO_EMBEDDED
             gFM_ScanState    = FM_SCAN_OFF;
         #endif
         gAskForConfirmation  = 0;

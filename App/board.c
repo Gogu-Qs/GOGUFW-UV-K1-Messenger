@@ -37,6 +37,9 @@
 #include "driver/gpio.h"
 #include "driver/system.h"
 #include "driver/st7565.h"
+#ifdef ENABLE_RDS_PROBE
+#include "driver/rds_decoder.h"
+#endif
 #include "frequencies.h"
 #include "helper/battery.h"
 #include "misc.h"
@@ -165,12 +168,25 @@ void BOARD_ADC_Init(void)
 
 void BOARD_ADC_GetBatteryInfo(uint16_t *pVoltage, uint16_t *pCurrent)
 {
+#ifdef ENABLE_RDS_PROBE
+    static uint16_t lastVoltage;
+    /* ADC1 belongs to the 64 ksample/s PB1 stream while the RDS experiment
+       is active. Keep the last battery reading instead of disturbing it. */
+    if (RDS_IsActive()) {
+        *pVoltage = lastVoltage;
+        *pCurrent = 0u;
+        return;
+    }
+#endif
     LL_ADC_REG_StartConversionSWStart(ADC1);
     while (!LL_ADC_IsActiveFlag_EOS(ADC1))
         ;
     LL_ADC_ClearFlag_JEOS(ADC1);
 
     *pVoltage = LL_ADC_REG_ReadConversionData12(ADC1);
+#ifdef ENABLE_RDS_PROBE
+    lastVoltage = *pVoltage;
+#endif
     *pCurrent = 0;
 }
 

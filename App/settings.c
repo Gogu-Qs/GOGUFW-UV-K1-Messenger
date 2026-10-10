@@ -381,7 +381,9 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
 #endif
 
     //gSetting_TX_EN             = (Data[7] & (1u << 0)) ? true : false;
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
     gSetting_live_DTMF_decoder = !!(Data[7] & (1u << 1));
+#endif
     gSetting_battery_text      = (((Data[7] >> 2) & 3u) <= 2) ? (Data[7] >> 2) & 3 : 2;
     #ifdef ENABLE_AUDIO_BAR
         gSetting_mic_bar       = !!(Data[7] & (1u << 4));
@@ -1104,7 +1106,11 @@ void SETTINGS_SaveSettings(void)
 #endif
 
     //if (!gSetting_TX_EN)             State[7] &= ~(1u << 0);
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
     if (!gSetting_live_DTMF_decoder) State[7] &= ~(1u << 1);
+#else
+    State[7] &= ~(1u << 1);
+#endif
     State[7] = (State[7] & ~(3u << 2)) | ((gSetting_battery_text & 3u) << 2);
     #ifdef ENABLE_AUDIO_BAR
         if (!gSetting_mic_bar)           State[7] &= ~(1u << 4);

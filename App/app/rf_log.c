@@ -4,7 +4,7 @@
 #include "app/common.h"
 #include "app/generic.h"
 #include "app/rf_log.h"
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
 #include "app/fm.h"
 #endif
 #include "audio.h"
@@ -180,7 +180,7 @@ static void RFLOG_SelectEntry(void)
         gVfoConfigureMode = VFO_CONFIGURE;
     }
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     /* Selecting an RF entry leaves broadcast FM and tunes the selected VFO. */
     if (gFmRadioMode)
         FM_TurnOff();

@@ -18,7 +18,7 @@
 #include <stdio.h>   // NULL
 
 #include "app/chFrScanner.h"
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     #include "app/fm.h"
 #endif
 #include "app/scanner.h"
@@ -40,8 +40,10 @@ uint8_t           gDTMF_InputBox_Index = 0;
 bool              gDTMF_InputMode      = false;
 uint8_t           gDTMF_PreviousIndex  = 0;
 
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
 char              gDTMF_RX_live[20];
 uint8_t           gDTMF_RX_live_timeout = 0;
+#endif
 
 #ifdef ENABLE_DTMF_CALLING
 char              gDTMF_RX[17];
@@ -213,7 +215,9 @@ DTMF_CallMode_t DTMF_CheckGroupCall(const char *pMsg, const unsigned int size)
 #endif
 
 void DTMF_clear_input_box_memory() {
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
     memset(gDTMF_RX_live, 0, sizeof(gDTMF_RX_live));
+#endif
 }
 
 void DTMF_clear_input_box(void)
@@ -279,7 +283,7 @@ void DTMF_HandleRequest(void)
 
                 gDTMF_ReplyState = DTMF_REPLY_AB;
 
-                #ifdef ENABLE_FMRADIO
+                #ifdef ENABLE_FMRADIO_EMBEDDED
                     if (gFmRadioMode)
                     {
                         FM_TurnOff();

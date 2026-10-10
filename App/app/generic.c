@@ -20,7 +20,7 @@
 #include "app/chFrScanner.h"
 #include "app/common.h"
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     #include "app/fm.h"
 #endif
 
@@ -45,7 +45,7 @@
 
 void GENERIC_ExitApplication(void)
 {
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     if (gFmRadioMode)
         FM_TurnOff();
 #endif
@@ -72,7 +72,7 @@ void GENERIC_Key_F(bool bKeyPressed, bool bKeyHeld)
         }
         else { // released
             bool canToggleF = gScreenToDisplay == DISPLAY_MAIN;
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
             if (gFmRadioMode && gScreenToDisplay != DISPLAY_FM)
                 canToggleF = false;
             if (gScreenToDisplay == DISPLAY_FM)
@@ -98,7 +98,7 @@ void GENERIC_Key_F(bool bKeyPressed, bool bKeyHeld)
         }
     }
     else { // short pressed
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
         if (gScreenToDisplay != DISPLAY_FM)
 #endif
         {
@@ -106,7 +106,7 @@ void GENERIC_Key_F(bool bKeyPressed, bool bKeyHeld)
             return;
         }
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
         if (gFM_ScanState == FM_SCAN_OFF) { // not scanning
             gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
             return;
@@ -153,7 +153,7 @@ void GENERIC_Key_PTT(bool bKeyPressed)
 
 
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     if (gFM_ScanState != FM_SCAN_OFF) { // FM radio is scanning .. stop
         FM_PlayAndUpdate();
 #ifdef ENABLE_VOICE
@@ -164,7 +164,7 @@ void GENERIC_Key_PTT(bool bKeyPressed)
     }
 #endif
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     if (gScreenToDisplay == DISPLAY_FM)
         goto start_tx;  // listening to the FM radio .. start TX'ing
 #endif
@@ -224,7 +224,7 @@ cancel_tx:
 done:
     gPttDebounceCounter = 0;
     if (gScreenToDisplay != DISPLAY_MENU
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
         && gRequestDisplayScreen != DISPLAY_FM
 #endif
     ) {

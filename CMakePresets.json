@@ -48,7 +48,8 @@
                 "ENABLE_EXTRA_UART_CMD": false,
                 "ENABLE_FEAT_F4HWN": true,
                 "ENABLE_FEAT_F4HWN_GAME": false,
-                "ENABLE_FEAT_F4HWN_SCREENSHOT": false,
+                "ENABLE_FEAT_F4HWN_OVERLAY_APPS": false,
+                "ENABLE_FEAT_F4HWN_SCREENSHOT": true,
                 "ENABLE_FEAT_F4HWN_SPECTRUM": true,
                 "ENABLE_FEAT_F4HWN_RX_TX_TIMER": true,
                 "ENABLE_FEAT_F4HWN_CHARGING_C": false,
@@ -70,6 +71,7 @@
                 "ENABLE_FEAT_F4HWN_MEM": false,
                 "ENABLE_FEAT_F4HWN_ACTION_PICKER": true,
                 "ENABLE_GOGUFW_SCRAMBLER": true,
+                "ENABLE_GOGUFW_DTMF_LIVE": false,
                 "ENABLE_GOGUFW_CALLTX": false,
                 "ENABLE_GOGUFW_RF_LOG": false,
                 "ENABLE_FEAT_F4HWN_SCAN_PROGRESS": false,
@@ -78,9 +80,10 @@
                 "ENABLE_FEAT_F4HWN_LOGO": false,
                 "ENABLE_AGC_SHOW_DATA": false,
                 "ENABLE_UART_RW_BK_REGS": false,
+                "ENABLE_RDS_PROBE": false,
                 "ENABLE_SWD": false,
                 "VERSION_STRING_1": "v0.22",
-                "VERSION_STRING_2": "v2.3.3"
+                "VERSION_STRING_2": "v3.0.0"
             }
         },
         {
@@ -94,6 +97,7 @@
                 "ENABLE_AIRCOPY": false,
                 "ENABLE_FEAT_F4HWN_SCREENSHOT": true,
                 "ENABLE_FEAT_F4HWN_GAME": true,
+                "ENABLE_FEAT_F4HWN_OVERLAY_APPS": true,
                 "ENABLE_FEAT_F4HWN_PMR": true,
                 "ENABLE_FEAT_F4HWN_GMRS_FRS_MURS": true,
                 "ENABLE_FEAT_F4HWN_RESCUE_OPS": true,
@@ -117,12 +121,25 @@
                 "EDITION_STRING": "GGFW",
                 "TARGET": "gogufw"
             }
+        },
+        {
+            "name": "RDSProbe",
+            "inherits": "Fusion",
+            "cacheVariables": {
+                "ENABLE_RDS_PROBE": true,
+                "ENABLE_MESSENGER": false,
+                "TARGET": "gogufw-rds-probe"
+            }
         }
     ],
     "buildPresets": [
         {
             "name": "Fusion",
             "configurePreset": "Fusion"
+        },
+        {
+            "name": "RDSProbe",
+            "configurePreset": "RDSProbe"
         }
     ]
 }

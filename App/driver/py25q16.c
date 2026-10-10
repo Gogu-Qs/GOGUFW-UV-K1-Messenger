@@ -406,6 +406,19 @@ void PY25Q16_InvalidateCache(void)
     SectorCacheAddr = 0x1000000;
 }
 
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+uint8_t *PY25Q16_OverlayBuffer(void)
+{
+    return SectorCache;
+}
+
+void PY25Q16_WriteOverlaySector(uint32_t Address)
+{
+    SectorErase(Address);
+    SectorProgram(Address, SectorCache, SECTOR_SIZE);
+}
+#endif
+
 static inline void WriteAddr(uint32_t Addr)
 {
     SPI_WriteByte(0xff & (Addr >> 16));

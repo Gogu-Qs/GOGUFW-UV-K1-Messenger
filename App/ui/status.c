@@ -58,6 +58,26 @@ static void convertTime(uint8_t *line, uint8_t type)
 #endif
 #endif
 
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+void UI_DrawStatusBattery(uint8_t *line, char *str)
+{
+    unsigned int x = LCD_WIDTH - sizeof(BITMAP_BatteryLevel1);
+    UI_DrawBattery(line + x, gBatteryDisplayLevel, gLowBatteryBlink);
+
+    if (gSetting_battery_text == 1) {
+        const uint16_t voltage = MIN(gBatteryVoltageAverage, 999);
+        sprintf(str, "%u.%02u", voltage / 100, voltage % 100);
+    } else if (gSetting_battery_text == 2) {
+        sprintf(str, "%02u%%", BATTERY_VoltsToPercent(gBatteryVoltageAverage));
+    } else {
+        return;
+    }
+
+    x -= 7u * strlen(str);
+    UI_PrintStringSmallBufferNormal(str, line + x);
+}
+#endif
+
 #ifdef ENABLE_MESSENGER
 // 10x8 envelope outline used in the original GGFW Messenger experiments.
 // It is drawn in the former CL/OP/PTT-session indicator area, while MO/DWR

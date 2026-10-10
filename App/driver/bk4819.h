@@ -124,6 +124,24 @@ void     BK4819_EnterBypass(void);
 void     BK4819_EnterRaw(void);
 #endif
 void     BK4819_ExitBypass(void);
+#ifdef ENABLE_RDS_PROBE
+enum BK4829_RdsProbeProfile_t
+{
+    BK4829_RDS_PROBE_RESTORE = 0,
+    BK4829_RDS_PROBE_STOCK_WIDE,
+    BK4829_RDS_PROBE_MAX_DOCUMENTED,
+    BK4829_RDS_PROBE_RESERVED_BW,
+    BK4829_RDS_PROBE_AF_BASEBAND1,
+    BK4829_RDS_PROBE_AF_SELECTOR_9,
+    BK4829_RDS_PROBE_AF_SELECTOR_13,
+    BK4829_RDS_PROBE_AF_SELECTOR_14,
+    BK4829_RDS_PROBE_REG3D_BYPASS,
+    BK4829_RDS_PROBE_PROFILE_COUNT
+};
+
+bool     BK4829_ConfigureRdsProbe(uint32_t frequency, uint8_t profile);
+void     BK4829_RestoreRdsProbe(void);
+#endif
 void     BK4819_PrepareTransmit(void);
 void     BK4819_TxOn_Beep(void);
 void     BK4819_ExitSubAu(void);

@@ -36,12 +36,15 @@
 #ifdef ENABLE_FLASHLIGHT
     #include "app/flashlight.h"
 #endif
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     #include "app/fm.h"
+#endif
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+    #include "apps/app_overlay.h"
 #endif
 #include "app/scanner.h"
 #include "audio.h"
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     #include "driver/bk1080.h"
 #endif
 #include "driver/bk4819.h"
@@ -63,7 +66,7 @@
     #include "ui/menu.h"
 #endif
 
-#if defined(ENABLE_FMRADIO)
+#if defined(ENABLE_FMRADIO_EMBEDDED)
 static void ACTION_Scan_FM(bool bRestart);
 #endif
 
@@ -178,7 +181,7 @@ void (*const action_opt_table[ACTION_OPT_LEN])(void) = {
     [ACTION_OPT_PTT] = &ACTION_Ptt,
     [ACTION_OPT_WN] = &ACTION_Wn,
     [ACTION_OPT_BACKLIGHT] = &ACTION_BackLight,
-    //#if !defined(ENABLE_SPECTRUM) || !defined(ENABLE_FMRADIO)
+    //#if !defined(ENABLE_SPECTRUM) || !defined(ENABLE_FMRADIO_EMBEDDED)
         [ACTION_OPT_MUTE] = &ACTION_Mute,
     //#else
     //    [ACTION_OPT_MUTE] = &FUNCTION_NOP,
@@ -267,7 +270,7 @@ void ACTION_Monitor(void)
 
     RADIO_SetupRegisters(true);
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     if (gFmRadioMode) {
         FM_Start();
         gRequestDisplayScreen = DISPLAY_FM;
@@ -285,7 +288,7 @@ void ACTION_Scan(bool bRestart)
         return;
     }
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     if (gFmRadioMode) {
         ACTION_Scan_FM(bRestart);
         return;
@@ -302,7 +305,9 @@ void ACTION_Scan(bool bRestart)
 #ifdef ENABLE_DTMF_CALLING
     DTMF_clear_RX();
 #endif
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
     gDTMF_RX_live_timeout = 0;
+#endif
     DTMF_clear_input_box_memory();
 
     RADIO_SelectVfos();
@@ -377,7 +382,7 @@ void ACTION_SwitchDemodul(void)
         gTxVfo->Modulation = MODULATION_FM;
 }
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
 static bool ACTION_IsBlockedInFM(uint8_t action)
 {
     switch (action) {
@@ -420,7 +425,7 @@ static void ACTION_Execute(uint8_t action)
         return;
     }
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     if (gFmRadioMode && ACTION_IsBlockedInFM(action)) {
         gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
         return;
@@ -564,7 +569,7 @@ void ACTION_Handle(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
     // held or released after short press
 
-#if defined(ENABLE_FMRADIO) && !defined(ENABLE_FEAT_F4HWN_ACTION_PICKER)
+#if defined(ENABLE_FMRADIO_EMBEDDED) && !defined(ENABLE_FEAT_F4HWN_ACTION_PICKER)
     if (gFmRadioMode && ACTION_IsBlockedInFM(func)) {
         gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
         return;
@@ -625,6 +630,7 @@ void ACTION_FM(void)
     }
 }
 
+#ifdef ENABLE_FMRADIO_EMBEDDED
 static void ACTION_Scan_FM(bool bRestart)
 {
     if (gSurvivalMode) {
@@ -669,6 +675,7 @@ static void ACTION_Scan_FM(bool bRestart)
 
 }
 
+#endif
 #endif
 
 
@@ -872,7 +879,7 @@ void ACTION_Mute(void)
     gMute = !gMute;
 
     // Update the registers
-    #ifdef ENABLE_FMRADIO
+    #ifdef ENABLE_FMRADIO_EMBEDDED
         BK1080_WriteRegister(BK1080_REG_05_SYSTEM_CONFIGURATION2, gMute ? 0x0A10 : 0x0A1F);
     #endif
     gEeprom.VOLUME_GAIN = gMute ? 0 : gEeprom.VOLUME_GAIN_BACKUP;

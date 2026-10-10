@@ -15,11 +15,11 @@
  *     limitations under the License.
  */
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     #include "app/fm.h"
 #endif
 #include "audio.h"
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     #include "driver/bk1080.h"
 #endif
 #include "driver/bk4819.h"
@@ -72,7 +72,7 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
     if (Beep >= ARRAY_SIZE(BEEP_Classic_array))
         return;
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     if (gFmRadioMode)
         BK1080_Mute(true);
 #endif
@@ -114,7 +114,7 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
     SYSTEM_DelayMs(5);
     BK4819_WriteRegister(BK4819_REG_71, ToneConfig);
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     const bool isFmRadio = gFmRadioMode;
     
     if (isFmRadio)
@@ -124,7 +124,7 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
     if (gEnableSpeaker)
         AUDIO_AudioPathOn();
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     if (isFmRadio)
         BK1080_Mute(false);
 #endif
@@ -277,7 +277,7 @@ void AUDIO_PlaySingleVoice(bool bFlag)
         if (FUNCTION_IsRx())   // 1of11
             BK4819_SetAF(BK4819_AF_MUTE);
 
-        #ifdef ENABLE_FMRADIO
+        #ifdef ENABLE_FMRADIO_EMBEDDED
             if (gFmRadioMode)
                 BK1080_Mute(true);
         #endif
@@ -301,7 +301,7 @@ void AUDIO_PlaySingleVoice(bool bFlag)
             if (FUNCTION_IsRx())    // 1of11
                 RADIO_SetModulation(gRxVfo->Modulation);
 
-            #ifdef ENABLE_FMRADIO
+            #ifdef ENABLE_FMRADIO_EMBEDDED
                 if (gFmRadioMode)
                     BK1080_Mute(false);
             #endif
@@ -442,7 +442,7 @@ void AUDIO_PlayQueuedVoice(void)
         RADIO_SetModulation(gRxVfo->Modulation); // 1of11
     }
 
-    #ifdef ENABLE_FMRADIO
+    #ifdef ENABLE_FMRADIO_EMBEDDED
         if (gFmRadioMode)
             BK1080_Mute(false);
     #endif

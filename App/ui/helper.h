@@ -67,4 +67,8 @@ void UI_DrawRectangleBuffer(uint8_t (*buffer)[128], int16_t x1, int16_t y1, int1
 void UI_DisplayClear();
 void UI_StatusClear();
 
+#if defined(ENABLE_FEAT_F4HWN_MULTIBOOT) || defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS)
+void UI_DrawMenuKeyHints(const char *act_menu, const char *act_exit);
+#endif
+
 #endif

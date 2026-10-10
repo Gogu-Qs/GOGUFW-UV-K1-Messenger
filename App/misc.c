@@ -30,7 +30,9 @@ const uint8_t     vfo_state_resume_countdown_500ms =  2500 / 500;  // 2.5 second
 const uint8_t     menu_timeout_500ms               =  20000 / 500;  // 20 seconds
 const uint16_t    menu_timeout_long_500ms          = 120000 / 500;  // 2 minutes
 
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
 const uint8_t     DTMF_RX_live_timeout_500ms       =  6000 / 500;  // 6 seconds live decoder on screen
+#endif
 #ifdef ENABLE_DTMF_CALLING
 const uint8_t     DTMF_RX_timeout_500ms            = 10000 / 500;  // 10 seconds till we wipe the DTMF receiver
 const uint8_t     DTMF_decode_ring_countdown_500ms = 15000 / 500;  // 15 seconds .. time we sound the ringing for
@@ -163,7 +165,9 @@ enum BacklightOnRxTx_t gSetting_backlight_on_tx_rx;
 #ifdef ENABLE_AUDIO_BAR
     bool          gSetting_mic_bar;
 #endif
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
 bool              gSetting_live_DTMF_decoder;
+#endif
 uint8_t           gSetting_battery_text;
 
 bool              gMonitor = false;           // true opens the squelch
@@ -258,7 +262,7 @@ bool              gFlagResetVfos;
 bool              gRequestSaveVFO;
 uint16_t          gRequestSaveChannel;
 bool              gRequestSaveSettings;
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     bool          gRequestSaveFM;
 #endif
 bool              gFlagPrepareTX;
@@ -266,7 +270,7 @@ bool              gFlagPrepareTX;
 bool              gFlagAcceptSetting;
 bool              gFlagRefreshSetting;
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     bool          gFlagSaveFM;
 #endif
 bool              g_CDCSS_Lost;
@@ -324,7 +328,7 @@ volatile bool     gNextTimeslice40ms;
     volatile bool     gScheduleNOAA       = true;
 #endif
 volatile bool     gFlagTailNoteEliminationComplete;
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     volatile bool gScheduleFM;
 #endif
 

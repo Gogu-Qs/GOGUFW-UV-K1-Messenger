@@ -18,6 +18,8 @@
 #define UI_STATUS_H
 
 void UI_DisplayStatus();
-
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+void UI_DrawStatusBattery(uint8_t *line, char *str);
 #endif
 
+#endif

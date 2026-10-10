@@ -92,7 +92,9 @@ void MENU_StartCssScan(void)
 {
     SCANNER_Start(true);
     gUpdateStatus = true;
+#ifndef ENABLE_FEAT_F4HWN_OVERLAY_APPS
     gCssBackgroundScan = true;
+#endif
 
     gRequestDisplayScreen = DISPLAY_MENU;
 }
@@ -259,7 +261,9 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 #ifdef ENABLE_DTMF_CALLING
         case MENU_D_DCD:
 #endif
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
         case MENU_D_LIVE_DEC:
+#endif
         #ifdef ENABLE_NOAA
             case MENU_NOAA_S:
         #endif
@@ -893,6 +897,7 @@ void MENU_AcceptSetting(void)
             return;
 #endif
 
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
         case MENU_D_LIVE_DEC:
             gSetting_live_DTMF_decoder = gSubMenuSelection;
             gDTMF_RX_live_timeout = 0;
@@ -902,6 +907,7 @@ void MENU_AcceptSetting(void)
             gFlagReconfigureVfos     = true;
             gUpdateStatus            = true;
             break;
+#endif
 
 #ifdef ENABLE_DTMF_CALLING
         case MENU_D_LIST:
@@ -1440,9 +1446,11 @@ void MENU_ShowCurrentSetting(void)
             gSubMenuSelection = gDTMF_chosen_contact + 1;
             break;
 #endif
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
         case MENU_D_LIVE_DEC:
             gSubMenuSelection = gSetting_live_DTMF_decoder;
             break;
+#endif
 
         case MENU_PONMSG:
             gSubMenuSelection = gEeprom.POWER_ON_DISPLAY_MODE;

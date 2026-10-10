@@ -97,7 +97,9 @@ extern const uint8_t        vfo_state_resume_countdown_500ms;
 extern const uint8_t         menu_timeout_500ms;
 extern const uint16_t        menu_timeout_long_500ms;
 
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
 extern const uint8_t         DTMF_RX_live_timeout_500ms;
+#endif
 #ifdef ENABLE_DTMF_CALLING
 extern const uint8_t         DTMF_RX_timeout_500ms;
 extern const uint8_t         DTMF_decode_ring_countdown_500ms;
@@ -233,7 +235,9 @@ extern enum BacklightOnRxTx_t gSetting_backlight_on_tx_rx;
 #ifdef ENABLE_AUDIO_BAR
     extern bool              gSetting_mic_bar;
 #endif
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
 extern bool                  gSetting_live_DTMF_decoder;
+#endif
 extern uint8_t               gSetting_battery_text;
 
 extern bool                  gMonitor;

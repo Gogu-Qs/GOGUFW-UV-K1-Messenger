@@ -20,7 +20,7 @@
 #include "app/app.h"
 #include "app/chFrScanner.h"
 #include "app/common.h"
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     #include "app/fm.h"
 #endif
 #include "app/generic.h"
@@ -38,8 +38,11 @@
 #include "app/spectrum.h"
 #endif
 
-#ifdef ENABLE_FEAT_F4HWN_GAME
+#if defined(ENABLE_FEAT_F4HWN_GAME) && !defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS)
 #include "app/breakout.h"
+#endif
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+#include "apps/app_menu.h"
 #endif
 
 #include "audio.h"
@@ -610,7 +613,9 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
 
             if (!gSurvivalMode) {
                 SCANNER_Start(false);
+#ifndef ENABLE_FEAT_F4HWN_OVERLAY_APPS
                 gRequestDisplayScreen = DISPLAY_SCANNER;
+#endif
             } else {
                 gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
                 gEeprom.CROSS_BAND_RX_TX = gBackup_CROSS_BAND_RX_TX;
@@ -647,17 +652,22 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
             break;
 
         case KEY_7:
-#ifdef ENABLE_MESSENGER
+#if defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS) || defined(ENABLE_FEAT_F4HWN_GAME)
             if (!beep) {
-                if (!gSurvivalMode) MSG_RangeOpen();
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+                if (!gSurvivalMode) APP_MenuOpen();
                 else gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
-            } else
+#else
+                APP_RunBreakout();
 #endif
-            {
+            } else {
+#endif
 #ifdef ENABLE_VOX
                 ACTION_Vox();
 #endif
+#if defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS) || defined(ENABLE_FEAT_F4HWN_GAME)
             }
+#endif
 
             break;
 
@@ -1098,7 +1108,7 @@ static void MAIN_Key_EXIT(bool bKeyPressed, bool bKeyHeld)
     }
 #endif
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     if (!gFmRadioMode)
 #endif
     {
@@ -1133,7 +1143,7 @@ static void MAIN_Key_EXIT(bool bKeyPressed, bool bKeyHeld)
         return;
     }
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     ACTION_FM();
 #endif
     return;
@@ -1337,7 +1347,9 @@ static void MAIN_Key_STAR(bool bKeyPressed, bool bKeyHeld)
 
         if (!gSurvivalMode) {
             SCANNER_Start(true);
+#ifndef ENABLE_FEAT_F4HWN_OVERLAY_APPS
             gRequestDisplayScreen = DISPLAY_SCANNER;
+#endif
         } else {
             gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
             gEeprom.CROSS_BAND_RX_TX = gBackup_CROSS_BAND_RX_TX;
@@ -1445,7 +1457,7 @@ static void MAIN_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
 
 void MAIN_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     if (gFmRadioMode && Key != KEY_PTT && Key != KEY_EXIT) {
         if (!bKeyHeld && bKeyPressed)
             gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;

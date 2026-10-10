@@ -52,6 +52,9 @@ void SCANNER_Stop(void);
 void SCANNER_TimeSlice10ms(void);
 void SCANNER_TimeSlice500ms(void);
 bool SCANNER_IsScanning(void);
+uint16_t SCANNER_OverlayDefaultChannel(void);
+bool SCANNER_OverlayChannelInfo(uint16_t channel, char *name, uint8_t nameSize);
+bool SCANNER_OverlaySave(uint32_t frequency, uint16_t tone, uint8_t toneType,
+                         bool singleFrequency, uint16_t channel);
 
 #endif
-

@@ -20,7 +20,7 @@
 #if !defined(ENABLE_OVERLAY)
     #include "py32f0xx.h"
 #endif
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     #include "app/fm.h"
 #endif
 #include "app/uart.h"
@@ -47,6 +47,9 @@
 
 #ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
     #include "driver/mb_flash.h"
+#endif
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+    #include "apps/app_overlay.h"
 #endif
 
 #if defined(ENABLE_OVERLAY)
@@ -346,7 +349,7 @@ static void CMD_0514(uint32_t Port, const uint8_t *pBuffer)
     }
 #endif
 
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_FMRADIO_EMBEDDED
     gFmRadioCountdown_500ms = fm_radio_countdown_500ms;
 #endif
 
@@ -390,7 +393,7 @@ static void CMD_051B(uint32_t Port, const uint8_t *pBuffer)
 
     gSerialConfigCountDown_500ms = 12; // 6 sec
 
-    #ifdef ENABLE_FMRADIO
+    #ifdef ENABLE_FMRADIO_EMBEDDED
         gFmRadioCountdown_500ms = fm_radio_countdown_500ms;
     #endif
 
@@ -446,7 +449,7 @@ static void CMD_051D(uint32_t Port, const uint8_t *pBuffer)
     
     bReloadEeprom = false;
 
-    #ifdef ENABLE_FMRADIO
+    #ifdef ENABLE_FMRADIO_EMBEDDED
         gFmRadioCountdown_500ms = fm_radio_countdown_500ms;
     #endif
 
@@ -516,7 +519,7 @@ static void CMD_052D(uint32_t Port, const uint8_t *pBuffer)
     REPLY_052D_t      Reply;
     bool              bIsLocked;
 
-    #ifdef ENABLE_FMRADIO
+    #ifdef ENABLE_FMRADIO_EMBEDDED
         gFmRadioCountdown_500ms = fm_radio_countdown_500ms;
     #endif
     Reply.Header.ID   = 0x052E;
@@ -1002,6 +1005,98 @@ void UART_HandleCommand(uint32_t Port)
             Reply.Header.Size = 2;
             Reply.Bank        = bank;
             Reply.Status      = status;
+            SendReply(Port, &Reply, sizeof(Reply));
+            break;
+        }
+#endif
+
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+        case 0x0730: /* app slot info */
+        {
+            if (pUART_Command->Header.Size < 1u) break;
+            gSerialConfigCountDown_500ms = 12;
+            const uint8_t slot = pUART_Command->Data[0];
+            app_header_t hdr;
+            memset(&hdr, 0, sizeof(hdr));
+            const uint8_t status = APP_SlotInfo(slot, &hdr);
+            struct __attribute__((packed)) {
+                Header_t Header;
+                uint8_t Slot, Status;
+                uint8_t Hdr[sizeof(app_header_t)];
+            } Reply;
+            Reply.Header.ID = 0x0731;
+            Reply.Header.Size = 2u + sizeof(app_header_t);
+            Reply.Slot = slot;
+            Reply.Status = status;
+            memcpy(Reply.Hdr, &hdr, sizeof(hdr));
+            SendReply(Port, &Reply, sizeof(Reply));
+            break;
+        }
+
+        case 0x0732: /* erase app slot */
+        {
+            if (pUART_Command->Header.Size < 6u) break;
+            gSerialConfigCountDown_500ms = 12;
+            const uint8_t slot = pUART_Command->Data[0];
+            const uint32_t ts = (uint32_t)pUART_Command->Data[2]
+                              | ((uint32_t)pUART_Command->Data[3] << 8)
+                              | ((uint32_t)pUART_Command->Data[4] << 16)
+                              | ((uint32_t)pUART_Command->Data[5] << 24);
+            const uint8_t status = (ts != mb_port_timestamp(Port))
+                                 ? APP_ERR_AUTH : APP_SlotErase(slot);
+            struct __attribute__((packed)) { Header_t Header; uint8_t Slot, Status; } Reply;
+            Reply.Header.ID = 0x0733;
+            Reply.Header.Size = 2;
+            Reply.Slot = slot;
+            Reply.Status = status;
+            SendReply(Port, &Reply, sizeof(Reply));
+            break;
+        }
+
+        case 0x0734: /* write app slot chunk */
+        {
+            if (pUART_Command->Header.Size < 12u) break;
+            gSerialConfigCountDown_500ms = 12;
+            const uint8_t slot = pUART_Command->Data[0];
+            const uint32_t offset = (uint32_t)pUART_Command->Data[2]
+                                  | ((uint32_t)pUART_Command->Data[3] << 8)
+                                  | ((uint32_t)pUART_Command->Data[4] << 16)
+                                  | ((uint32_t)pUART_Command->Data[5] << 24);
+            const uint16_t len = (uint16_t)(pUART_Command->Data[6]
+                               | ((uint16_t)pUART_Command->Data[7] << 8));
+            const uint32_t ts = (uint32_t)pUART_Command->Data[8]
+                              | ((uint32_t)pUART_Command->Data[9] << 8)
+                              | ((uint32_t)pUART_Command->Data[10] << 16)
+                              | ((uint32_t)pUART_Command->Data[11] << 24);
+            uint8_t status;
+            if (ts != mb_port_timestamp(Port))
+                status = APP_ERR_AUTH;
+            else if (len > pUART_Command->Header.Size - 12u)
+                status = APP_ERR_SIZE;
+            else
+                status = APP_SlotWrite(slot, offset, &pUART_Command->Data[12], len);
+            struct __attribute__((packed)) { Header_t Header; uint8_t Slot, Status; } Reply;
+            Reply.Header.ID = 0x0735;
+            Reply.Header.Size = 2;
+            Reply.Slot = slot;
+            Reply.Status = status;
+            SendReply(Port, &Reply, sizeof(Reply));
+            break;
+        }
+
+        case 0x0736: /* validate app slot */
+        {
+            if (pUART_Command->Header.Size < 1u) break;
+            gSerialConfigCountDown_500ms = 12;
+            const uint8_t slot = pUART_Command->Data[0];
+            const uint8_t status = APP_ValidateSlot(slot, NULL);
+            if (status == APP_OK)
+                APP_NotifySlotChanged();
+            struct __attribute__((packed)) { Header_t Header; uint8_t Slot, Status; } Reply;
+            Reply.Header.ID = 0x0737;
+            Reply.Header.Size = 2;
+            Reply.Slot = slot;
+            Reply.Status = status;
             SendReply(Port, &Reply, sizeof(Reply));
             break;
         }

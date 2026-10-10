@@ -1268,6 +1268,20 @@ void UI_MAIN_PrintAGC(bool now)
     if(now)
         ST7565_BlitLine(3);
 }
+
+#endif
+
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+void UI_DisplayAudioScopeOverlay(uint8_t line, bool active)
+{
+    (void)line;
+#ifdef ENABLE_FEAT_F4HWN_AUDIO_SCOPE
+    if (active)
+        UI_DisplayAudioScope();
+#else
+    (void)active;
+#endif
+}
 #endif
 
 void UI_MAIN_TimeSlice500ms(void)
@@ -2404,6 +2418,7 @@ void UI_DisplayMain(void)
 #endif
         if (rx || gCurrentFunction == FUNCTION_FOREGROUND || gCurrentFunction == FUNCTION_POWER_SAVE)
         {
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
             #if 1
                 if (gSetting_live_DTMF_decoder && gDTMF_RX_live[0] != 0 && gKeypadLocked == 0)
                 {   // show live DTMF decode
@@ -2450,6 +2465,7 @@ void UI_DisplayMain(void)
                     UI_PrintStringSmallNormal(String, 2, 0, 3);
                 }
             #endif
+#endif
 
 #ifdef ENABLE_SHOW_CHARGE_LEVEL
             else if (gChargingWithTypeC)

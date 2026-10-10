@@ -95,6 +95,8 @@ enum
     MENU_D_DCD,
     MENU_D_LIST,
 #endif
+    /* Keep the numeric ID reserved when DTMF Live is compiled out so later
+     * menu/action identifiers and external configuration stay stable. */
     MENU_D_LIVE_DEC,
     MENU_PONMSG,
     MENU_ROGER,

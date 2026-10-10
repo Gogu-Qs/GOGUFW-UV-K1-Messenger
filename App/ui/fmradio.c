@@ -10,6 +10,10 @@
 
 #include "app/fm.h"
 #include "driver/bk1080.h"
+#ifdef ENABLE_RDS_PROBE
+#include "driver/bk4819.h"
+#include "driver/rds_decoder.h"
+#endif
 #include "driver/st7565.h"
 #include "external/printf/printf.h"
 #include "misc.h"
@@ -98,6 +102,44 @@ static void FM_UI_DrawVfoScale(uint16_t freq10)
     UI_PrintStringSmallNormal(hiText, (uint8_t)(x2 - text_width_small(hiText) + 2U), 0, 5);
 #endif
 }
+
+#ifdef ENABLE_RDS_PROBE
+static void FM_UI_DrawRdsProbe(void)
+{
+    char line[32];
+    RDS_Snapshot_t rds;
+    RDS_GetSnapshot(&rds);
+
+    snprintf(line, sizeof(line), "P%u V%u 57:%u",
+             FM_GetRdsProbeProfile(), BK4819_GetVoiceAmplitudeOut(),
+             rds.carrier_quality);
+    GUI_DisplaySmallest(line, center_x_3x5(line), 30u, false, true);
+
+    switch (rds.stage) {
+        case RDS_STAGE_NO_INPUT:
+            snprintf(line, sizeof(line), "ADC:%u S:%u", rds.input_level,
+                     rds.input_span);
+            break;
+        case RDS_STAGE_NO_57K:
+            snprintf(line, sizeof(line), "NO57 A:%u S:%u", rds.input_level,
+                     rds.input_span);
+            break;
+        case RDS_STAGE_CARRIER:
+            snprintf(line, sizeof(line), "CARRIER B:%u", rds.valid_blocks);
+            break;
+        case RDS_STAGE_SYNC:
+            snprintf(line, sizeof(line), "PI:%04X SYNC", rds.pi);
+            break;
+        case RDS_STAGE_PS:
+            snprintf(line, sizeof(line), "%04X %.8s", rds.pi, rds.ps);
+            break;
+        default:
+            strcpy(line, "RDS OFF");
+            break;
+    }
+    GUI_DisplaySmallest(line, center_x_3x5(line), 38u, false, true);
+}
+#endif
 
 static void FM_UI_ChannelLabel(char *buf, size_t len)
 {
@@ -341,10 +383,14 @@ void UI_DisplayFM(void)
                 gFrameBuffer[4][x] <<= 1;
         }
     } else {
-        /* VFO mode: no rectangle; show a real frequency ruler. The marker is
-           calculated from the current playing frequency, so it follows manual
-           tuning and normal VFO scan movement. */
-        FM_UI_DrawVfoScale(gEeprom.FM_FrequencyPlaying);
+        /* The experimental BK4829 view intentionally occupies the VFO ruler
+           area.  Normal builds and an inactive probe keep the original ruler. */
+#ifdef ENABLE_RDS_PROBE
+        if (FM_IsRdsProbeActive())
+            FM_UI_DrawRdsProbe();
+        else
+#endif
+            FM_UI_DrawVfoScale(gEeprom.FM_FrequencyPlaying);
     }
 
     snprintf(bandText, sizeof(bandText), "%u.%u-%u.%u",

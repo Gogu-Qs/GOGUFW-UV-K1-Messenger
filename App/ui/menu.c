@@ -134,7 +134,9 @@ const t_menu_item MenuList[] =
     {"D Decd",      MENU_D_DCD         },
     {"D List",      MENU_D_LIST        },
 #endif
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
     {"D Live",      MENU_D_LIVE_DEC    }, // live DTMF decoder
+#endif
 #ifndef ENABLE_FEAT_F4HWN
     #ifdef ENABLE_AM_FIX
         {"AM Fix",      MENU_AM_FIX        },
@@ -1048,7 +1050,9 @@ void UI_DisplayMenu(void)
 #ifdef ENABLE_DTMF_CALLING
         case MENU_D_DCD:
 #endif
+#ifdef ENABLE_GOGUFW_DTMF_LIVE
         case MENU_D_LIVE_DEC:
+#endif
         #ifdef ENABLE_NOAA
             case MENU_NOAA_S:
         #endif
