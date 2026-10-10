@@ -18,9 +18,9 @@ Status:
 
 ## Using the app
 
-1. Set the VFO to the APRS frequency, **FM**: 144.800 MHz, or 433.650 MHz for the
-   Flipper test files.
-2. Launch **APRS RX**.
+1. Launch **APRS RX**. The app temporarily tunes to **FM 144.800 MHz**, no
+   matter which A/B/C/D channel is selected; it restores the radio context on exit.
+2. For the 433.650 MHz Flipper bench files, change `APRS_FREQUENCY` and rebuild.
 3. The speaker is off by default (v0.6): the decoder does not need it, only the
    BK4829 AF output (tested on the radio: PA4 joins the audio before the
    amplifier). Key 1 turns it on to listen to the channel, as FoxHunt's audio

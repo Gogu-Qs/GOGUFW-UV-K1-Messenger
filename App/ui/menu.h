@@ -186,11 +186,6 @@ enum
     MENU_MSG_LED,
     MENU_RNG_RSP,
 #endif
-#if defined(ENABLE_FEAT_F4HWN) && defined(ENABLE_GOGUFW_SCRAMBLER)
-    /* Append the GOGUFW-only menu ID so all existing F4HWN/Messenger menu
-     * numeric values remain unchanged.  MenuList controls its visible order. */
-    MENU_SCR,
-#endif
 };
 
 extern const uint8_t FIRST_HIDDEN_MENU_ITEM;
@@ -202,7 +197,11 @@ extern const char        gSubMenu_W_N[2][7];
 extern const char        gSubMenu_OFF_ON[2][4];
 extern const char        gSubMenu_NA[4];
 extern const char        gSubMenu_TOT[11][7];
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+extern const char* const gSubMenu_RXMode[6];
+#else
 extern const char* const gSubMenu_RXMode[4];
+#endif
 
 #ifdef ENABLE_VOICE
     extern const char    gSubMenu_VOICE[3][4];
@@ -256,7 +255,7 @@ extern const char        gSubMenu_RX_TX[4][6];
 extern const char        gSubMenu_BAT_TXT[3][8];
 extern const char        gSubMenu_BATTYP[5][12];
 
-#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
+#ifndef ENABLE_FEAT_F4HWN
     extern const char        gSubMenu_SCRAMBLER[11][7];
 #endif
 

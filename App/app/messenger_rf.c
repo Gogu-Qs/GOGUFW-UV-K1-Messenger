@@ -4,6 +4,10 @@
 #include "app/messenger_packet.h"
 #include "app/messenger_store.h"
 #include "app/messenger.h"
+#include "app/app.h"
+#ifdef ENABLE_FMRADIO_EMBEDDED
+#include "app/fm.h"
+#endif
 #include "audio.h"
 #include "driver/bk4819.h"
 #include "driver/bk4819-regs.h"
@@ -14,6 +18,7 @@
 #include "misc.h"
 #include "radio.h"
 #include "settings.h"
+#include "ui/ui.h"
 
 /* The legacy guards below protect the shared BK4819 FSK backend, not the
  * AirCopy application.  Messenger now owns that backend and its FIFO buffer,
@@ -60,6 +65,7 @@
 #define MSG_RF_RANGE_WAIT_PONG_TICKS    1200u  /* 12 s same-channel PONG listen lock */
 #define MSG_RF_SQL_CLOSE_CONFIRM_TICKS     3u  /* 30 ms fallback when FSK sidecar masks SQL_FOUND */
 #define MSG_RF_FSK_SYNC_HOLD_TICKS        200u  /* 2 s Messenger-only DW hold; covers WAKE -> TEXT */
+#define MSG_RF_SCAN_CARRIER_HOLD_TICKS     25u  /* 250 ms idle bridge from a missed WAKE to TEXT */
 
 #define MSG_RF_REG59_RX_CLEAR        0x4068u
 #define MSG_RF_REG59_RX_ENABLE       0x3068u
@@ -83,6 +89,7 @@ static uint16_t g_FSK_Buffer[MSG_RF_WORDS];
 
 static uint8_t s_rearm_delay_ticks;
 static uint8_t s_rx_stale_ticks;
+static uint8_t s_scan_carrier_hold_ticks;
 static uint8_t s_sql_close_confirm_ticks;
 static uint8_t s_deferred_beep_ticks;
 static uint8_t s_deferred_beep_max_ticks;
@@ -105,8 +112,10 @@ static uint8_t s_bw_lock_rx_old;
 static bool s_rx_channel_lock_active;
 static uint16_t s_rx_channel_lock_ticks;
 static uint8_t s_rx_channel_lock_vfo;
+static VFO_Info_t *s_rx_channel_lock_target;
 static uint8_t s_rx_channel_lock_old_rx_vfo;
 static bool s_rx_channel_lock_old_dw_active;
+static bool s_range_wait_active;
 static bool s_range_beep_pending;
 static uint8_t s_range_beep_ticks;
 
@@ -155,6 +164,43 @@ static uint16_t s_ack_jitter_seed;
 static uint32_t s_range_jitter_seed;
 static bool s_last_send_blocked;
 static MSG_RF_BlockReason_t s_last_send_block_reason;
+static void MSG_RF_RxChannelLockStop(void);
+#ifdef ENABLE_FMRADIO_EMBEDDED
+static bool s_fm_suspended;
+#endif
+
+static void MSG_RF_SuspendFm(bool show_main)
+{
+#ifdef ENABLE_FMRADIO_EMBEDDED
+    if (!gFmRadioMode)
+        return;
+
+    if (!s_fm_suspended) {
+        FM_Suspend();
+        s_fm_suspended = true;
+    }
+    if (show_main)
+        GUI_SelectNextDisplay(DISPLAY_MAIN);
+#else
+    (void)show_main;
+#endif
+}
+
+static void MSG_RF_ResumeFmIfIdle(void)
+{
+#ifdef ENABLE_FMRADIO_EMBEDDED
+    if (!s_fm_suspended)
+        return;
+    if (MSG_RF_TransactionActive() || s_deferred_beep_pending ||
+        s_ack_success_beep_pending || s_range_beep_pending)
+        return;
+
+    MSG_RF_RxChannelLockStop();
+    FM_Resume();
+    s_fm_suspended = false;
+    GUI_SelectNextDisplay(DISPLAY_FM);
+#endif
+}
 
 static bool MSG_RF_FrequencyBlocked(const VFO_Info_t *vfo)
 {
@@ -187,6 +233,17 @@ static bool MSG_RF_TxAllowed(const VFO_Info_t *vfo)
     return MSG_RF_TxBlockReason(vfo) == MSG_RF_BLOCK_NONE;
 }
 
+static VFO_Info_t *MSG_RF_VfoForIndex(uint8_t vfo)
+{
+    VFO_Info_t *target = &gEeprom.VfoInfo[vfo & 1u];
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+    VFO_Info_t *foreground = APP_GetFullWatchDisplayVfo(vfo & 1u);
+    if (foreground != NULL)
+        target = foreground;
+#endif
+    return target;
+}
+
 bool MSG_RF_LastSendWasBlocked(void)
 {
     return s_last_send_blocked;
@@ -199,7 +256,7 @@ MSG_RF_BlockReason_t MSG_RF_LastSendBlockReason(void)
 
 static bool MSG_RF_ReplyValid(uint8_t vfo, uint32_t rx, uint32_t tx)
 {
-    const VFO_Info_t *target = &gEeprom.VfoInfo[vfo & 1u];
+    const VFO_Info_t *target = MSG_RF_VfoForIndex(vfo);
     return target->pRX->Frequency == rx && target->pTX->Frequency == tx &&
            MSG_RF_TxAllowed(target);
 }
@@ -342,9 +399,12 @@ static uint16_t MSG_RF_RandomRangeDelayTicks(uint16_t msg_id)
 }
 
 
-static void MSG_RF_RxChannelLockStart(uint8_t vfo, uint16_t ticks)
+static void MSG_RF_RxChannelLockStartTarget(uint8_t vfo, uint16_t ticks,
+                                             VFO_Info_t *target)
 {
     vfo &= 1u;
+    if (target == NULL)
+        target = MSG_RF_VfoForIndex(vfo);
     if (!s_rx_channel_lock_active) {
         s_rx_channel_lock_old_rx_vfo = gEeprom.RX_VFO & 1u;
         s_rx_channel_lock_old_dw_active = gDualWatchActive;
@@ -352,9 +412,15 @@ static void MSG_RF_RxChannelLockStart(uint8_t vfo, uint16_t ticks)
     s_rx_channel_lock_active = true;
     s_rx_channel_lock_ticks = ticks ? ticks : 1u;
     s_rx_channel_lock_vfo = vfo;
-    if ((gEeprom.RX_VFO & 1u) != vfo) {
+    s_rx_channel_lock_target = target;
+    /* Equal logical A/B indices can hide different Full Watch C/D objects.
+     * Check the exact VFO object too: TX cleanup deliberately rebuilds plain
+     * A/B pointers, so an outgoing C/D message or PING otherwise waits for its
+     * ACK/PONG on the displaced A/B channel. */
+    if ((gEeprom.RX_VFO & 1u) != vfo || gRxVfo != target) {
         gEeprom.RX_VFO = vfo;
-        gRxVfo = &gEeprom.VfoInfo[gEeprom.RX_VFO];
+        gRxVfo = target;
+        gCurrentVfo = target;
         RADIO_SetupRegisters(false);
     }
     gScheduleDualWatch = false;
@@ -363,19 +429,44 @@ static void MSG_RF_RxChannelLockStart(uint8_t vfo, uint16_t ticks)
     gUpdateStatus = true;
 }
 
+static void MSG_RF_RxChannelLockStart(uint8_t vfo, uint16_t ticks)
+{
+    vfo &= 1u;
+    /* A sync detected on a Full Watch background channel must retain that
+     * exact object even before it has been promoted to the foreground. */
+    VFO_Info_t *target = ((gEeprom.RX_VFO & 1u) == vfo && gRxVfo != NULL)
+        ? gRxVfo : MSG_RF_VfoForIndex(vfo);
+    MSG_RF_RxChannelLockStartTarget(vfo, ticks, target);
+}
+
 static void MSG_RF_RxChannelLockStop(void)
 {
     if (!s_rx_channel_lock_active) return;
     s_rx_channel_lock_active = false;
     s_rx_channel_lock_ticks = 0;
-    if ((gEeprom.RX_VFO & 1u) != (s_rx_channel_lock_old_rx_vfo & 1u)) {
-        gEeprom.RX_VFO = s_rx_channel_lock_old_rx_vfo & 1u;
-        gRxVfo = &gEeprom.VfoInfo[gEeprom.RX_VFO];
+    s_rx_channel_lock_target = NULL;
+    s_range_wait_active = false;
+    const uint8_t restore_vfo = s_rx_channel_lock_old_rx_vfo & 1u;
+    VFO_Info_t *restore_target = MSG_RF_VfoForIndex(restore_vfo);
+    if ((gEeprom.RX_VFO & 1u) != restore_vfo || gRxVfo != restore_target) {
+        gEeprom.RX_VFO = restore_vfo;
+        gRxVfo = restore_target;
         RADIO_SetupRegisters(false);
     }
     gDualWatchActive = s_rx_channel_lock_old_dw_active;
     gScheduleDualWatch = false;
+    /* A scheduler ISR may have observed the old zero/expired countdown while
+     * the lock was being released.  Start a fresh normal dwell explicitly so
+     * Full Watch cannot immediately race into another swap. */
+    gDualWatchCountdown_10ms = dual_watch_count_toggle_10ms;
     gUpdateStatus = true;
+}
+
+void MSG_RF_CancelRangeWait(void)
+{
+    if (!s_range_wait_active) return;
+    s_range_wait_active = false;
+    MSG_RF_RxChannelLockStop();
 }
 
 static void MSG_RF_RxChannelLockTick(void)
@@ -402,9 +493,14 @@ static void MSG_RF_RxChannelLockTick(void)
             s_rx_channel_lock_ticks = 2u;
     }
     if (!s_rx_channel_lock_active) return;
-    if ((gEeprom.RX_VFO & 1u) != (s_rx_channel_lock_vfo & 1u)) {
-        gEeprom.RX_VFO = s_rx_channel_lock_vfo & 1u;
-        gRxVfo = &gEeprom.VfoInfo[gEeprom.RX_VFO];
+    const uint8_t lock_vfo = s_rx_channel_lock_vfo & 1u;
+    VFO_Info_t *lock_target = s_rx_channel_lock_target;
+    if (lock_target == NULL)
+        lock_target = MSG_RF_VfoForIndex(lock_vfo);
+    if ((gEeprom.RX_VFO & 1u) != lock_vfo || gRxVfo != lock_target) {
+        gEeprom.RX_VFO = lock_vfo;
+        gRxVfo = lock_target;
+        gCurrentVfo = lock_target;
         RADIO_SetupRegisters(false);
     }
     gScheduleDualWatch = false;
@@ -438,12 +534,19 @@ bool MSG_RF_RxChannelLockActive(void)
 
 bool MSG_RF_TransactionActive(void)
 {
-    if (gSurvivalMode || !gMessengerConfig.msg_rx) return false;
+    if (!gMessengerConfig.msg_rx) return false;
+
+    const bool channel_busy = MSG_RF_ChannelBusy();
+    if (channel_busy)
+        s_scan_carrier_hold_ticks = MSG_RF_SCAN_CARRIER_HOLD_TICKS;
 
     if (s_rx_capture_active || s_rx_stale_ticks != 0u ||
         s_fsk_audio_muted || s_rx_channel_lock_active ||
         s_wait_ack_active || s_ack_collect_active ||
-        s_pending_range_pong_active) {
+        /* Carrier hold begins before FSK sync.  This gives a C/D sidecar the
+         * whole long preamble; the post-carrier tail lets an idle sidecar arm
+         * between a WAKE we joined too late and its following TEXT frame. */
+        s_pending_range_pong_active || channel_busy || s_scan_carrier_hold_ticks) {
         return true;
     }
 
@@ -693,8 +796,11 @@ void MSG_RF_OnRadioSetupRegisters(void)
     s_sidecar_armed = false;
     s_rx_capture_active = false;
     s_rx_stale_ticks = 0u;
-    s_rearm_delay_ticks = (!gSurvivalMode && gMessengerConfig.msg_rx &&
-                           gCurrentFunction != FUNCTION_TRANSMIT) ? 1u : 0u;
+    /* APP_TimeSlice() runs after channel selection in the same main-loop
+     * pass.  Permit that pass to arm the sidecar immediately when the newly
+     * selected channel is idle; MSG_RF_ArmSidecarIfIdle() still refuses busy
+     * channels and active TX. */
+    s_rearm_delay_ticks = 0u;
 #endif
 }
 
@@ -763,6 +869,42 @@ void MSG_RF_HardRestoreVoicePath(void)
     /* RADIO_SetupRegisters() is the sole owner of the restored analog state.
      * Do not overwrite it with a snapshot captured on an older VFO/mode. */
     s_rearm_delay_ticks = MSG_RF_REARM_DELAY_TICKS;
+}
+
+void MSG_RF_PrepareManualVoiceTx(void)
+{
+    VFO_Info_t *respond_target = NULL;
+    uint8_t respond_vfo = gEeprom.RX_VFO & 1u;
+
+    /* HardRestore must rebuild the analog voice path before PTT, but its
+     * RADIO_SelectVfos() call selects a plain A/B VFO and discards a promoted
+     * or manually selected Full Watch target. */
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+    if (gEeprom.DUAL_WATCH == DUAL_WATCH_FULL) {
+        VFO_Info_t *selected = APP_GetFullWatchDisplayVfo(gEeprom.TX_VFO);
+        if (selected != NULL) {
+            respond_target = selected;
+            respond_vfo = gEeprom.TX_VFO & 1u;
+        } else if (gEeprom.CROSS_BAND_RX_TX == CROSS_BAND_OFF && gRxVfoIsActive) {
+            respond_target = gRxVfo;
+        }
+    } else
+#endif
+    if (gEeprom.DUAL_WATCH != DUAL_WATCH_OFF &&
+        gEeprom.CROSS_BAND_RX_TX == CROSS_BAND_OFF) {
+        if (gRxVfoIsActive) {
+            respond_target = gRxVfo;
+        }
+    }
+
+    MSG_RF_HardRestoreVoicePath();
+
+    if (respond_target != NULL) {
+        gEeprom.RX_VFO = respond_vfo;
+        gRxVfo = respond_target;
+        gCurrentVfo = respond_target;
+        gRxVfoIsActive = true;
+    }
 }
 
 static void MSG_RF_ArmSidecarIfIdle(void)
@@ -836,8 +978,9 @@ static void MSG_RF_FinishRxAttempt(bool parsed)
 
 void MSG_RF_Tick10ms(void)
 {
+    if (s_scan_carrier_hold_ticks)
+        --s_scan_carrier_hold_ticks;
     if (s_last_range_ping_age_ticks < MSG_RF_RANGE_PING_DUP_WINDOW_TICKS) ++s_last_range_ping_age_ticks;
-    if (gSurvivalMode) return;
     MSG_RF_EnsureStoreInitialized();
 
     if (!gMessengerConfig.msg_rx && (s_sidecar_armed || s_rx_capture_active)) {
@@ -1028,7 +1171,8 @@ void MSG_RF_Tick10ms(void)
                     MSG_RF_SendPacketFrameRepeatedOnVfo(retry_frame, true, true, s_wait_ack_vfo, 1u)) {
                     s_wait_ack_retries = 1u;
                     s_wait_ack_ticks = MSG_RF_ACK_TIMEOUT_TICKS;
-                    MSG_RF_RxChannelLockStart(s_wait_ack_vfo, MSG_RF_ACK_TIMEOUT_TICKS);
+                    MSG_RF_RxChannelLockStartTarget(s_wait_ack_vfo,
+                        MSG_RF_ACK_TIMEOUT_TICKS, s_rx_channel_lock_target);
                     s_rearm_delay_ticks = MSG_RF_POST_TX_REARM_TICKS;
                 }
             } else if (s_wait_ack_retries != 0u) {
@@ -1058,6 +1202,8 @@ void MSG_RF_Tick10ms(void)
     } else {
         MSG_RF_ArmSidecarIfIdle();
     }
+
+    MSG_RF_ResumeFmIfIdle();
 }
 
 
@@ -1180,23 +1326,43 @@ static bool MSG_RF_SendPacketFrameRepeatedOnVfo(const uint8_t *packet, bool coun
 #ifdef ENABLE_AIRCOPY
     const uint8_t old_tx_vfo = gEeprom.TX_VFO;
     const uint8_t old_crossband = gEeprom.CROSS_BAND_RX_TX;
+    VFO_Info_t *target;
     bool ok;
 
     tx_vfo &= 1u;
-    if (!MSG_RF_TxAllowed(&gEeprom.VfoInfo[tx_vfo])) return false;
-    if (old_tx_vfo != tx_vfo || old_crossband != CROSS_BAND_OFF || gCurrentVfo != &gEeprom.VfoInfo[tx_vfo]) {
+    target = MSG_RF_VfoForIndex(tx_vfo);
+    if (!MSG_RF_TxAllowed(target)) return false;
+    /* A promoted Full Watch priority channel shares the A/B index of the VFO
+     * it replaced, but it is a different VFO_Info object.  Comparing against
+     * VfoInfo[tx_vfo] therefore skipped the retune and made background TEXT
+     * ACKs silently attempt the old foreground channel. */
+    if (old_tx_vfo != tx_vfo || old_crossband != CROSS_BAND_OFF ||
+        gCurrentVfo != target || gRxVfo != target) {
         gEeprom.TX_VFO = tx_vfo;
         gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
         RADIO_SelectVfos();
+        gCurrentVfo = target;
+        gRxVfo = target;
         RADIO_SetupRegisters(true);
     }
 
     ok = MSG_RF_SendPacketFrameRepeated(packet, count_tx, ignore_self_rx, repeats);
 
-    if (old_tx_vfo != tx_vfo || old_crossband != CROSS_BAND_OFF) {
+    /* SendPacketFrame restores the stock A/B pointers.  During an automatic
+     * reply lock that is not enough: a promoted priority channel must remain
+     * the actual RX target until ACK handling finishes. */
+    if (old_tx_vfo != tx_vfo || old_crossband != CROSS_BAND_OFF ||
+        target != &gEeprom.VfoInfo[tx_vfo] || s_rx_channel_lock_active) {
         gEeprom.TX_VFO = old_tx_vfo;
         gEeprom.CROSS_BAND_RX_TX = old_crossband;
         RADIO_SelectVfos();
+        if (s_rx_channel_lock_active) {
+            gEeprom.RX_VFO = s_rx_channel_lock_vfo & 1u;
+            gRxVfo = s_rx_channel_lock_target != NULL
+                ? s_rx_channel_lock_target
+                : MSG_RF_VfoForIndex(gEeprom.RX_VFO);
+            gCurrentVfo = gRxVfo;
+        }
         RADIO_SetupRegisters(true);
     }
 
@@ -1209,7 +1375,7 @@ static bool MSG_RF_SendPacketFrameRepeatedOnVfo(const uint8_t *packet, bool coun
 #endif
 }
 
-static void MSG_RF_RangeTxWarmupCurrentVfo(void)
+static void MSG_RF_RangeTxWarmupCurrentVfo(VFO_Info_t *target)
 {
 #ifdef ENABLE_AIRCOPY
     /* 1.0.1b Range Check reliable TX path:
@@ -1234,6 +1400,8 @@ static void MSG_RF_RangeTxWarmupCurrentVfo(void)
     memset(g_FSK_Buffer, 0, sizeof(g_FSK_Buffer));
 
     RADIO_SelectVfos();
+    gCurrentVfo = target;
+    gRxVfo = target;
     RADIO_SetupRegisters(true);
     MSG_RF_NarrowLockBegin();
     RADIO_SetTxParameters();
@@ -1247,12 +1415,14 @@ static void MSG_RF_RangeTxWarmupCurrentVfo(void)
 static bool MSG_RF_SendRangePacketFrameRepeatedOnVfo(const uint8_t *packet, bool count_tx, bool ignore_self_rx, uint8_t tx_vfo, uint8_t repeats)
 {
 #ifdef ENABLE_AIRCOPY
-    if (!MSG_RF_TxAllowed(&gEeprom.VfoInfo[tx_vfo & 1u])) return false;
     const uint8_t old_tx_vfo = gEeprom.TX_VFO;
     const uint8_t old_crossband = gEeprom.CROSS_BAND_RX_TX;
+    VFO_Info_t *target;
     bool ok;
 
     tx_vfo &= 1u;
+    target = MSG_RF_VfoForIndex(tx_vfo);
+    if (!MSG_RF_TxAllowed(target)) return false;
     if (old_tx_vfo != tx_vfo || old_crossband != CROSS_BAND_OFF) {
         gEeprom.TX_VFO = tx_vfo;
         gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
@@ -1261,14 +1431,16 @@ static bool MSG_RF_SendRangePacketFrameRepeatedOnVfo(const uint8_t *packet, bool
     }
 
     RADIO_SelectVfos();
-    if (!MSG_RF_TxAllowed(gCurrentVfo)) {
+    gCurrentVfo = target;
+    gRxVfo = target;
+    if (!MSG_RF_TxAllowed(target)) {
         gEeprom.TX_VFO = old_tx_vfo;
         gEeprom.CROSS_BAND_RX_TX = old_crossband;
         RADIO_SelectVfos();
         RADIO_SetupRegisters(true);
         return false;
     }
-    MSG_RF_RangeTxWarmupCurrentVfo();
+    MSG_RF_RangeTxWarmupCurrentVfo(target);
     ok = MSG_RF_SendPacketFrameRepeated(packet, count_tx, ignore_self_rx, repeats);
 
     if (old_tx_vfo != tx_vfo || old_crossband != CROSS_BAND_OFF) {
@@ -1369,6 +1541,7 @@ static int8_t MSG_RF_CurrentRSSIdBm(void)
 
 static void MSG_RF_QueueRangePong(uint16_t id, const char *to, uint8_t rx_vfo)
 {
+    const VFO_Info_t *target = MSG_RF_VfoForIndex(rx_vfo);
     MSG_RF_EnsureStoreInitialized();
     if (!gMessengerConfig.rng_rsp) return;
 
@@ -1389,8 +1562,8 @@ static void MSG_RF_QueueRangePong(uint16_t id, const char *to, uint8_t rx_vfo)
 
     s_pending_range_pong_active = true;
     s_pending_range_pong_lifetime = 1100u;
-    s_pending_range_pong_rx_frequency = gEeprom.VfoInfo[rx_vfo & 1u].pRX->Frequency;
-    s_pending_range_pong_tx_frequency = gEeprom.VfoInfo[rx_vfo & 1u].pTX->Frequency;
+    s_pending_range_pong_rx_frequency = target->pRX->Frequency;
+    s_pending_range_pong_tx_frequency = target->pTX->Frequency;
     s_pending_range_pong_delay_ticks = MSG_RF_RandomRangeDelayTicks(id);
     s_pending_range_pong_id = id;
     s_pending_range_pong_vfo = (uint8_t)(rx_vfo & 1u);
@@ -1401,6 +1574,7 @@ static void MSG_RF_QueueRangePong(uint16_t id, const char *to, uint8_t rx_vfo)
 
 static void MSG_RF_QueueAck(uint16_t id, const char *to, uint8_t rx_vfo)
 {
+    const VFO_Info_t *target = MSG_RF_VfoForIndex(rx_vfo);
     char ack_to[MSG_CALLSIGN_LEN + 1];
     memset(ack_to, 0, sizeof(ack_to));
     if (to && to[0]) strncpy(ack_to, to, MSG_CALLSIGN_LEN);
@@ -1427,8 +1601,8 @@ static void MSG_RF_QueueAck(uint16_t id, const char *to, uint8_t rx_vfo)
         if (s_pending_ack_queue[i].active) continue;
         s_pending_ack_queue[i].active = true;
         s_pending_ack_queue[i].lifetime = MSG_RF_ACK_TIMEOUT_TICKS;
-        s_pending_ack_queue[i].rx_frequency = gEeprom.VfoInfo[rx_vfo & 1u].pRX->Frequency;
-        s_pending_ack_queue[i].tx_frequency = gEeprom.VfoInfo[rx_vfo & 1u].pTX->Frequency;
+        s_pending_ack_queue[i].rx_frequency = target->pRX->Frequency;
+        s_pending_ack_queue[i].tx_frequency = target->pTX->Frequency;
         s_pending_ack_queue[i].delay_ticks = MSG_RF_RandomAckDelayTicks(id);
         s_pending_ack_queue[i].id = id;
         s_pending_ack_queue[i].vfo = (uint8_t)(rx_vfo & 1u);
@@ -1501,9 +1675,12 @@ static void try_store_rx_packet(void)
 
     if (pkt.type == MSG_PKT_TYPE_WAKE) {
         /* Invisible wake/pre-sync frame for Power Save + Dual Watch.
-         * Do not show in HEARD, do not beep, do not ACK; just finish the FSK
-         * attempt so the following real TEXT frame has a better chance of
-         * being captured after the radio wakes/returns to the TX VFO. */
+         * Do not show in HEARD, beep or ACK. Promote a Full Watch background
+         * target now, while the sync hold still owns the exact C/D object, so
+         * the following TEXT starts on the visible foreground channel. */
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+        APP_FullWatchPromoteCurrentBackground();
+#endif
         MSG_RF_FinishRxAttempt(false);
         return;
     }
@@ -1511,6 +1688,9 @@ static void try_store_rx_packet(void)
     if (pkt.type == MSG_PKT_TYPE_PING) {
         MSG_HeardUpdate(pkt.from, MSG_RF_CurrentRSSIdBm(), MSG_PKT_TYPE_PING);
         if (strncmp(pkt.from, gMessengerConfig.callsign, MSG_CALLSIGN_LEN) != 0) {
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+            APP_FullWatchPromoteCurrentBackground();
+#endif
             MSG_RF_QueueRangePong(pkt.id, pkt.from, gEeprom.RX_VFO);
             MSG_RF_RequestRangeBeep();
         }
@@ -1573,6 +1753,9 @@ static void try_store_rx_packet(void)
     /* Stage 2 ACK: queue the ACK after a valid text frame is fully parsed.
      * Duplicate retry frames still get an ACK resend, but must not create a
      * second inbox entry or trigger beep/unread state. */
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+    APP_FullWatchPromoteCurrentBackground();
+#endif
     MSG_RF_QueueAck(pkt.id, pkt.from, gEeprom.RX_VFO);
 
     if (duplicate) {
@@ -1595,7 +1778,6 @@ static void try_store_rx_packet(void)
 
 void MSG_RF_OnRadioInterrupt(uint16_t status)
 {
-    if (gSurvivalMode) return;
 #ifdef ENABLE_AIRCOPY
     const bool fsk_sync    = (status & BK4819_REG_02_FSK_RX_SYNC) != 0;
     const bool fifo_full   = (status & BK4819_REG_02_FSK_FIFO_ALMOST_FULL) != 0;
@@ -1607,6 +1789,7 @@ void MSG_RF_OnRadioInterrupt(uint16_t status)
         (BK4819_ReadRegister(BK4819_REG_0B) & ((1u << 6) | (1u << 7)));
 
     if (modem_sync) {
+        MSG_RF_SuspendFm(true);
         /*
          * A latched FSK_RX_SYNC IRQ is an explicit new frame boundary. This is
          * especially important after power-save wake-up: the radio can catch
@@ -1689,15 +1872,21 @@ bool MSG_RF_SendRangePing(void)
 {
     s_last_send_blocked = false;
     s_last_send_block_reason = MSG_RF_BLOCK_NONE;
-    if (gSurvivalMode) return false;
     MSG_RF_EnsureStoreInitialized();
 #ifdef ENABLE_AIRCOPY
-    const VFO_Info_t *target = &gEeprom.VfoInfo[gEeprom.TX_VFO & 1u];
+    /* Full Watch priority/manual selections share the A/B index of the
+     * channel they replaced.  Resolve through the Full Watch mapping instead
+     * of checking the stale physical A/B object; otherwise C/D report
+     * TX-blocked while ordinary PTT (which uses gCurrentVfo) still works. */
+    const uint8_t selected_vfo = gEeprom.TX_VFO & 1u;
+    VFO_Info_t *target = MSG_RF_VfoForIndex(selected_vfo);
     if (!MSG_RF_TxAllowed(target)) {
         s_last_send_blocked = true;
         s_last_send_block_reason = MSG_RF_TxBlockReason(target);
         return false;
     }
+
+    MSG_RF_SuspendFm(false);
 
     /* 0.6.1: make Range Check self-healing after long idle.  Restore any
      * stale FSK/voice remnants before building and sending the PING; normal
@@ -1709,19 +1898,21 @@ bool MSG_RF_SendRangePing(void)
     if (MSG_PACKET_BuildPing(packet, sizeof(packet), id, gMessengerConfig.callsign) != MSG_PKT_WIRE_LEN) {
         return false;
     }
-    bool ping_sent = MSG_RF_SendRangePacketFrameRepeatedOnVfo(packet, true, true, gEeprom.TX_VFO, MSG_RF_RANGE_PING_REPEATS);
+    bool ping_sent = MSG_RF_SendRangePacketFrameRepeatedOnVfo(packet, true, true, selected_vfo, MSG_RF_RANGE_PING_REPEATS);
     if (!ping_sent) {
         /* 1.0.1 follow-up: Range Check is user-triggered; if the first TX attempt
          * is refused by a stale FSK/RX state, force the same voice-path recovery
          * and try once more instead of silently entering an empty wait screen. */
         MSG_RF_HardRestoreVoicePath();
         SYSTEM_DelayMs(80u);
-        ping_sent = MSG_RF_SendRangePacketFrameRepeatedOnVfo(packet, true, true, gEeprom.TX_VFO, MSG_RF_RANGE_PING_REPEATS);
+        ping_sent = MSG_RF_SendRangePacketFrameRepeatedOnVfo(packet, true, true, selected_vfo, MSG_RF_RANGE_PING_REPEATS);
     }
     if (!ping_sent) return false;
     SYSTEM_DelayMs(50u);
+    MSG_RF_RxChannelLockStartTarget(selected_vfo,
+        MSG_RF_RANGE_WAIT_PONG_TICKS, target);
     MSG_RF_RangeForceRxReprime();
-    MSG_RF_RxChannelLockStart(gEeprom.TX_VFO, MSG_RF_RANGE_WAIT_PONG_TICKS);
+    s_range_wait_active = true;
     /* 0.5.15: for Range Check, enter the PONG listening window as soon as
      * possible after the PING TX restore.  The generic post-TX re-prime delay
      * is fine for normal Messenger, but the first cold-boot range test needs
@@ -1758,14 +1949,21 @@ bool MSG_RF_SendText(const char *text)
 {
     s_last_send_blocked = false;
     s_last_send_block_reason = MSG_RF_BLOCK_NONE;
-    if (gSurvivalMode) return false;
     MSG_RF_EnsureStoreInitialized();
 #ifdef ENABLE_AIRCOPY
-    if (!MSG_RF_TxAllowed(gCurrentVfo)) {
+    /* Compose can be opened while Full Watch is displaying a priority/manual
+     * channel even though gCurrentVfo still points at the displaced A/B
+     * object.  Resolve the logical TX slot first, exactly like Heard/Range. */
+    const uint8_t selected_vfo = gEeprom.TX_VFO & 1u;
+    VFO_Info_t *selected_target = MSG_RF_VfoForIndex(selected_vfo);
+    if (!MSG_RF_TxAllowed(selected_target)) {
         s_last_send_blocked = true;
-        s_last_send_block_reason = MSG_RF_TxBlockReason(gCurrentVfo);
+        s_last_send_block_reason = MSG_RF_TxBlockReason(selected_target);
         return false;
     }
+    gCurrentVfo = selected_target;
+
+    MSG_RF_SuspendFm(false);
 
     uint8_t packet[MSG_PKT_WIRE_LEN];
     char rf_text[MSG_RF_TEXT_LIMIT + 1u];
@@ -1778,7 +1976,9 @@ bool MSG_RF_SendText(const char *text)
         return false;
     }
 
-    const uint8_t sent_vfo = (gCurrentVfo == &gEeprom.VfoInfo[1]) ? 1u : 0u;
+    /* Keep the logical A/B index for Full Watch mapping.  The actual target
+     * may be a promoted/manual priority VFO behind that index. */
+    const uint8_t sent_vfo = selected_vfo;
     MSG_RF_SendInitialWakeFrame(id);
 
     if (!MSG_RF_SendPacketFrameRepeatedOnVfo(packet, true, true, sent_vfo, 1u)) return false;
@@ -1787,15 +1987,17 @@ bool MSG_RF_SendText(const char *text)
     if (MSG_RF_AckEnabledNow()) {
         s_wait_ack_active = true;
         s_wait_ack_vfo = sent_vfo;
-        s_wait_ack_rx_frequency = gEeprom.VfoInfo[sent_vfo].pRX->Frequency;
-        s_wait_ack_tx_frequency = gEeprom.VfoInfo[sent_vfo].pTX->Frequency;
+        VFO_Info_t *ack_target = MSG_RF_VfoForIndex(sent_vfo);
+        s_wait_ack_rx_frequency = ack_target->pRX->Frequency;
+        s_wait_ack_tx_frequency = ack_target->pTX->Frequency;
         s_wait_ack_id = id;
         s_wait_ack_ticks = MSG_RF_ACK_TIMEOUT_TICKS;
         s_wait_ack_retries = 0u;
         s_wait_ack_ttl = ttl;
         memset(s_wait_ack_text, 0, sizeof(s_wait_ack_text));
         strncpy(s_wait_ack_text, rf_text, MSG_TEXT_LEN);
-        MSG_RF_RxChannelLockStart(sent_vfo, MSG_RF_ACK_TIMEOUT_TICKS);
+        MSG_RF_RxChannelLockStartTarget(sent_vfo,
+            MSG_RF_ACK_TIMEOUT_TICKS, ack_target);
         s_rearm_delay_ticks = MSG_RF_POST_TX_REARM_TICKS;
     } else {
         MSG_STORE_SetOutboxStatusById(id, MSG_STATUS_NONE);

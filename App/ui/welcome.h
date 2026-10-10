@@ -22,7 +22,6 @@
 
 void UI_DisplayReleaseKeys(void);
 void UI_DisplayWelcome(void);
-void UI_DisplaySurvivalWelcome(void);
 #ifdef ENABLE_FEAT_F4HWN_LOGO
 void UI_DisplayScreenSaver(uint8_t mode);
 #endif

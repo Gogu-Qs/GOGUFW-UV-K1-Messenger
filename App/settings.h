@@ -81,7 +81,10 @@ enum {
 enum {
     DUAL_WATCH_OFF = 0,
     DUAL_WATCH_CHAN_A,
-    DUAL_WATCH_CHAN_B
+    DUAL_WATCH_CHAN_B,
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+    DUAL_WATCH_FULL
+#endif
 };
 
 enum {
@@ -344,6 +347,9 @@ void     SETTINGS_LoadCalibration(void);
 uint32_t SETTINGS_FetchChannelFrequency(const uint16_t channel);
 bool     SETTINGS_FetchChannelScanInfo(const uint16_t channel, uint32_t *frequency, ModulationMode_t *modulation);
 bool     SETTINGS_FetchChannelScanDisplayInfo(const uint16_t channel, ChannelScanDisplayInfo_t *info);
+#if defined(ENABLE_FEAT_F4HWN_FULL_WATCH) || defined(ENABLE_FEAT_F4HWN_SCAN_FASTER)
+void     SETTINGS_ApplyChannelScanDisplayInfo(VFO_Info_t *vfo, uint16_t channel, const ChannelScanDisplayInfo_t *info);
+#endif
 void     SETTINGS_FetchChannelName(char *s, const uint16_t channel);
 void     SETTINGS_FactoryReset(bool bIsAll);
 #ifdef ENABLE_FMRADIO

@@ -201,10 +201,7 @@ void UI_DisplayStatus()
                     uint8_t sOff = 2;          // Offset relative to the reference position
 
                     #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
-                        if (gSurvivalMode) {
-                            src = gFontSURV;
-                            sSize = sizeof(gFontSURV);
-                        } else if (gEeprom.MENU_LOCK) {
+                        if (gEeprom.MENU_LOCK) {
                             src = gFontRO;
                             sSize = sizeof(gFontRO);
                         } else 
@@ -221,8 +218,12 @@ void UI_DisplayStatus()
                             } else
 #endif
                             if (gEeprom.DUAL_WATCH != DUAL_WATCH_OFF) {
-                                if (gDualWatchActive) { // DWR - dual watch + respond
+                                if (gDualWatchActive) { // DWR/FWR - watch + respond
                                     src = gFontDWR;
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+                                    if (gEeprom.DUAL_WATCH == DUAL_WATCH_FULL)
+                                        src = gFontFWR;
+#endif
                                     sOff = xb ? 2 : 0;
                                     sSize = sizeof(gFontDWR) - (xb ? 5 : 0);
                                 } else {
@@ -244,10 +245,7 @@ void UI_DisplayStatus()
                 }
             }
         }
-        if (gSurvivalMode)
-            x += sizeof(gFontSURV) + 3;
-        else
-            x += sizeof(gFontDWR) + 3;
+        x += sizeof(gFontDWR) + 3;
     #endif
 
 #ifdef ENABLE_VOX

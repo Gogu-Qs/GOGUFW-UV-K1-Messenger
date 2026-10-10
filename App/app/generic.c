@@ -210,7 +210,7 @@ void GENERIC_Key_PTT(bool bKeyPressed)
 
 start_tx:
 #ifdef ENABLE_MESSENGER
-    MSG_RF_HardRestoreVoicePath();
+    MSG_RF_PrepareManualVoiceTx();
 #endif
     // request start TX
     gFlagPrepareTX = true;

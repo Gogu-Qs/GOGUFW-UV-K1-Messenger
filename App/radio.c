@@ -18,6 +18,9 @@
 #include <string.h>
 
 #include "am_fix.h"
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+    #include "app/app.h"
+#endif
 #include "app/dtmf.h"
 #include "app/main.h"
 #ifdef ENABLE_MESSENGER
@@ -379,7 +382,7 @@ void RADIO_ConfigureChannel(const unsigned int VFO, const unsigned int configure
         pVfo->StepFrequency = gStepFrequencyTable[tmp];
 
         tmp = data[7];
-#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
+#ifndef ENABLE_FEAT_F4HWN
         if (tmp > (ARRAY_SIZE(gSubMenu_SCRAMBLER) - 1))
             tmp = 0;
         pVfo->SCRAMBLING_TYPE = tmp;
@@ -744,7 +747,11 @@ void RADIO_SelectVfos(void)
     // if crossband without DW is used then RX_VFO is the opposite to the TX_VFO
     gEeprom.RX_VFO = (gEeprom.CROSS_BAND_RX_TX == CROSS_BAND_OFF || gEeprom.DUAL_WATCH != DUAL_WATCH_OFF) ? gEeprom.TX_VFO : !gEeprom.TX_VFO;
 
-    gTxVfo = &gEeprom.VfoInfo[gEeprom.TX_VFO];
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+    gTxVfo = APP_GetFullWatchDisplayVfo(gEeprom.TX_VFO);
+    if (gTxVfo == NULL)
+#endif
+        gTxVfo = &gEeprom.VfoInfo[gEeprom.TX_VFO];
     gRxVfo = &gEeprom.VfoInfo[gEeprom.RX_VFO];
 
     RADIO_SelectCurrentVfo();
@@ -888,7 +895,7 @@ void RADIO_SetupRegisters(bool switchToForeground)
                     break;
             }
 
-#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
+#ifndef ENABLE_FEAT_F4HWN
             if (gRxVfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable)
                 BK4819_EnableScramble(gRxVfo->SCRAMBLING_TYPE - 1);
             else
@@ -924,9 +931,6 @@ void RADIO_SetupRegisters(bool switchToForeground)
     {
         BK4819_DisableVox();
     }
-
-    // RX expander
-    BK4819_SetCompander((gRxVfo->Modulation == MODULATION_FM && gRxVfo->Compander >= 2) ? gRxVfo->Compander : 0);
 
     BK4819_EnableDTMF();
     InterruptMask |= BK4819_REG_3F_DTMF_5TONE_FOUND;
@@ -1027,9 +1031,6 @@ void RADIO_SetTxParameters(void)
     }
 
     BK4819_SetFrequency(gCurrentVfo->pTX->Frequency);
-
-    // TX compressor
-    BK4819_SetCompander((gRxVfo->Modulation == MODULATION_FM && (gRxVfo->Compander == 1 || gRxVfo->Compander >= 3)) ? gRxVfo->Compander : 0);
 
     BK4819_PrepareTransmit();
 
@@ -1217,7 +1218,12 @@ void RADIO_PrepareTX(void)
         if (!gRxVfoIsActive)
         {   // use the current RX vfo
             gEeprom.RX_VFO = gEeprom.TX_VFO;
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+            VFO_Info_t *fullWatchVfo = APP_GetFullWatchDisplayVfo(gEeprom.TX_VFO);
+            gRxVfo = fullWatchVfo != NULL ? fullWatchVfo : gTxVfo;
+#else
             gRxVfo         = gTxVfo;
+#endif
             gRxVfoIsActive = true;
         }
 

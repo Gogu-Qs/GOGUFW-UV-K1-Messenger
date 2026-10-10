@@ -204,7 +204,7 @@ static void FM_UI_DrawEditName(void)
     const char *edit = FM_GetNameEditBuffer();
     UI_GOGU_DrawTextEditor("CH-NAME", edit, 15u, "SAVE",
                            (FM_GetNameEditorMode() == 2U) ? "2" : (FM_GetNameEditorUpper() ? "B" : "b"),
-                           false);
+                           false, "F:DEL");
 }
 
 static void FM_UI_DrawAutoScanConfirm(void)

@@ -312,7 +312,6 @@ uint8_t           gFSKWriteIndex;
 bool              gUpdateDisplay;
 
 bool              gF_LOCK = false;
-bool              gSurvivalMode = false;
 
 uint8_t           gShowChPrefix;
 

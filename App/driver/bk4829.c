@@ -1602,7 +1602,7 @@ void BK4819_GenTail(uint8_t Tail)
         // 1: 120° phase shift
         // 2: 180° phase shift
         // 3: 240° phase shift
-        BK4819_WriteRegister(BK4819_REG_52, 0x028F | (Tail << 13));
+        BK4819_WriteRegister(BK4819_REG_52, 0x828F | (Tail << 13));
     else if (Tail == 4)
         // 4: 55Hz tone freq
         BK4819_WriteRegister(BK4819_REG_07, 0x046F);

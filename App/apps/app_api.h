@@ -44,9 +44,10 @@
  *   2  ticks_ms, rand32, asset_read (+ app_header_t asset_size / asset_crc),
  *      idivmod, uidivmod (the resident division helpers), Labs system info,
  *      current and minimum-since-boot free stack/RAM margin
- *   3  launch_shortcut, pixel-positioned small text, modal radio service */
+ *   3  launch_shortcut, pixel-positioned small text, modal radio service
+ *   4  temporary private app frequency, restored automatically on exit */
 #define APP_ABI_MAJOR  1u
-#define APP_API_LEVEL  3u
+#define APP_API_LEVEL  4u
 
 /* Minimum API level of an app that ships read-only assets (pack_app.py). */
 #define APP_API_ASSETS 2u
@@ -264,22 +265,6 @@ typedef struct app_api {
     uint64_t (*idivmod)(int32_t n, int32_t d);
     uint64_t (*uidivmod)(uint32_t n, uint32_t d);
 
-    /* ---- API level 3: launch context ----
-     * Zero means the Apps menu; otherwise one APP_SHORTCUT_* bit. Apps that
-     * keep api_min=2 may probe api_size and use this service when available. */
-    uint8_t (*launch_shortcut)(void);
-    /* Pixel-positioned 6x7 text used by the standard GOGUFW screen layout. */
-    void (*print_small_y)(const char *text, uint8_t x, uint8_t y, bool inverted);
-    /* Service RX/squelch IRQs and refresh the status bar without allowing the
-     * resident UI or key handler to overwrite the overlay-owned screen. */
-    void (*radio_service)(void);
-    /* Search owns its save UI; these bridge resident channel storage only. */
-    uint16_t (*search_default_channel)(void);
-    bool (*search_channel_info)(uint16_t channel, char *name, uint8_t name_size);
-    bool (*search_save)(uint32_t frequency, uint16_t tone,
-                        uint8_t tone_type, bool single_frequency, uint16_t channel);
-
-#ifdef ENABLE_FEAT_F4HWN_OVERLAY_INFO
     /* ---- API level 2: zero-code Labs system information ---- */
     const char *sys_edition;
     const char *sys_version;
@@ -296,14 +281,28 @@ typedef struct app_api {
     /* ---- API level 2: stack watermark diagnostics ---- */
     uint32_t (*sys_stack_free_now)(void);
     uint32_t (*sys_stack_free_min)(void);
-#endif
+
+    /* ---- API level 3: launch context ----
+     * Level-2 SystemInfo fields stay before these entries unconditionally.
+     * That preserves the published v6.1.0 offsets in every firmware edition,
+     * even when the resident SysInfo capability itself is not compiled. */
+    uint8_t (*launch_shortcut)(void);
+    void (*print_small_y)(const char *text, uint8_t x, uint8_t y, bool inverted);
+    void (*radio_service)(void);
+    uint16_t (*search_default_channel)(void);
+    bool (*search_channel_info)(uint16_t channel, char *name, uint8_t name_size);
+    bool (*search_save)(uint32_t frequency, uint16_t tone,
+                        uint8_t tone_type, bool single_frequency, uint16_t channel);
+
+    /* ---- API level 4: temporary private RF target ----
+     * Builds a non-persistent FM VFO at frequency (x10 Hz). The loader restores
+     * the user's selected Full Watch/A/B target when the app returns. */
+    void (*radio_tune)(uint32_t frequency);
 
 } app_api_t;
 
-#ifdef ENABLE_FEAT_F4HWN_OVERLAY_INFO
-_Static_assert(sizeof(app_api_t) == 352u,
+_Static_assert(sizeof(app_api_t) == 356u,
                "Labs information or launch context changed API layout");
-#endif
 
 /* BK4819 AF modes for set_af (mirror driver/bk4819.h values). */
 enum { APP_AF_MUTE = 0, APP_AF_FM = 1, APP_AF_AM = 7 };

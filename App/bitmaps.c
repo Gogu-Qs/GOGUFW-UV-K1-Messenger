@@ -22,16 +22,17 @@ const uint8_t gFontPttClassic[2][6] =
     {0x00, 0x7f, 0x40, 0x40, 0x40, 0x40},
 };
 
-const uint8_t gFontF[8] =
+const uint8_t gFontF[9] =
 {
+    0b00111110,
     0b01111111,
-    0b00000000,
-    0b01110110,
-    0b01110110,
-    0b01110110,
-    0b01110110,
-    0b01111110,
-    0b01111111
+    0b01000001,
+    0b01110101,
+    0b01110101,
+    0b01110101,
+    0b01111101,
+    0b01111111,
+    0b00111110
 };
 
 const uint8_t gFontS[6] =
@@ -109,23 +110,20 @@ const uint8_t gFontDWR[3][6] =
     {0x00, 0x7f, 0x9, 0x19, 0x29, 0x46},
 };
 
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+const uint8_t gFontFWR[3][6] =
+{
+    {0x00, 0x7f, 0x09, 0x09, 0x09, 0x01},
+    {0x00, 0x3f, 0x40, 0x38, 0x40, 0x3f},
+    {0x00, 0x7f, 0x09, 0x19, 0x29, 0x46},
+};
+#endif
+
 #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
     const uint8_t gFontRO[2][6] =
-    {   // "RO" (legacy Rescue Ops indicator, no longer used by GOGUFW Survival)
+    {   // "RO" (Rescue Ops indicator)
         {0x00, 0x7f, 0x9, 0x19, 0x29, 0x46},
         {0x00, 0x3e, 0x41, 0x41, 0x41, 0x3e},
-    };
-    const uint8_t gFontSV[2][6] =
-    {   // "SV" - Survival Mode (legacy short indicator)
-        {0x00, 0x46, 0x49, 0x49, 0x49, 0x31},
-        {0x00, 0x1f, 0x20, 0x40, 0x20, 0x1f},
-    };
-    const uint8_t gFontSURV[4][6] =
-    {   // "SURV" - Survival Mode
-        {0x00, 0x46, 0x49, 0x49, 0x49, 0x31}, // S
-        {0x00, 0x3f, 0x40, 0x40, 0x40, 0x3f}, // U
-        {0x00, 0x7f, 0x09, 0x19, 0x29, 0x46}, // R
-        {0x00, 0x1f, 0x20, 0x40, 0x20, 0x1f}, // V
     };
 #endif
 

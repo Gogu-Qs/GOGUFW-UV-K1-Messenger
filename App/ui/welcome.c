@@ -259,22 +259,6 @@ void UI_DisplayScreenSaver(uint8_t mode)
 }
 #endif
 
-void UI_DisplaySurvivalWelcome(void)
-{
-    UI_StatusClear();
-#if defined(ENABLE_FEAT_F4HWN_CTR) || defined(ENABLE_FEAT_F4HWN_INV)
-    ST7565_ContrastAndInv();
-#endif
-    UI_DisplayClear();
-
-    UI_PrintString("SURVIVAL", 0, 127, 1, 10);
-    UI_PrintString("MODE", 0, 127, 3, 10);
-    UI_PrintStringSmallNormal("RADIO ONLY", 0, 127, 6);
-
-    ST7565_BlitStatusLine();
-    ST7565_BlitFullScreen();
-}
-
 void UI_DisplayWelcome(void)
 {
     UI_StatusClear();

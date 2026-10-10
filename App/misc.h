@@ -445,7 +445,6 @@ extern uint8_t               gFSKWriteIndex;
 extern volatile bool         gNextTimeslice;
 extern bool                  gUpdateDisplay;
 extern bool                  gF_LOCK;
-extern bool                  gSurvivalMode;
 #ifdef ENABLE_FMRADIO
     extern uint8_t           gFM_ChannelPosition;
 #endif

@@ -771,6 +771,10 @@ void CHFRSCANNER_Start(const bool storeBackupSettings, const int8_t scan_directi
         gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
         gScanKeepResult = false;
     }
+
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+    APP_FullWatchReset();
+#endif
     
     RADIO_SelectVfos();
     CHFRSCANNER_AbortActiveReception();

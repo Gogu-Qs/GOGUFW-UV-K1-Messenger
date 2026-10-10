@@ -80,6 +80,7 @@ static bool s_fmNameEdit;
 static bool s_fmAutoScanConfirm;
 static bool s_fmLiveRssiEdit;
 static bool s_fmLiveRssiSelection;
+static void FM_AudioPathOn(void);
 static TEXT_INPUT_Editor_t s_fmNameEditor;
 
 const uint8_t BUTTON_STATE_PRESSED = 1 << 0;
@@ -369,6 +370,37 @@ void FM_TurnOff(void)
     #endif
 }
 
+void FM_Suspend(void)
+{
+    if (!gFmRadioMode)
+        return;
+
+    /* Messenger temporarily owns the RF/audio path. Keep all FM UI, scan and
+     * tuning state in RAM, but explicitly release the FM audio route before
+     * FSK RX/TX takes over; otherwise the FM mixer remains selected and the
+     * message is heard at a reduced level or silences the radio afterwards. */
+    gFM_RestoreCountdown_10ms = 0u;
+    AUDIO_AudioPathOff();
+    gEnableSpeaker = false;
+    BK1080_Init0();
+}
+
+void FM_Resume(void)
+{
+    if (!gFmRadioMode)
+        return;
+
+    /* Resume without FM_Start(): that function deliberately resets menus and
+     * writes resume-state EEPROM, neither of which belongs to a short
+     * Messenger interruption. */
+    gFM_RestoreCountdown_10ms = 0u;
+    FM_InvalidateRssi();
+    BK1080_Init(gEeprom.FM_FrequencyPlaying, gEeprom.FM_Band);
+    BK4819_PickRXFilterPathBasedOnFrequency(10320000);
+    FM_AudioPathOn();
+    gUpdateStatus = true;
+}
+
 void FM_EraseChannels(void)
 {
     //PY25Q16_SectorErase(0x003000);
@@ -421,7 +453,7 @@ void FM_Tune(uint16_t Frequency, int8_t Step, bool bFlag)
     BK1080_SetFrequency(gEeprom.FM_FrequencyPlaying, gEeprom.FM_Band/*, gEeprom.FM_Space*/);
 }
 
-void FM_AudioPathOn(void) {
+static void FM_AudioPathOn(void) {
     BACKLIGHT_TurnOn();
     AUDIO_AudioPathOn();
     gEnableSpeaker = true;

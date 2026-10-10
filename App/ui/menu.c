@@ -65,11 +65,10 @@ const t_menu_item MenuList[] =
     {"TxODir",      MENU_SFT_D         }, // was "SFT_D"
     {"TxOffs",      MENU_OFFSET        }, // was "OFFSET"
     {"W/N",         MENU_W_N           },
-#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
+#ifndef ENABLE_FEAT_F4HWN
     {"Scramb",      MENU_SCR           }, // was "SCR"
 #endif
     {"BusyCL",      MENU_BCL           }, // was "BCL"
-    {"Compnd",      MENU_COMPAND       },
     {"Mode",        MENU_AM            }, // was "AM"
 #ifdef ENABLE_FEAT_F4HWN
     {"TXLock",      MENU_TX_LOCK       }, 
@@ -224,11 +223,6 @@ const t_menu_item MenuList[] =
     {"",                              0xff               }  // end of list - DO NOT delete or move this this
 };
 
-#if defined(ENABLE_FEAT_F4HWN) && defined(ENABLE_GOGUFW_SCRAMBLER) && defined(ENABLE_MESSENGER)
-_Static_assert(MENU_SCR == MENU_RNG_RSP + 1,
-               "GOGUFW Scrambler must not renumber existing menu IDs");
-#endif
-
 const uint8_t FIRST_HIDDEN_MENU_ITEM = MENU_F_LOCK;
 
 const char gSubMenu_TXP[][6] =
@@ -272,7 +266,11 @@ const char* const gSubMenu_RXMode[] =
     "MAIN\nONLY",       // TX and RX on main only
     "DUAL RX\nRESPOND", // Watch both and respond
     "CROSS\nBAND",      // TX on main, RX on secondary
-    "MAIN TX\nDUAL RX"  // always TX on main, but RX on both
+    "MAIN TX\nDUAL RX", // always TX on main, but RX on both
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+    "FULL RX\nRESPOND",
+    "MAIN TX\nFULL RX"
+#endif
 };
 
 #ifdef ENABLE_VOICE
@@ -399,7 +397,7 @@ const char gSubMenu_SET_NAV[][17] =
     "UP\nDOWN\nUV-K5(8)",
 };
 
-#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
+#ifndef ENABLE_FEAT_F4HWN
 const char gSubMenu_SCRAMBLER[][7] =
 {
     "OFF",
@@ -627,13 +625,13 @@ static void UI_MENU_DrawUnifiedTextEditor(const int m)
 #endif
                         MenuList[gMenuCursor].name;
     UI_GOGU_DrawTextEditor(title, edit, max_len, "SAVE",
-                           UI_MENU_TextEditModeLabel(), false);
+                           UI_MENU_TextEditModeLabel(), false, "F:DEL");
 }
 
 static void UI_MENU_DrawTopRightRoundedBadge(const char *text, const uint8_t line, const bool center_in_area, const uint8_t area_x1, const uint8_t area_x2)
 {
     const size_t length = strlen(text);
-    const size_t char_pitch = ARRAY_SIZE(gFontSmall[0]) + 1u;
+    const size_t char_pitch = FONT_SMALL_WIDTH + 1u;
     const size_t text_width = length * char_pitch;
     const size_t capsule_span = text_width + 1u; // matches UI_PrintStringSmallNormalInverse x_end computation
     uint8_t text_x;
@@ -910,7 +908,7 @@ void UI_DisplayMenu(void)
             strcpy(String, gSubMenu_W_N[gSubMenuSelection]);
             break;
 
-#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
+#ifndef ENABLE_FEAT_F4HWN
         case MENU_SCR:
             strcpy(String, gSubMenu_SCRAMBLER[gSubMenuSelection]);
             #if 1
@@ -984,7 +982,6 @@ void UI_DisplayMenu(void)
             }
             break;
 
-        case MENU_COMPAND:
         case MENU_ABR_ON_TX_RX:
             strcpy(String, gSubMenu_RX_TX[gSubMenuSelection]);
             break;

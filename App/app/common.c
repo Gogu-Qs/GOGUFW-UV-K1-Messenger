@@ -1,4 +1,7 @@
 #include "app/chFrScanner.h"
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+#include "app/app.h"
+#endif
 #include "audio.h"
 #include "functions.h"
 #include "misc.h"
@@ -28,6 +31,21 @@ void COMMON_SwitchVFOs()
 #ifdef ENABLE_SCAN_RANGES    
     gScanRangeStart = 0;
 #endif
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+    if (APP_FullWatchSelectNextTx()) {
+        /* F+2 preselects VFO_CONFIGURE for the legacy A/B path.  No channel
+         * data changed here, and allowing that deferred reload would discard
+         * the priority-channel foreground selection we just made. */
+        gVfoConfigureMode = VFO_CONFIGURE_NONE;
+        if (gInputBoxIndex > 0) {
+            gInputBoxIndex = 0;
+            gHasVfoBackup = false;
+        }
+        gRequestSaveSettings = true;
+        gRequestDisplayScreen = DISPLAY_MAIN;
+        return;
+    }
+#endif
     gEeprom.TX_VFO ^= 1;
 
     if (gInputBoxIndex > 0) {
@@ -37,7 +55,11 @@ void COMMON_SwitchVFOs()
 
     if (gEeprom.CROSS_BAND_RX_TX != CROSS_BAND_OFF)
         gEeprom.CROSS_BAND_RX_TX = gEeprom.TX_VFO + 1;
-    if (gEeprom.DUAL_WATCH != DUAL_WATCH_OFF)
+    if (gEeprom.DUAL_WATCH != DUAL_WATCH_OFF
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+        && gEeprom.DUAL_WATCH != DUAL_WATCH_FULL
+#endif
+    )
         gEeprom.DUAL_WATCH = gEeprom.TX_VFO + 1;
 
     gRequestSaveSettings  = 1;

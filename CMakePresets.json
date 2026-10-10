@@ -47,6 +47,7 @@
                 "ENABLE_REGA": false,
                 "ENABLE_EXTRA_UART_CMD": false,
                 "ENABLE_FEAT_F4HWN": true,
+                "ENABLE_FEAT_F4HWN_FULL_WATCH": false,
                 "ENABLE_FEAT_F4HWN_GAME": false,
                 "ENABLE_FEAT_F4HWN_OVERLAY_APPS": false,
                 "ENABLE_FEAT_F4HWN_SCREENSHOT": true,
@@ -69,8 +70,7 @@
                 "ENABLE_FEAT_F4HWN_DEBUG": false,
                 "ENABLE_FEAT_F4HWN_QRCODE": false,
                 "ENABLE_FEAT_F4HWN_MEM": false,
-                "ENABLE_FEAT_F4HWN_ACTION_PICKER": true,
-                "ENABLE_GOGUFW_SCRAMBLER": true,
+                "ENABLE_FEAT_F4HWN_ACTION_PICKER": false,
                 "ENABLE_GOGUFW_DTMF_LIVE": false,
                 "ENABLE_GOGUFW_CALLTX": false,
                 "ENABLE_GOGUFW_RF_LOG": false,
@@ -83,7 +83,7 @@
                 "ENABLE_RDS_PROBE": false,
                 "ENABLE_SWD": false,
                 "VERSION_STRING_1": "v0.22",
-                "VERSION_STRING_2": "v3.0.0"
+                "VERSION_STRING_2": "v3.1.0"
             }
         },
         {
@@ -98,9 +98,11 @@
                 "ENABLE_FEAT_F4HWN_SCREENSHOT": true,
                 "ENABLE_FEAT_F4HWN_GAME": true,
                 "ENABLE_FEAT_F4HWN_OVERLAY_APPS": true,
+                "ENABLE_FEAT_F4HWN_OVERLAY_INFO": true,
                 "ENABLE_FEAT_F4HWN_PMR": true,
                 "ENABLE_FEAT_F4HWN_GMRS_FRS_MURS": true,
                 "ENABLE_FEAT_F4HWN_RESCUE_OPS": true,
+                "ENABLE_FEAT_F4HWN_FULL_WATCH": true,
                 "ENABLE_FEAT_F4HWN_VOL": true,
                 "ENABLE_FEAT_F4HWN_AUDIO": true,
                 "ENABLE_FEAT_F4HWN_AUDIO_SCOPE": true,

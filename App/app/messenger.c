@@ -4,6 +4,7 @@
 #include "app/text_input.h"
 #include "app/messenger_rf.h"
 #include "app/messenger_packet.h"
+#include "app/messenger_ui.h"
 #include "app/generic.h"
 #include "audio.h"
 #include "ui/helper.h"
@@ -35,9 +36,7 @@ MSG_RangeFound_t gMsgRangeFound[MSG_RANGE_MAX_FOUND];
 uint8_t gMsgRangeCount;
 uint8_t gMsgRangeScroll;
 uint8_t gMsgRangeStatus; /* 0 idle, 1 wait, 2 ok */
-uint16_t gMsgRangeSession;
 static uint16_t s_msgRangeWaitTicks;
-static bool s_msgRangeReturnToHeard;
 static uint8_t s_msgAgeSubTicks;
 uint8_t gMsgTxLockNoticeTicks;
 
@@ -70,11 +69,6 @@ void MSG_Init(void)
 
 void MSG_Open(void)
 {
-    if (gSurvivalMode) {
-        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
-        gRequestDisplayScreen = DISPLAY_MAIN;
-        return;
-    }
     MSG_Init();
     gMsgScreen = MSG_SCREEN_HOME;
     gMsgCursor = 0;
@@ -85,7 +79,6 @@ void MSG_Open(void)
 
 void MSG_Tick(void)
 {
-    if (gSurvivalMode) return;
     if (gMsgTxLockNoticeTicks > 0u && --gMsgTxLockNoticeTicks == 0u)
         gUpdateDisplay = true;
     if (gMsgScreen == MSG_SCREEN_COMPOSE) TEXT_INPUT_Tick(&gMsgEditor);
@@ -93,6 +86,7 @@ void MSG_Tick(void)
         if (s_msgRangeWaitTicks > 0u) --s_msgRangeWaitTicks;
         if (s_msgRangeWaitTicks == 0u) {
             gMsgRangeStatus = 2u;
+            MSG_RF_CancelRangeWait();
             MSG_RF_HardRestoreVoicePath();
             gUpdateDisplay = true;
         }
@@ -116,17 +110,11 @@ void MSG_Tick(void)
 
 void MSG_RangeOpen(void)
 {
-    if (gSurvivalMode) {
-        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
-        gRequestDisplayScreen = DISPLAY_MAIN;
-        return;
-    }
     MSG_Init();
     gMsgScreen = MSG_SCREEN_RANGE;
     gMsgRangeScroll = 0;
     gMsgRangeStatus = 0;
     s_msgRangeWaitTicks = 0;
-    s_msgRangeReturnToHeard = false;
     gRequestDisplayScreen = DISPLAY_MESSENGER;
 }
 
@@ -189,7 +177,6 @@ void MSG_RangeOnPong(const char *callsign, int8_t rssi_dbm, uint16_t battery_cv)
         if (strncmp(gMsgRangeFound[i].callsign, callsign, MSG_CALLSIGN_EDIT_LEN) == 0) {
             gMsgRangeFound[i].battery_cv = battery_cv;
             gMsgRangeFound[i].rssi = rssi_dbm;
-            gMsgRangeFound[i].range_session = gMsgRangeSession;
             break;
         }
     }
@@ -324,14 +311,7 @@ static void read_move(int8_t dir)
 
 static uint8_t range_current_count(void)
 {
-    if (gMsgRangeStatus != 1u && gMsgRangeStatus != 2u)
-        return gMsgRangeCount;
-
-    uint8_t count = 0u;
-    for (uint8_t i = 0u; i < gMsgRangeCount; i++)
-        if (gMsgRangeFound[i].used && gMsgRangeFound[i].range_session == gMsgRangeSession)
-            count++;
-    return count;
+    return gMsgRangeCount;
 }
 
 static void range_move(int8_t dir)
@@ -456,25 +436,26 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
         case MSG_SCREEN_RANGE:
             if (Key == KEY_EXIT) {
+                MSG_RF_CancelRangeWait();
                 MSG_RF_HardRestoreVoicePath();
-                if (s_msgRangeReturnToHeard || gMsgRangeStatus != 0u) {
-                    gMsgRangeStatus = 0u;
-                    s_msgRangeWaitTicks = 0u;
-                    s_msgRangeReturnToHeard = false;
-                } else {
-                    GENERIC_ExitApplication();
-                }
+                gMsgRangeStatus = 0u;
+                s_msgRangeWaitTicks = 0u;
+                GENERIC_ExitApplication();
             } else if (Key == KEY_MENU) {
                 if (gMsgRangeStatus != 1u) {
-                    if (MSG_RF_SendRangePing()) {
-                        gMsgRangeSession++;
-                        if (gMsgRangeSession == 0u) gMsgRangeSession = 1u;
-                        gMsgRangeStatus = 1u;
-                        s_msgRangeReturnToHeard = true;
-                        s_msgRangeWaitTicks = MSG_RANGE_WAIT_TICKS;
-                        gMsgRangeScroll = 0u;
-                    } else if (MSG_RF_LastSendWasBlocked()) {
-                        show_tx_blocked_notice();
+                    /* Show WAIT on the physical LCD before the blocking FSK
+                     * transmit path starts, so the key press gets immediate
+                     * visual feedback instead of updating after TX. */
+                    gMsgRangeStatus = 1u;
+                    s_msgRangeWaitTicks = MSG_RANGE_WAIT_TICKS;
+                    gMsgRangeScroll = 0u;
+                    UI_DisplayMessenger();
+
+                    if (!MSG_RF_SendRangePing()) {
+                        gMsgRangeStatus = 0u;
+                        s_msgRangeWaitTicks = 0u;
+                        if (MSG_RF_LastSendWasBlocked())
+                            show_tx_blocked_notice();
                     }
                 }
             } else if (Key == KEY_UP) {

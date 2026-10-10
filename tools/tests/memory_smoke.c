@@ -8,7 +8,7 @@ int main(void)
 {
     assert(MSG_PACKET_SelfTest());
     assert(MSG_PACKET_Crc16((const uint8_t *)"123456789", 9) == 0x29b1);
-    assert(sizeof(MSG_RangeFound_t) == 16 && MSG_RANGE_MAX_FOUND == 6);
+    assert(sizeof(MSG_RangeFound_t) == 14 && MSG_RANGE_MAX_FOUND == 6);
     uint8_t wire[MSG_PKT_WIRE_LEN];
     MSG_Packet_t packet;
     const char *text = "123456789012345678901234567890123456";

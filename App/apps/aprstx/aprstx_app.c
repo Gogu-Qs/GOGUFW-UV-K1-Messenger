@@ -16,7 +16,8 @@
 
 /*
  * APRS TX - sends one APRS position frame (AX.25 UI frame, Bell 202 AFSK
- * 1200 bauds) on the TX VFO at each press of PTT or MENU.
+ * 1200 bauds) on a private FM 144.800 MHz radio context at each press of PTT
+ * or MENU, independently of A/B/C/D.
  *
  * The source is the boot-message callsign (API boot_callsign) with an SSID;
  * destination, the WIDE path entries, symbol and comment are AX.25-encoded in
@@ -57,6 +58,7 @@
 #define SYST_LOAD   (*(volatile uint32_t *)0xE000E014u)
 #define SYST_VAL    (*(volatile uint32_t *)0xE000E018u)
 #define CYC_PER_BIT (48000000u / 1200u)   /* 40000: exact */
+#define APRS_FREQUENCY 14480000u
 
 /* ---- BK4829 ---- */
 #define REG_51      0x51   /* sub-audio: 0 = no CTCSS/DCS (BK4819_ExitSubAu)   */
@@ -576,6 +578,7 @@ void app_main(const app_api_t *api){
     uint8_t frm[FRAME_MAX];      /* on the stack: the 4 KiB overlay also holds .bss */
     uint8_t c[CFG_LEN];
     g.A=api;
+    api->radio_tune(APRS_FREQUENCY);
     g.frm=frm;
     g.prevKey=APP_KEY_INVALID;   /* the rest of g starts at 0 (overlay zeroed by the loader) */
     g.lvl=LVL_DEF;

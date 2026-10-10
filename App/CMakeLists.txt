@@ -5,6 +5,8 @@ target_link_libraries(App INTERFACE PY32F071_Driver)
 target_compile_definitions(App INTERFACE PRINTF_INCLUDE_CONFIG_H)
 
 target_sources(App INTERFACE
+    # libgcc override (signed division)
+    compact_div.S
     # Drivers
     driver/backlight.c
     driver/bk4829.c
@@ -213,6 +215,10 @@ enable_feature(ENABLE_EXTRA_UART_CMD)
 # ---- F4HWN MODS ----
 
 enable_feature(ENABLE_FEAT_F4HWN)
+enable_feature(ENABLE_FEAT_F4HWN_FULL_WATCH)
+if(ENABLE_FEAT_F4HWN_FULL_WATCH AND NOT ENABLE_FEAT_F4HWN)
+    message(FATAL_ERROR "ENABLE_FEAT_F4HWN_FULL_WATCH requires ENABLE_FEAT_F4HWN.")
+endif()
 enable_feature(ENABLE_GOGUFW_DTMF_LIVE)
 # Overlay builds recover the resident Breakout flash; F+7 opens the app menu.
 if(ENABLE_FEAT_F4HWN_GAME)
@@ -225,12 +231,17 @@ enable_feature(ENABLE_FEAT_F4HWN_OVERLAY_APPS
     apps/app_overlay.c
     apps/app_menu.c
 )
+enable_feature(ENABLE_FEAT_F4HWN_OVERLAY_INFO
+)
 if(ENABLE_FEAT_F4HWN_OVERLAY_APPS)
     set_source_files_properties(apps/app_overlay.c apps/app_menu.c
         PROPERTIES COMPILE_OPTIONS "-finline-small-functions")
 endif()
 if(ENABLE_FEAT_F4HWN_OVERLAY_APPS AND NOT ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY)
     message(FATAL_ERROR "ENABLE_FEAT_F4HWN_OVERLAY_APPS requires ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY (the 4 KiB overlay workspace).")
+endif()
+if(ENABLE_FEAT_F4HWN_OVERLAY_INFO AND NOT ENABLE_FEAT_F4HWN_OVERLAY_APPS)
+    message(FATAL_ERROR "Overlay system information requires ENABLE_FEAT_F4HWN_OVERLAY_APPS.")
 endif()
 enable_feature(ENABLE_FEAT_F4HWN_SCREENSHOT 
     screenshot.c
@@ -257,7 +268,6 @@ enable_feature(ENABLE_FEAT_F4HWN_CA)
 enable_feature(ENABLE_FEAT_F4HWN_DEBUG)
 enable_feature(ENABLE_FEAT_F4HWN_MEM)
 enable_feature(ENABLE_FEAT_F4HWN_ACTION_PICKER)
-enable_feature(ENABLE_GOGUFW_SCRAMBLER)
 enable_feature(ENABLE_GOGUFW_CALLTX
     app/calltx_store.c
 )

@@ -37,4 +37,14 @@ void     APP_ModalRadioService(void);
 void     APP_OverlayRadioService(void);
 void     APP_ModalScreenSaverExit(void);
 
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+void APP_FullWatchReset(void);
+void APP_FullWatchPromoteCurrentBackground(void);
+bool APP_FullWatchSelectNextTx(void);
+bool APP_FullWatchManualTxSelected(void);
+VFO_Info_t *APP_GetFullWatchDisplayVfo(uint8_t vfo);
+VFO_Info_t *const *APP_GetFullWatchBackgroundVfos(uint8_t *count);
+uint8_t APP_GetFullWatchScrollPhase(void);
+#endif
+
 #endif

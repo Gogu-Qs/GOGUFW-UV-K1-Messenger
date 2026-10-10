@@ -1,8 +1,9 @@
 # APRS TX: on-radio APRS position beacon (work in progress)
 
-Sends one APRS position frame (AX.25 UI frame, Bell 202 AFSK 1200 bauds) on the
-TX VFO at each press of PTT or MENU. Companion of [APRS RX](../aprsrx/README.md),
-which is also the test receiver.
+Sends one APRS position frame (AX.25 UI frame, Bell 202 AFSK 1200 bauds) on
+**FM 144.800 MHz** at each press of PTT or MENU. The app uses a private radio
+context independently of A/B/C/D and restores the radio context on exit.
+Companion of [APRS RX](../aprsrx/README.md), which is also the test receiver.
 
 | Step | State |
 |---|---|

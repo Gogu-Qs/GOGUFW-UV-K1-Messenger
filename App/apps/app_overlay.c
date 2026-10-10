@@ -57,7 +57,6 @@
 #include "misc.h"   /* dBmCorrTable */
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_INFO
 #include "version.h"
-#include "stack_usage.h"
 #endif
 
 _Static_assert(sizeof(app_header_t) == 64u && _Alignof(app_header_t) == 4u,
@@ -190,6 +189,11 @@ static int8_t  app_nav_dir(uint8_t key)
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_INFO
 extern uint8_t _eflash_used;
 extern uint8_t _ebss;
+extern uint8_t _estack;
+static uint32_t app_stack_free_now(void)
+{
+    return (uint32_t)((uintptr_t)&_estack - (uintptr_t)&_ebss);
+}
 #endif
 static void    app_led(bool on)        { BK4819_ToggleGpioOut(BK4819_GPIO6_PIN2_GREEN, on); }
 
@@ -387,6 +391,20 @@ static void     app_audio_path(bool on){ if (on) AUDIO_AudioPathOn(); else AUDIO
 static void     app_prepare_tone(void) { BK4819_PrepareToPlayTone(true); }
 static void     app_play_tone_raw(uint16_t hz, uint16_t ms) { BK4819_PlayToneRaw(hz, ms); }
 static uint32_t app_rx_freq(void)      { return gRxVfo->pRX->Frequency; }
+
+static VFO_Info_t app_radio_vfo;
+static void app_radio_tune(uint32_t frequency)
+{
+    const uint8_t power = gTxVfo->OUTPUT_POWER;
+    RADIO_InitInfo(&app_radio_vfo,
+                   FREQ_CHANNEL_FIRST + FREQUENCY_GetBand(frequency), frequency);
+    app_radio_vfo.Modulation = MODULATION_FM;
+    app_radio_vfo.CHANNEL_BANDWIDTH = BANDWIDTH_WIDE;
+    app_radio_vfo.OUTPUT_POWER = power;
+    RADIO_ConfigureSquelchAndOutputPower(&app_radio_vfo);
+    gRxVfo = gTxVfo = gCurrentVfo = &app_radio_vfo;
+    RADIO_SetupRegisters(true);
+}
 
 /* ---- v2 config (deferred, flash-backed) ----
  * Stored per app slot in the header sector, just after the 64-byte header. cfg_load
@@ -729,7 +747,7 @@ static void app_fm_draw_gogu(const app_fm_view_t *v)
     if (v->flags & APP_FM_VIEW_NAME_EDIT) {
         UI_GOGU_DrawTextEditor("CH-NAME", v->name, 15u, "SAVE",
                                v->editor_mode == 2u ? "2" :
-                               ((v->flags & APP_FM_VIEW_EDITOR_UPPER) ? "B" : "b"), false);
+                               ((v->flags & APP_FM_VIEW_EDITOR_UPPER) ? "B" : "b"), false, "F:DEL");
         return;
     }
     if (v->flags & APP_FM_VIEW_AUTO_CONFIRM) {
@@ -1009,9 +1027,10 @@ static const app_api_t app_api = {
     .search_default_channel = SCANNER_OverlayDefaultChannel,
     .search_channel_info = SCANNER_OverlayChannelInfo,
     .search_save      = SCANNER_OverlaySave,
+    .radio_tune       = app_radio_tune,
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_INFO
     .sys_edition         = Edition,
-    .sys_version         = DisplayVersion,
+    .sys_version         = Version,
     .sys_build_date      = BuildDate,
     .sys_build_time      = BuildTime,
     .sys_build_commit    = BuildCommit,
@@ -1021,8 +1040,8 @@ static const app_api_t app_api = {
     .sys_battery_type    = &gEeprom.BATTERY_TYPE,
     .sys_battery_percent = BATTERY_VoltsToPercent,
     .sys_storage_read    = PY25Q16_ReadBuffer,
-    .sys_stack_free_now  = STACK_FreeNow,
-    .sys_stack_free_min  = STACK_FreeMinimum,
+    .sys_stack_free_now  = app_stack_free_now,
+    .sys_stack_free_min  = app_stack_free_now,
 #endif
 };
 

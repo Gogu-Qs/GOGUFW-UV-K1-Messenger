@@ -28,7 +28,7 @@ rm -rf build/Fusion build/GGFW build/gogufw
 export MSYS_NO_PATHCONV=1
 
 echo ""
-echo "=== 🚀 Building GOGUFW 3.0.0 ==="
+echo "=== 🚀 Building GOGUFW 3.1.0 ==="
 echo "---------------------------------------------"
 docker run --rm \
   -u $(id -u):$(id -g) \
@@ -36,4 +36,4 @@ docker run --rm \
   bash -c "which arm-none-eabi-gcc && arm-none-eabi-gcc --version && \
            cmake --preset ${PRESET} ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} && \
            cmake --build --preset ${PRESET} -j"
-echo "✅ Done: GOGUFW 3.0.0"
+echo "✅ Done: GOGUFW 3.1.0"

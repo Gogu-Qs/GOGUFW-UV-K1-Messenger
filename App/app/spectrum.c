@@ -154,7 +154,7 @@ static uint16_t renderTimer = 0;
 #define RENDER_PERIOD_TICKS 20
 
 // Disabling automatic DbMax and squelch trigger settings
-static bool manualSetFlag = false;
+static const bool manualSetFlag = true;
 // Every fresh/reset Spectrum session starts with one RX-free reference cycle.
 // MANUAL freezes the resulting scale/trigger; AUTO may adapt afterwards.
 static bool initialCalibrationPending = false;
@@ -255,12 +255,6 @@ static void LoadSettings()
     if (settings.listenBw > 2)
         settings.listenBw = BK4819_FILTER_BW_WIDE;
 
-    // Data[1]: manualSetFlag (0), autoSensitivity (2:1)
-    manualSetFlag = Data[1] & 0x01;
-    autoSensitivity = (Data[1] >> 1) & 0x03;
-    if (autoSensitivity >= AUTO_SENS_N_ELEM)
-        autoSensitivity = AUTO_SENS_NORMAL;
-
     // Data[2]: dbMax encoded as (dbMax + 130) / 5
     if (Data[2] <= 28)
         settings.dbMax = (int)Data[2] * 5 - 130;
@@ -279,8 +273,7 @@ static void SaveSettings()
     // Data[0]: scanStepIndex (7:4), stepsCount (3:2), listenBw (1:0)
     Data[0] = (settings.scanStepIndex << 4) | (settings.stepsCount << 2) | settings.listenBw;
 
-    // Data[1]: manualSetFlag (0), autoSensitivity (2:1)
-    Data[1] = (manualSetFlag & 0x01) | ((autoSensitivity & 0x03) << 1);
+    Data[1] = 1u;
 
     // Data[2]: dbMax encoded as (dbMax + 130) / 5
     Data[2] = (uint8_t)((settings.dbMax + 130) / 5);
@@ -1155,9 +1148,7 @@ static void RearmRuntimeState()
 // context (center/range). Persist only fields that are normally saved.
 static void ResetSpectrumToDefaults()
 {
-    manualSetFlag = spectrumChannelMode;
     initialCalibrationPending = true;
-    autoSensitivity = AUTO_SENS_NORMAL;
     monitorMode = false;
     menuState = 0;
     lockAGC = false;
@@ -1169,7 +1160,6 @@ static void ResetSpectrumToDefaults()
     settings.rssiTriggerLevel = RSSI_MAX_VALUE;
     if (spectrumChannelMode)
         settings.rssiTriggerLevel = SPECTRUM_MR_MANUAL_TRIGGER_RSSI;
-    autoNoiseFloor = RSSI_MAX_VALUE;
 
     // Keep frequency/range unchanged; recompute move step from fresh scan params.
     settings.frequencyChangeStep = GetBW() >> 1;
@@ -2167,16 +2157,6 @@ static void OnKeyDown(uint8_t key) {
     case KEY_MENU:
         if (spectrumChannelMode)
             break;
-        // Short press toggles manual/auto.
-        manualSetFlag = !manualSetFlag;
-        // Switching from AUTO to MANUAL freezes the current view immediately;
-        // the one-time reference cycle is only for opening MANUAL Spectrum.
-        initialCalibrationPending = false;
-        if (!manualSetFlag)
-        {
-            settings.rssiTriggerLevel = RSSI_MAX_VALUE;
-        }
-        redrawStatus = true;
         break;
     case KEY_EXIT:
         if (menuState)
@@ -2600,7 +2580,6 @@ static void FinalizeCompletedSweep()
             // threshold line is clearly separated from the top of the graph.
             settings.rssiTriggerLevel =
                 noise + autoTriggerMarginRssi[AUTO_SENS_NORMAL];
-            autoNoiseFloor = noise;
         }
         initialCalibrationPending = false;
         preventKeypress = false;
@@ -2960,7 +2939,6 @@ void APP_RunSpectrum()
 
     if (spectrumChannelMode)
     {
-        manualSetFlag = true;
         if (settings.rssiTriggerLevel == RSSI_MAX_VALUE)
             settings.rssiTriggerLevel = SPECTRUM_MR_MANUAL_TRIGGER_RSSI;
         initialFreq = gTxVfo->pRX->Frequency;

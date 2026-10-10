@@ -223,7 +223,7 @@ void FUNCTION_Transmit()
     }
 #endif
 
-#if defined(ENABLE_FEAT_F4HWN) && !defined(ENABLE_GOGUFW_SCRAMBLER)
+#ifdef ENABLE_FEAT_F4HWN
     BK4819_DisableScramble();
 #else
     if (gCurrentVfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable)

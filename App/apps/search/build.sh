@@ -2,7 +2,7 @@
 set -euo pipefail
 APP=search
 APP_NAME=Search
-APP_VER=1.1-gogu
+APP_VER=1.2-gogu
 APP_API_MIN=2
 APP_VMA=${APP_VMA:-0x20000280}
 CC=/opt/toolchain/bin/arm-none-eabi-gcc

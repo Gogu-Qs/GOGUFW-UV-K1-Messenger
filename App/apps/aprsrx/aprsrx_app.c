@@ -17,8 +17,8 @@
 /*
  * APRS RX - receives APRS (AX.25 UI frames, Bell 202 AFSK 1200 bauds) in
  * software and keeps the last five frames, shown one at a time: source,
- * destination and path, the info field. Tune the VFO (FM; 144.800 MHz, or 433.650 MHz for the Flipper Zero
- * bench files of test/flipper_aprs.py), then launch.
+ * destination and path, the info field. The app temporarily tunes its private
+ * radio context to FM 144.800 MHz at launch, independently of A/B/C/D.
  *
  * The BK4829 has no Bell 202 demodulator (see README.md), so the RX audio is
  * sampled as EPIRB 406 does: it reaches PA4 (the voice DAC pin), held at
@@ -85,6 +85,7 @@ static inline volatile uint32_t *hw(uint32_t a){
 #define REDRAW_ON      1u      /* g.redraw: a key or the periodic refresh        */
 #define REDRAW_FRAME   2u      /* g.redraw: a new frame, also wakes the backlight */
 #define DUP_MS         1000u   /* the same frame from another slicer             */
+#define APRS_FREQUENCY 14480000u
 
 /* ---- BK4829 ---- */
 
@@ -768,6 +769,7 @@ void app_main(const app_api_t *api){
     for(unsigned k=0;k<HISTORY;k++) history[k]=&frames[k];
     char text[34];
     g.A=api;
+    api->radio_tune(APRS_FREQUENCY);
     g.text=text;
     g.history=history;
     /* The overlay loader zeroes g; the first idle key scan records APP_KEY_INVALID. */

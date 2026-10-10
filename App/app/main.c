@@ -432,7 +432,7 @@ static void MAIN_SendPmrCallTone(void)
     if (tone > 4u) tone = 0;
 
 #ifdef ENABLE_MESSENGER
-    MSG_RF_HardRestoreVoicePath();
+    MSG_RF_PrepareManualVoiceTx();
 #endif
 
     gCallToneTxActive = true;
@@ -608,18 +608,17 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
                 CHFRSCANNER_Stop();
             }
 
-            gBackup_CROSS_BAND_RX_TX  = gEeprom.CROSS_BAND_RX_TX;
-            gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;     
-
-            if (!gSurvivalMode) {
-                SCANNER_Start(false);
 #ifndef ENABLE_FEAT_F4HWN_OVERLAY_APPS
-                gRequestDisplayScreen = DISPLAY_SCANNER;
+            /* The resident scanner restores this in SCANNER_Stop().  Overlay
+             * Search is synchronous and must retain Full Watch mode. */
+            gBackup_CROSS_BAND_RX_TX = gEeprom.CROSS_BAND_RX_TX;
+            gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
 #endif
-            } else {
-                gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
-                gEeprom.CROSS_BAND_RX_TX = gBackup_CROSS_BAND_RX_TX;
-            }
+
+            SCANNER_Start(false);
+#ifndef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+            gRequestDisplayScreen = DISPLAY_SCANNER;
+#endif
             break;
 
         case KEY_5:
@@ -637,7 +636,7 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
                 gRequestSaveVFO   = true;
                 gVfoConfigureMode = VFO_CONFIGURE_RELOAD;
 #elif defined(ENABLE_SPECTRUM)
-                if (!gSurvivalMode) APP_RunSpectrum(); else gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+                APP_RunSpectrum();
                 gRequestDisplayScreen = DISPLAY_MAIN;
 #endif
             }
@@ -655,8 +654,7 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
 #if defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS) || defined(ENABLE_FEAT_F4HWN_GAME)
             if (!beep) {
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
-                if (!gSurvivalMode) APP_MenuOpen();
-                else gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+                APP_MenuOpen();
 #else
                 APP_RunBreakout();
 #endif
@@ -1154,11 +1152,7 @@ static void MAIN_Key_MENU(bool bKeyPressed, bool bKeyHeld)
 #ifdef ENABLE_MESSENGER
     if (!bKeyHeld && !bKeyPressed && gWasFKeyPressed) {
         gWasFKeyPressed = false;
-        if (!gSurvivalMode) {
-            MSG_Open();
-        } else {
-            gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
-        }
+        MSG_Open();
         return;
     }
 #endif
@@ -1306,7 +1300,10 @@ static void MAIN_Key_STAR(bool bKeyPressed, bool bKeyHeld)
     
     if (!gWasFKeyPressed) // pressed without the F-key
     {   
-        if (gScanStateDir == SCAN_OFF 
+        if (gScanStateDir == SCAN_OFF
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+            && gEeprom.DUAL_WATCH != DUAL_WATCH_FULL
+#endif
 #ifdef ENABLE_NOAA
             && !IS_NOAA_CHANNEL(gTxVfo->CHANNEL_SAVE)
 #endif
@@ -1342,18 +1339,16 @@ static void MAIN_Key_STAR(bool bKeyPressed, bool bKeyHeld)
         }
 
         // scan the CTCSS/DCS code
-        gBackup_CROSS_BAND_RX_TX  = gEeprom.CROSS_BAND_RX_TX;
-        gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
-
-        if (!gSurvivalMode) {
-            SCANNER_Start(true);
 #ifndef ENABLE_FEAT_F4HWN_OVERLAY_APPS
-            gRequestDisplayScreen = DISPLAY_SCANNER;
+        /* Overlay Search must not reinterpret the Full Watch pointer graph. */
+        gBackup_CROSS_BAND_RX_TX = gEeprom.CROSS_BAND_RX_TX;
+        gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
 #endif
-        } else {
-            gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
-            gEeprom.CROSS_BAND_RX_TX = gBackup_CROSS_BAND_RX_TX;
-        }
+
+        SCANNER_Start(true);
+#ifndef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+        gRequestDisplayScreen = DISPLAY_SCANNER;
+#endif
     }
     
     //gPttWasReleased = true; Fixed issue #138
@@ -1402,6 +1397,11 @@ static void MAIN_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
     }
 
     if (gScanStateDir == SCAN_OFF) {
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+        const VFO_Info_t *displayVfo = APP_GetFullWatchDisplayVfo(gEeprom.TX_VFO);
+        if (displayVfo != NULL)
+            Channel = displayVfo->CHANNEL_SAVE;
+#endif
 #ifdef ENABLE_NOAA
         if (!IS_NOAA_CHANNEL(Channel))
 #endif
@@ -1424,7 +1424,7 @@ static void MAIN_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
             Next = RADIO_FindNextChannel(Channel + Direction, Direction, false, 0);
             if (Next == 0xFFFF)
                 return;
-            if (Channel == Next)
+            if (Channel == Next && gEeprom.ScreenChannel[gEeprom.TX_VFO] == Next)
                 return;
             gEeprom.MrChannel[gEeprom.TX_VFO] = Next;
             gEeprom.ScreenChannel[gEeprom.TX_VFO] = Next;

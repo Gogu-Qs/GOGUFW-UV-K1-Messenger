@@ -151,27 +151,6 @@ void Main(void)
     }
 #endif
 
-#ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
-    if (BootMode == BOOT_MODE_RESCUE_OPS)
-    {
-        /* GOGUFW: Rescue Ops has been repurposed as a session-only
-         * Survival Mode.  Do not toggle MENU_LOCK and do not write EEPROM.
-         * A normal power-on always returns to full GGFW mode. */
-        gSurvivalMode = true;
-        BootMode = BOOT_MODE_NORMAL;
-
-        /* Keep this boot session in a simple, single-channel voice mode.
-         * These are RAM-only runtime changes; SETTINGS_SaveSettings() is
-         * intentionally not called here. */
-        gEeprom.DUAL_WATCH = DUAL_WATCH_OFF;
-        gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
-#ifdef ENABLE_VOX
-        gEeprom.VOX_SWITCH = false;
-#endif
-        gUpdateStatus = true;
-    }
-#endif
-
     if (BootMode == BOOT_MODE_F_LOCK)
     {
 
@@ -191,15 +170,6 @@ void Main(void)
             break;
 
         gMenuListCount++;
-    }
-
-    // GOGUFW Survival Mode: keep only the first 17 basic radio menu items
-    // visible for this boot session.  This does not alter EEPROM or the normal
-    // menu layout; normal boot restores the complete menu automatically.
-    if (gSurvivalMode && gMenuListCount > 17) {
-        gMenuListCount = 17;
-        if (gMenuCursor >= gMenuListCount)
-            gMenuCursor = gMenuListCount - 1;
     }
 
     // wait for user to release all butts before moving on
@@ -240,20 +210,9 @@ void Main(void)
          * long enough that turning the backlight on first shows a blank white
          * panel. Keep the light off until the first real frame is ready. */
 
-        if (gSurvivalMode)
-        {
-            /* GOGUFW 0.6.5: Survival Mode has its own clean boot notice.
-             * Do not show the normal firmware/version splash in this mode. */
-            UI_DisplaySurvivalWelcome();
-            BACKLIGHT_TurnOn();
-            SYSTEM_DelayMs(3000);
-            RADIO_SetupRegisters(true);
-        }
-        else
-        {
-            ST7565_FillScreen(0x00);
-            UI_DisplayWelcome();
-            BACKLIGHT_TurnOn();
+        ST7565_FillScreen(0x00);
+        UI_DisplayWelcome();
+        BACKLIGHT_TurnOn();
 
 #ifdef ENABLE_FEAT_F4HWN
             if (gEeprom.POWER_ON_DISPLAY_MODE != POWER_ON_DISPLAY_MODE_NONE && gEeprom.POWER_ON_DISPLAY_MODE != POWER_ON_DISPLAY_MODE_SOUND)
@@ -271,8 +230,6 @@ void Main(void)
                 }
                 RADIO_SetupRegisters(true);
             }
-        }
-
 #ifdef ENABLE_PWRON_PASSWORD
         if (gEeprom.POWER_ON_PASSWORD < 1000000)
         {
@@ -302,9 +259,7 @@ void Main(void)
         gUpdateStatus = true;
 
 #ifdef ENABLE_VOICE
-        if (!gSurvivalMode)
-        {
-            uint16_t Channel;
+        uint16_t Channel;
 
             AUDIO_SetVoiceID(0, VOICE_ID_WELCOME);
 
@@ -318,7 +273,6 @@ void Main(void)
                 AUDIO_SetVoiceID(1, VOICE_ID_FREQUENCY_MODE);
 
             AUDIO_PlaySingleVoice(0);
-        }
 #endif
 
 #ifdef ENABLE_NOAA

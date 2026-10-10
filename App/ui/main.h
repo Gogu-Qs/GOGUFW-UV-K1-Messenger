@@ -20,6 +20,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+void UI_FormatFrequency(uint32_t freq, char *buffer);
+
 enum center_line_t {
     CENTER_LINE_NONE = 0,
     CENTER_LINE_IN_USE,
@@ -56,6 +58,9 @@ void UI_DisplayAudioScopeOverlay(uint8_t line, bool active);
 #endif
 void UI_MAIN_TimeSlice500ms(void);
 void UI_DisplayMain(void);
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+void UI_MAIN_UpdateFullWatchArrows(void);
+#endif
 #ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
 bool UI_DisplayActionPicker(void);
 #endif

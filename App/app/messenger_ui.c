@@ -11,6 +11,21 @@
 #include "ui/main.h"
 #include "ui/ui.h"
 #include "misc.h"
+#include "radio.h"
+#include "settings.h"
+
+static const char *msg_footer_target(void)
+{
+    static char label[19];
+    const VFO_Info_t *target = gTxVfo;
+    label[0] = 'T'; label[1] = 'O'; label[2] = ':';
+    if (IS_MR_CHANNEL(target->CHANNEL_SAVE) && target->Name[0] != '\0') {
+        memcpy(label + 3u, target->Name, 16u);
+    } else {
+        UI_FormatFrequency(target->pTX->Frequency, label + 3u);
+    }
+    return label;
+}
 
 extern uint8_t gMsgHomeCursor;
 extern uint8_t gMsgCursor;
@@ -24,13 +39,23 @@ extern uint8_t gMsgScreen;
 extern uint8_t gMsgRangeCount;
 extern uint8_t gMsgRangeScroll;
 extern uint8_t gMsgRangeStatus;
-extern uint16_t gMsgRangeSession;
 extern uint8_t gMsgTxLockNoticeTicks;
 
 enum { MSG_SCREEN_HOME = 0, MSG_SCREEN_INBOX, MSG_SCREEN_OUTBOX, MSG_SCREEN_DRAFTS, MSG_SCREEN_COMPOSE, MSG_SCREEN_READ, MSG_SCREEN_RANGE };
 
 /* Seven-pixel small text centred between the shared y=9/y=46 separators. */
 #define MSG_EMPTY_TEXT_Y 25u
+
+/* HEARD row columns. Normal ID text occupies x=0..40; the remaining values
+ * use the baseline-aligned 3x5 font. The fixed gaps keep all fields separate
+ * even for a six-character ID and -128 dBm. */
+enum {
+    HEARD_ID_X      = 0u,
+    HEARD_VOLT_X    = 43u,
+    HEARD_RSSI_BAR_X = 60u,
+    HEARD_RSSI_X    = 80u,
+    HEARD_TYPE_X    = 99u,
+};
 
 
 static void format_age(uint16_t seconds, char *buf, uint8_t len)
@@ -392,14 +417,14 @@ static void draw_read(void)
     } else {
         print_wrapped_small_y(text, 20, 3);
     }
-    UI_GOGU_DrawFooter(sent ? "RESEND" : "REPLY", "F:DEL", "EXIT");
+    UI_GOGU_DrawFooter(sent ? "RESEND" : "REPLY", msg_footer_target(), "EXIT");
 }
 
 static void draw_compose(void)
 {
     UI_GOGU_DrawTextEditor("COMPOSE", gMsgComposeBuf, MSG_TEXT_LEN, "SEND",
                            (gMsgEditor.mode == 2U) ? "2" : (gMsgEditor.upper ? "B" : "b"),
-                           true);
+                           true, msg_footer_target());
 }
 
 static uint8_t range_window_start(uint8_t count, uint8_t cursor)
@@ -414,35 +439,7 @@ static uint8_t range_window_start(uint8_t count, uint8_t cursor)
 static void draw_range(void)
 {
     char buf[28];
-    const bool active = gMsgRangeStatus == 1u || gMsgRangeStatus == 2u;
-    uint8_t order[MSG_RANGE_MAX_FOUND];
-    uint8_t count = 0u;
-
-    if (active) {
-        bool used[MSG_RANGE_MAX_FOUND];
-        memset(used, 0, sizeof(used));
-        for (;;) {
-            int8_t best_rssi = -128;
-            uint8_t best = 0xFFu;
-            for (uint8_t i = 0u; i < gMsgRangeCount && i < MSG_RANGE_MAX_FOUND; i++) {
-                if (used[i] || !gMsgRangeFound[i].used ||
-                    gMsgRangeFound[i].range_session != gMsgRangeSession)
-                    continue;
-                if (best == 0xFFu || gMsgRangeFound[i].rssi > best_rssi) {
-                    best = i;
-                    best_rssi = gMsgRangeFound[i].rssi;
-                }
-            }
-            if (best == 0xFFu)
-                break;
-            used[best] = true;
-            order[count++] = best;
-        }
-    } else {
-        count = gMsgRangeCount;
-        for (uint8_t i = 0u; i < count; i++)
-            order[i] = i;
-    }
+    const uint8_t count = gMsgRangeCount;
 
     if (count == 0u)
         gMsgRangeScroll = 0u;
@@ -451,50 +448,51 @@ static void draw_range(void)
 
     snprintf(buf, sizeof(buf), "%u/%u", count ? (uint8_t)(gMsgRangeScroll + 1u) : 0u, count);
     UI_DisplayClear();
-    UI_GOGU_DrawHeader(active ? "RANGE CHECK" : "HEARD", buf);
+    UI_GOGU_DrawHeader("HEARD", buf);
+    if (gMsgRangeStatus == 1u)
+        GUI_DisplaySmallest("WAIT", 1u, 2u, false, true);
     UI_GOGU_DrawDottedSeparator(UI_GOGU_TOP_SEPARATOR_Y);
 
-    if (count == 0u) {
-        if (gMsgRangeStatus == 1u) {
-            msg_draw_small_at_y("WAIT", 50u, MSG_EMPTY_TEXT_Y, false);
-        } else {
-            msg_draw_small_at_y(active ? "NOT FOUND" : "NO HEARD",
-                                active ? 33u : 36u, MSG_EMPTY_TEXT_Y, false);
-        }
-    } else {
+    if (count == 0u)
+        msg_draw_small_at_y("NO HEARD", 36u, MSG_EMPTY_TEXT_Y, false);
+    else {
         const uint8_t first = range_window_start(count, gMsgRangeScroll);
         for (uint8_t row = 0u; row < UI_GOGU_CONTENT_ROWS; row++) {
             const uint8_t position = (uint8_t)(first + row);
             if (position >= count)
                 break;
-            const uint8_t idx = order[position];
+            const uint8_t idx = position;
             const uint8_t y = UI_GOGU_CONTENT_ROW_Y(row);
+            const uint8_t tiny_y = (uint8_t)(y + 1u); // align 3x5 text to the ID baseline
 
             snprintf(buf, sizeof(buf), "%-6s", gMsgRangeFound[idx].callsign);
-            msg_draw_small_at_y(buf, 0u, y, false);
-            if (active) {
-                snprintf(buf, sizeof(buf), "%4d", (int)gMsgRangeFound[idx].rssi);
-                msg_draw_small_at_y(buf, 43u, y, false);
-                draw_rssi_bars(74u, y, gMsgRangeFound[idx].rssi);
+            msg_draw_small_at_y(buf, HEARD_ID_X, y, false);
+
+            if (gMsgRangeFound[idx].battery_cv != 0u) {
                 snprintf(buf, sizeof(buf), "%u.%uV",
                          (unsigned)(gMsgRangeFound[idx].battery_cv / 100u),
                          (unsigned)((gMsgRangeFound[idx].battery_cv / 10u) % 10u));
-                msg_draw_small_at_y(buf, 100u, y, false);
-            } else {
-                char age[5];
-                format_age(gMsgRangeFound[idx].age_seconds, age, sizeof(age));
-                draw_rssi_bars(48u, y, gMsgRangeFound[idx].rssi);
-                msg_draw_small_at_y(packet_type_short(gMsgRangeFound[idx].packet_type), 76u, y, false);
-                const uint8_t age_x = (uint8_t)(127u - ((uint8_t)strlen(age) * 7u));
-                msg_draw_small_at_y(age, age_x, y, false);
+                GUI_DisplaySmallest(buf, HEARD_VOLT_X, tiny_y, false, true);
             }
+
+            draw_rssi_bars(HEARD_RSSI_BAR_X, y, gMsgRangeFound[idx].rssi);
+            snprintf(buf, sizeof(buf), "%d", (int)gMsgRangeFound[idx].rssi);
+            GUI_DisplaySmallest(buf, HEARD_RSSI_X, tiny_y, false, true);
+            GUI_DisplaySmallest(packet_type_short(gMsgRangeFound[idx].packet_type), HEARD_TYPE_X, tiny_y, false, true);
+
+            char age[5];
+            format_age(gMsgRangeFound[idx].age_seconds, age, sizeof(age));
+            const uint8_t age_width = (uint8_t)(strlen(age) * 4u);
+            GUI_DisplaySmallest(age,
+                                age_width >= 128u ? 0u : (uint8_t)(128u - age_width),
+                                tiny_y, false, true);
 
             if (position == gMsgRangeScroll)
                 UI_GOGU_InvertBand((uint8_t)(y - 1u), 9u);
         }
     }
 
-    UI_GOGU_DrawFooter(gMsgRangeStatus == 1u ? "WAIT" : "PING", NULL, "EXIT");
+    UI_GOGU_DrawFooter(gMsgRangeStatus == 1u ? "WAIT" : "PING", msg_footer_target(), "EXIT");
 }
 
 void UI_DisplayMessenger(void)

@@ -76,13 +76,11 @@ inline static void ACTION_Alarm() { ACTION_AlarmOr1750(false); }
 inline static void ACTION_1750() { ACTION_AlarmOr1750(true); };
 #endif
 
-inline static void ACTION_ScanRestart() { if (gSurvivalMode) { gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL; return; } ACTION_Scan(true); };
+inline static void ACTION_ScanRestart() { ACTION_Scan(true); };
 
 #ifdef ENABLE_MESSENGER
 static void ACTION_OpenMessenger(void)
 {
-    if (gSurvivalMode) { gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL; return; }
-
     /* GOGUFW 1.0.2: make Messenger shortcut behave like FM Radio.
      * Press once to open; press again while already in Messenger (but not
      * HEARD/Range) to return to the main screen. */
@@ -96,8 +94,6 @@ static void ACTION_OpenMessenger(void)
 
 static void ACTION_OpenHeard(void)
 {
-    if (gSurvivalMode) { gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL; return; }
-
     /* GOGUFW 1.0.2: HEARD shortcut toggles closed when HEARD/Range is
      * already on screen. CALLTX remains unchanged. */
     if (gScreenToDisplay == DISPLAY_MESSENGER && MSG_RangeIsOpen()) {
@@ -120,7 +116,6 @@ static void ACTION_CallTx(void)
 #ifdef ENABLE_GOGUFW_RF_LOG
 static void ACTION_OpenRfLog(void)
 {
-    if (gSurvivalMode) { gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL; return; }
     if (gScreenToDisplay == DISPLAY_RF_LOG) {
         GENERIC_ExitApplication();
         return;
@@ -283,11 +278,6 @@ void ACTION_Monitor(void)
 void ACTION_Scan(bool bRestart)
 {
     (void)bRestart;
-    if (gSurvivalMode) {
-        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
-        return;
-    }
-
 #ifdef ENABLE_FMRADIO_EMBEDDED
     if (gFmRadioMode) {
         ACTION_Scan_FM(bRestart);
@@ -594,10 +584,6 @@ void ACTION_Handle(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 #ifdef ENABLE_FMRADIO
 void ACTION_FM(void)
 {
-    if (gSurvivalMode) {
-        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
-        return;
-    }
     if (gCurrentFunction != FUNCTION_TRANSMIT && gCurrentFunction != FUNCTION_MONITOR)
     {
         gInputBoxIndex = 0;
@@ -633,10 +619,6 @@ void ACTION_FM(void)
 #ifdef ENABLE_FMRADIO_EMBEDDED
 static void ACTION_Scan_FM(bool bRestart)
 {
-    if (gSurvivalMode) {
-        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
-        return;
-    }
     if (FUNCTION_IsRx())
         return;
 
@@ -748,8 +730,40 @@ void ACTION_Update(void)
     gUpdateStatus        = true;
 }
 
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+uint8_t ACTION_GetRxMode(void)
+{
+    if (gEeprom.DUAL_WATCH == DUAL_WATCH_FULL)
+        return gEeprom.CROSS_BAND_RX_TX == CROSS_BAND_OFF ? 4 : 5;
+
+    return (gEeprom.DUAL_WATCH != DUAL_WATCH_OFF) +
+           (gEeprom.CROSS_BAND_RX_TX != CROSS_BAND_OFF) * 2;
+}
+
+void ACTION_SetRxMode(uint8_t mode)
+{
+    const uint8_t selected = gEeprom.TX_VFO + 1u;
+    bool crossBand;
+    if (mode >= 4)
+    {
+        gEeprom.DUAL_WATCH = DUAL_WATCH_FULL;
+        crossBand = mode == 5;
+    }
+    else
+    {
+        gEeprom.DUAL_WATCH = selected * (mode & 1);
+        crossBand = (mode & 2) != 0;
+    }
+    gEeprom.CROSS_BAND_RX_TX = crossBand ? selected : CROSS_BAND_OFF;
+}
+#endif
+
 void ACTION_RxMode(void)
 {
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+    uint8_t mode = ACTION_GetRxMode() + 1;
+    ACTION_SetRxMode(mode < 6 ? mode : 0);
+#else
     static bool cycle = 0;
 
     if (cycle) {
@@ -759,6 +773,7 @@ void ACTION_RxMode(void)
     }
 
     cycle = !cycle;
+#endif
     ACTION_Update();
 }
 

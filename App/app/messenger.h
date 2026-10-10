@@ -12,11 +12,10 @@ typedef struct {
     uint8_t packet_type;
     uint16_t battery_cv;
     uint16_t age_seconds;
-    uint16_t range_session;
 } MSG_RangeFound_t;
 
 #define MSG_RANGE_MAX_FOUND 6u
-_Static_assert(sizeof(MSG_RangeFound_t) == 16u, "unexpected HEARD record layout");
+_Static_assert(sizeof(MSG_RangeFound_t) == 14u, "unexpected HEARD record layout");
 extern MSG_RangeFound_t gMsgRangeFound[MSG_RANGE_MAX_FOUND];
 
 void MSG_Init(void);

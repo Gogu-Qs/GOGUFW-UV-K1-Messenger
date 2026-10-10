@@ -170,7 +170,11 @@ void SETTINGS_InitEEPROM(void)
     gEeprom.CHANNEL_DISPLAY_MODE  = (Data[1] < 4) ? Data[1] : MDF_FREQUENCY;    // 4 instead of 3 - extra display mode
     gEeprom.CROSS_BAND_RX_TX      = (Data[2] < 3) ? Data[2] : CROSS_BAND_OFF;
     gEeprom.BATTERY_SAVE          = (Data[3] < 6) ? Data[3] : 4;
-    gEeprom.DUAL_WATCH            = (Data[4] < 3) ? Data[4] : DUAL_WATCH_CHAN_A;
+    #ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+        gEeprom.DUAL_WATCH        = (Data[4] <= DUAL_WATCH_FULL) ? Data[4] : DUAL_WATCH_CHAN_A;
+    #else
+        gEeprom.DUAL_WATCH        = (Data[4] < 3) ? Data[4] : DUAL_WATCH_CHAN_A;
+    #endif
     gEeprom.BACKLIGHT_TIME        = (Data[5] < 62) ? Data[5] : 12;
     #ifdef ENABLE_FEAT_F4HWN_NARROWER
         gEeprom.TAIL_TONE_ELIMINATION = Data[6] & 0x01;
@@ -372,9 +376,7 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
     gSetting_500TX             = (Data[4] < 2) ? Data[4] : false;
 #endif
     gSetting_350EN             = (Data[5] < 2) ? Data[5] : true;
-#ifdef ENABLE_GOGUFW_SCRAMBLER
-    gSetting_ScrambleEnable    = true;
-#elif defined(ENABLE_FEAT_F4HWN)
+#ifdef ENABLE_FEAT_F4HWN
     gSetting_ScrambleEnable    = false;
 #else
     gSetting_ScrambleEnable    = (Data[6] < 2) ? Data[6] : true;
@@ -543,6 +545,11 @@ void SETTINGS_LoadCalibration(void)
         gBatteryCalibration[0] = 1900;
         gBatteryCalibration[1] = 2000;
     }
+    /* An erased calibration sector reads as 0xFFFF.  This entry is used as
+     * the battery-voltage divisor, so keep it in the valid factory range to
+     * avoid a boot-time fault/reboot loop. */
+    if (gBatteryCalibration[3] < 1500 || gBatteryCalibration[3] > 3500)
+        gBatteryCalibration[3] = 2000;
     gBatteryCalibration[5] = 2300;
 
     #ifdef ENABLE_VOX
@@ -728,6 +735,40 @@ bool SETTINGS_FetchChannelScanDisplayInfo(const uint16_t channel, ChannelScanDis
 
     return true;
 }
+
+#if defined(ENABLE_FEAT_F4HWN_FULL_WATCH) || defined(ENABLE_FEAT_F4HWN_SCAN_FASTER)
+void SETTINGS_ApplyChannelScanDisplayInfo(VFO_Info_t *vfo, uint16_t channel, const ChannelScanDisplayInfo_t *info)
+{
+    vfo->CHANNEL_SAVE = channel;
+    vfo->freq_config_RX = info->rx;
+    vfo->freq_config_TX = info->tx;
+    vfo->TX_OFFSET_FREQUENCY = info->offset;
+    vfo->StepFrequency = info->stepFrequency;
+    vfo->STEP_SETTING = info->stepSetting;
+    vfo->Modulation = info->modulation;
+    vfo->TX_OFFSET_FREQUENCY_DIRECTION = info->txOffsetFrequencyDirection;
+    vfo->OUTPUT_POWER = info->outputPower;
+    vfo->FrequencyReverse = info->frequencyReverse;
+    vfo->CHANNEL_BANDWIDTH = info->channelBandwidth;
+    vfo->BUSY_CHANNEL_LOCK = info->busyChannelLock;
+    vfo->TX_LOCK = info->txLock;
+#ifdef ENABLE_DTMF_CALLING
+    vfo->DTMF_DECODING_ENABLE = info->dtmfDecodingEnable;
+#endif
+    vfo->DTMF_PTT_ID_TX_MODE = info->dtmfPttIdTxMode;
+
+    if (!vfo->FrequencyReverse)
+    {
+        vfo->pRX = &vfo->freq_config_RX;
+        vfo->pTX = &vfo->freq_config_TX;
+    }
+    else
+    {
+        vfo->pRX = &vfo->freq_config_TX;
+        vfo->pTX = &vfo->freq_config_RX;
+    }
+}
+#endif
 
 void SETTINGS_FetchChannelName(char *s, const uint16_t channel)
 {
@@ -1097,9 +1138,7 @@ void SETTINGS_SaveSettings(void)
     State[4]  = gSetting_500TX;
 #endif
     State[5]  = gSetting_350EN;
-#ifdef ENABLE_GOGUFW_SCRAMBLER
-    State[6]  = true;
-#elif defined(ENABLE_FEAT_F4HWN)
+#ifdef ENABLE_FEAT_F4HWN
     State[6]  = false;
 #else
     State[6]  = gSetting_ScrambleEnable;
@@ -1237,7 +1276,7 @@ void SETTINGS_SaveChannel(uint16_t Channel, uint8_t VFO, const VFO_Info_t *pVFO,
         State -> _8[6] = (pVFO->NO_FSK_TX << 7)
                        | (pVFO->NO_ROGER  << 6)
                        | (pVFO->STEP_SETTING & 0x3F);
-#if defined(ENABLE_FEAT_F4HWN) && !defined(ENABLE_GOGUFW_SCRAMBLER)
+#ifdef ENABLE_FEAT_F4HWN
         State -> _8[7] =  0;
 #else
         State -> _8[7] =  pVFO->SCRAMBLING_TYPE;

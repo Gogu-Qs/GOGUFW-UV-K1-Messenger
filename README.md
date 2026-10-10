@@ -1,24 +1,42 @@
-# GOGUFW 3.0.0
+# GOGUFW 3.1.0
 
-GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3 based on **F4HWN 6.0.0 (Multiboot)**. It keeps the F4HWN radio feature set and adds an integrated radio-to-radio Messenger, HEARD list, multi-radio Range Check, CALLTX melodies, RF Log Lite, named FM memories, an Action Picker, per-channel scrambling and a multiboot environment.
+GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3 based on **F4HWN 6.0.0 (Multiboot)** with Full Watch ported from **F4HWN 6.1.0**. It keeps the F4HWN radio feature set and adds an integrated radio-to-radio Messenger, HEARD list, multi-radio Range Check, CALLTX melodies, RF Log Lite, named FM memories and a multiboot environment.
+
+## Experimental BK4829 RDS-path probe
+
+The optional `RDSProbe` preset investigates whether any undocumented BK4829
+receive/AF route preserves FM-broadcast multiplex energy. It disables Messenger
+for flash headroom and shows live probe data in place of the FM VFO ruler.
+
+```sh
+cmake --preset RDSProbe --fresh
+cmake --build --preset RDSProbe -j 4
+```
+
+In FM VFO mode, press `F` + `2` repeatedly to cycle the eight profiles and
+return to normal reception. With the documented temporary `EARO` to `PB1`
+connection, the experimental build also measures 57 kHz energy and attempts
+RDS block synchronization plus PI/PS decoding. See [the investigation
+report](docs/rds-investigation.md) for the wiring, safety notes, profile
+meanings, and interpretation of the results.
 
 ## Firmware at a glance
 
 | Statistic | Project status |
 | --- | --- |
-| 📦 **Current stable release** | GOGUFW 3.0.0 |
+| 📦 **Current stable release** | GOGUFW 3.1.0 |
 | 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
 | ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
 | ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
 | 🍴 **GitHub forks** | [![GitHub forks](https://img.shields.io/github/forks/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=forks&color=orange)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/forks) |
-| 🧩 **Firmware base** | **F4HWN 6.0.0 (Multiboot)** |
+| 🧩 **Firmware base** | **F4HWN 6.0.0 (Multiboot)** + Full Watch from 6.1.0 |
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **Multiboot image** | 120,828 / 120,832 bytes · 4 bytes free |
-| 🧠 **RAM usage** | 13,488 / 16,384 bytes · **82.32%** · 2,896 bytes free |
-| ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · RF Log Lite · Action Picker · FM names/RSSI · Scrambler · Overlay Apps |
-| 🔌 **CHIRP support** | Matching 3.0.0 module with 1024 memories, Messenger settings, FM names, channel policies and Scrambler |
+| 💾 **Multiboot image** | 120,636 / 120,832 bytes · **99.84%** · 196 bytes free |
+| 🧠 **RAM usage** | 13,744 / 16,384 bytes · **83.89%** · 2,640 bytes free |
+| ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · RF Log Lite · Full Watch · FM names/RSSI |
+| 🔌 **CHIRP support** | Matching 3.1.0 module with 1024 memories, Messenger settings, FM names and channel policies |
 
 ## Compatibility and downloads
 
@@ -26,24 +44,27 @@ GOGUFW is intended only for Quansheng **UV-K1 / UV-K5 V3** radios built around t
 
 The current release contains:
 
-- `f4hwn.gogufw.v3.0.0.bin` — the multiboot-compatible firmware image;
-- `Search-v1.1-gogu.zip` — the required Search Frequency + Search Tone overlay app;
-- `APRSEdit-message-only-v1.0-gogu.zip` — an optional experimental APRS TX message editor;
-- `Gogufw_3.0.0_chirp_module.py` — the matching custom CHIRP module.
+- `f4hwn.gogufw.v3.1.0.bin` — the multiboot-compatible firmware image;
+- `Search-v1.2-gogu.zip` — corrected Search Frequency + Search Tone overlay app;
+- `APRSEdit-message-only-v1.1-gogu.zip` — corrected optional APRS message editor;
+- `Gogufw_3.1.0_chirp_module.py` — the matching custom CHIRP module.
 
-[Download GOGUFW 3.0.0](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v3.0.0)
+[Download GOGUFW 3.1.0](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v3.1.0)
 
 Back up the radio with CHIRP before updating and keep a known-good DFU recovery image available.
 
-## What's new in 3.0.0
+## What's new in 3.1.0
 
-- Added the 16-slot **GOGUFW Apps** overlay-app system, adapted from the F4HWN 6.1.0 implementation.
-- Moved Search Frequency and Search Tone into one required overlay app because internal firmware Flash is full; their original shortcuts, interface and channel-save flow remain available.
-- Kept the complete FM radio and Screenshot support inside the firmware, while removing DTMF Live to recover space.
-- Added an optional, experimental APRS Edit overlay app that can change the message/comment used by Armel's APRS TX app on GOGUFW.
-- Added live status-bar, RX indicator and received-audio behavior to the GOGUFW Apps screen.
+- Added F4HWN 6.1.0 Full Watch, including priority-channel Triple/Quad Watch display and receive handling.
+- In Full RX/Respond, the A/B action cycles through A, B and the valid priority channels; the displayed selection is used by manual PTT.
+- Main TX/Full RX supports the same watched-target selection; a manually selected watched target becomes the PTT target, and channel-menu edits apply to the displayed priority target.
+- Restored the resident SysInfo capability and rebuilt the compatible `SystemInfo.app` overlay.
+- Full Watch now temporarily clears its middle-line indicator while `UNLOCK KEYBOARD` is shown and restores it when the notice expires.
+- Removed Survival Mode and Action Picker from the Fusion firmware image.
+- Combined HEARD and Range Check into one persistent activity screen.
+- Completed the late F4HWN stability/size fixes and made Quad Watch visit every channel before a battery-save sleep interval.
 
-See the [GOGUFW 3.0.0 release](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases/tag/v3.0.0) for installation files and notes.
+See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes since 2.3.1.
 
 ## Main features
 
@@ -91,11 +112,13 @@ Open Messenger with **F + MENU**, or assign **MESSENGER** to a side key. The ass
 
 ### HEARD and Range Check
 
-HEARD records recently received Messenger packets with callsign, RSSI, packet type and age. Range Check sends a PING and collects PONG replies from multiple GOGUFW radios, showing the remote callsign, RSSI and battery voltage.
+HEARD records recently received Messenger packets with callsign, battery voltage when available, RSSI bar and numeric RSSI, packet type and age. Range Check now runs directly inside the same list instead of opening a separate result view.
 
 - Open HEARD with **F + 7**, or assign **HEARD** to a side key.
-- Press **MENU** on HEARD to start a 12-second Range Check.
-- Use **UP/DOWN** to move through results one entry at a time. The first **EXIT** from Range Check returns to HEARD; the next returns to the radio.
+- Press **MENU** on HEARD to start a 12-second Range Check. A `WAIT` indicator appears at the far-left of the header and the lower-left action changes from `PING` to `WAIT` before PING transmission starts.
+- Existing MSG, ACK, PNG and PON rows remain visible during the check. Each responding station is moved to the top with its voltage and RSSI details.
+- Each row uses four separated groups: station ID with voltage, RSSI bar with numeric RSSI, packet type, and age. Voltage, numeric RSSI, packet type and age use a compact font aligned to the bottom of the normal-font station ID.
+- Use **UP/DOWN** to move through entries and **EXIT** to return to the radio.
 - `RngRsp` controls automatic PONG replies.
 - Randomized ACK and PONG timing reduces collisions when several radios answer together.
 
@@ -105,26 +128,11 @@ The assigned HEARD action also behaves as a toggle.
 | --- | --- |
 | ![HEARD with no stored packets](docs/screenshots/heard_empty.png) | ![HEARD activity list](docs/screenshots/heard.png) |
 
-![Range Check response details](docs/screenshots/rangecheck_result.png)
-
-### Action Picker
-
-The Action Picker gives temporary access to the complete programmable side-key action list without repeatedly changing the saved side-key assignment.
-
-1. Briefly press **F**.
-2. Hold **SIDE1** or **SIDE2** to open that key's picker.
-3. Use **UP/DOWN** to choose an action.
-4. Press **MENU** to run it, or **EXIT/F** to cancel.
-
-Each side key remembers its last picker selection. The picker is available on the main radio screen, Messenger Home, HEARD/idle Range Check and the normal FM radio screen. It deliberately stays out of Inbox, Sent, Read, Compose, active Range Check collection and FM edit/confirmation screens so their existing controls remain intact. **PTT** closes the picker and continues normally.
-
-Some radio actions are unsafe while the FM receiver is active; selecting one of those actions in FM gives a double warning beep instead of changing radio state.
-
 ### RF Log Lite
 
 RF Log Lite is GOGUFW's compact, low-memory activity history. It keeps the latest 20 completed analog RX/TX events and shows the channel name or VFO frequency, direction, `MM:SS` duration and age. The list is stored only in RAM and is cleared when the radio restarts, avoiding external-flash writes.
 
-Open **RF LOG** from the Action Picker, or assign it directly to a programmable side-key action. Use **UP/DOWN** to browse one entry at a time, **MENU / SELECT** to load the selected memory channel or frequency into the active VFO, and **EXIT** to return without changing it.
+Assign **RF LOG** directly to a programmable side-key action. Use **UP/DOWN** to browse one entry at a time, **MENU / SELECT** to load the selected memory channel or frequency into the active VFO, and **EXIT** to return without changing it.
 
 ![Recent radio activity](docs/screenshots/rf_log.png)
 
@@ -145,8 +153,6 @@ CALLTX transmits one of five selectable alert melodies using the existing radio 
 
 The FM radio includes named station memories, rename/delete controls and a signal-strength display. **LIVE RSSI** is the first menu item in both VFO and memory modes: ON updates the meter continuously and shows `LIVE`; OFF samples once after tuning and keeps the meter fixed to avoid periodic clicking on quiet broadcasts. Occupied save targets show their channel number and station name before confirmation.
 
-The Action Picker can also be opened from the normal FM screen. It is disabled while entering a frequency, editing a station name, choosing save/delete operations or confirming an automatic scan.
-
 | Saved broadcast station | Manual FM tuning |
 | --- | --- |
 | ![FM station memory with custom name](docs/screenshots/fm_radio_name.png) | ![FM frequency tuning scale](docs/screenshots/fm_radio_vfo.png) |
@@ -155,7 +161,7 @@ The Action Picker can also be opened from the normal FM screen. It is disabled w
 
 Open **Search Frequency** with **F + 4**, or **Search Tone** with **F + STAR**. Both screens use the same header, status, frequency/tone rows and footer controls as the other GOGUFW tools.
 
-> **GOGUFW 3.0.0 requires the Search overlay app.** Search was moved out of internal firmware Flash because there was no space left for further firmware integration. Download `Search-v1.1-gogu.zip`, extract `Search-v1.1-gogu.app`, and install it into any free app slot with [Armel's UV Studio v1.6.0](https://armel.github.io/uvstudio/). Without this app, **F + 4** and **F + STAR** cannot open the search tools.
+> **GOGUFW 3.1.0 requires Search v1.2-gogu.** This build uses the corrected append-only overlay API and follows the displayed Full Watch A/B/C/D channel after watch rotations. Replace an older Search app before testing the shortcuts.
 
 After a result is found, press **MENU / SAVE**, choose a destination memory with **UP/DOWN** or the number keys, then press **MENU** and confirm `SAVE?`. Empty targets are marked `CH-xxxx`; occupied targets show the channel number and name, shortened with `..` when necessary. A saved result opens directly in MR mode without also opening the main menu.
 
@@ -165,17 +171,11 @@ Scanner-created memories preserve the power setting that was active before the s
 | --- | --- |
 | ![Active frequency search](docs/screenshots/search_freq.png) | ![Detected signalling tone](docs/screenshots/search_tone.png) |
 
-### Overlay apps and experimental APRS Edit
+### Overlay apps and corrected APRS Edit
 
-GOGUFW 3.0.0 provides 16 external-Flash app slots. Install `.app` files from the **Apps** page in [Armel's UV Studio v1.6.0](https://armel.github.io/uvstudio/) while the radio is running normally. The GOGUFW Apps screen lists only occupied slots and continues to update the status bar, RX indicator and received audio.
+GOGUFW provides 16 external-Flash app slots. Install `.app` files from the **Apps** page in Armel's UV Studio while the radio is running normally.
 
-`APRSEdit-message-only-v1.0-gogu.app` is an optional experimental bonus for Armel's original APRS TX overlay app. I made it for my own tests and am sharing it for anyone who wants to experiment; please do not ask why it was implemented this way or treat it as a standard firmware feature. APRS TX must already be installed. APRS Edit changes only its 23-character message/comment. Its save bridge is specific to GOGUFW's storage path, so it may not work with other firmware builds.
-
-### Per-channel scrambler
-
-The `Scramb` channel menu selects **OFF** or an inversion frequency from **2600 Hz to 3500 Hz**. The setting is stored separately for each memory channel and is also available in the matching CHIRP module.
-
-The analog voice scrambler is not encryption and may be restricted by local radio regulations. Use it only where permitted.
+`APRSEdit-message-only-v1.1-gogu.app` is the corrected optional editor for the 23-character message/comment used by Armel's APRS TX app. Version 1.1 is rebuilt against GOGUFW 3.1.0's stable API layout, so it opens normally and can load/save the APRS TX comment again. APRS TX must already be installed.
 
 ### Channel policies and main-screen indicators
 
@@ -212,12 +212,6 @@ Hold **MENU while powering on** to open the firmware-slot selector.
 - Calibration and the boot logo remain shared.
 - GOGUFW can run as Main or from a slot and uses the official F4HWN multiboot image format.
 
-### Survival Mode
-
-Survival Mode is a temporary basic-radio session for voice operation with fewer background features. Messenger/FSK, HEARD/Range Check, scanning, FM radio, Spectrum, Dual Watch, cross-band operation and VOX are disabled for that session.
-
-Hold **PTT + SetKey while powering on**. The default SetKey is **MENU**, so the default shortcut is **PTT + MENU + Power**. The `SetKey` menu can change the trigger to MENU, UP, DOWN, EXIT or STAR. Power-cycle normally to return to full operation; saved settings are not overwritten.
-
 ## Quick shortcuts
 
 | Function | Shortcut |
@@ -225,24 +219,22 @@ Hold **PTT + SetKey while powering on**. The default SetKey is **MENU**, so the 
 | Messenger | **F + MENU** |
 | HEARD / Range Check | **F + 7** |
 | CALLTX | **F + 9** |
-| Search Frequency | **F + 4**; requires the Search overlay app |
-| Search Tone | **F + STAR**; requires the Search overlay app |
+| Search Frequency | **F + 4**; requires Search v1.2-gogu |
+| Search Tone | **F + STAR**; requires Search v1.2-gogu |
 | Spectrum | **F + 5** |
 | Backlight override cycle | **F + 8**: always on → always off → saved strategy |
 | Keypad lock | Hold **F** |
-| Action Picker | Press **F**, then hold **SIDE1** or **SIDE2** |
-| RF Log Lite | Select **RF LOG** in the Action Picker or assign it to a side key |
+| RF Log Lite | Assign **RF LOG** to a side key |
 | Multiboot | Hold **MENU** while powering on |
-| Survival Mode | Hold **PTT + SetKey** while powering on |
 
 ## CHIRP
 
-Use the module that matches the firmware release. For GOGUFW 3.0.0:
+Use the module that matches the firmware release. For GOGUFW 3.1.0:
 
 1. Start CHIRP and choose **File → Load Module**.
-2. Select `Gogufw_3.0.0_chirp_module.py`.
+2. Select `Gogufw_3.1.0_chirp_module.py`.
 3. Download the radio using **Quansheng → UV-K1 / UV-K5 V3 GOGUFW Messenger**.
-4. Edit channels, side-key actions, Messenger/Call settings, FM names, `No FSK TX`, `No Roger` and Scrambler as required.
+4. Edit channels, side-key actions, Messenger/Call settings, FM names, `No FSK TX` and `No Roger` as required.
 5. Upload the completed image to the radio.
 
 The firmware and module support the radio's 1024 memory-channel layout. Do not use an older GOGUFW module with this release: an older module may not understand newer key-action or channel fields and can overwrite them.
@@ -256,7 +248,7 @@ cmake --preset Fusion --fresh
 cmake --build --preset Fusion
 ```
 
-The build emits the normal `gogufw.bin` plus a canonical multiboot filename derived from `VERSION_STRING_2`. The official v3.0.0 release image is named `f4hwn.gogufw.v3.0.0.bin`. See `BUILD_VSCODE_MAC.md` or `BUILD_WITH_VSCODE.md` for environment setup.
+The build emits the normal `gogufw.bin` and the canonical multiboot filename `f4hwn.gogufw.v3.1.0.bin`. See `BUILD_VSCODE_MAC.md` or `BUILD_WITH_VSCODE.md` for environment setup.
 
 ## Credits and license
 
@@ -267,7 +259,7 @@ directly reached this project or served as a documented design reference.
 | Project / contributor | Contribution used by GOGUFW |
 | --- | --- |
 | [Dual Tachyon](https://github.com/DualTachyon/uv-k5-firmware) | Original open UV-K5 firmware foundation, hardware drivers and AirCopy/FSK plumbing that GOGUFW's Messenger RF layer adapts on the BK4829 platform. |
-| [OneOfEleven](https://github.com/OneOfEleven/uv-k5-firmware-custom) | Core custom-radio work inherited through the firmware lineage, including the AM-fix and voice-inversion scrambler foundations. |
+| [OneOfEleven](https://github.com/OneOfEleven/uv-k5-firmware-custom) | Core custom-radio work inherited through the firmware lineage, including the AM-fix and low-level radio foundations. |
 | [fagci](https://github.com/fagci/uv-k5-firmware-fagci-mod) | Original Spectrum Analyzer implementation inherited and further adapted through egzumer and F4HWN. |
 | [egzumer](https://github.com/egzumer/uv-k5-firmware-custom) | The custom-firmware base that brought together the OneOfEleven modifications, fagci Spectrum and the broader extended radio feature set. |
 | [Armel / F4HWN](https://github.com/armel/uv-k1-k5v3-firmware-custom) | The direct Fusion base for GOGUFW, including the UV-K1/UV-K5 V3 integration, radio/UI improvements, Action Picker, official multiboot implementation and the original RF Log feature that inspired GOGUFW's compact RF Log Lite. |

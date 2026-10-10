@@ -53,6 +53,8 @@ extern bool              gFM_FoundFrequency;
 extern uint16_t          gFM_RestoreCountdown_10ms;
 
 void    FM_TurnOff(void);
+void    FM_Suspend(void);
+void    FM_Resume(void);
 void    FM_EraseChannels(void);
 void    FM_NamesLoad(void);
 void    FM_NamesSave(void);
