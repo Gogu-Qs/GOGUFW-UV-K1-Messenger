@@ -1,5 +1,19 @@
 # Changelog
 
+## GOGUFW 3.1.1 — 2026-10-13
+
+- Restricted the middle-row pre-RSSI cleanup to Full Watch. Triple/Quad Watch still clears its center indicator before drawing the RSSI meter, while Main Only RX no longer erases unrelated middle-screen content when its RSSI meter is drawn on the lower row.
+- Verified the late F4HWN erased packed-settings-byte correction is already present in GOGUFW. Erased FM/AM audio-profile data is stored separately and already falls back safely to profile 0, so no audio profile is removed or loaded from an erased value.
+- Kept the bundled custom APRS RX/TX apps on their private 144.800 MHz radio context. APRS TX now also forces HIGH power independently of the selected A/B/C/D VFO's power setting; the user's radio context is still restored on exit.
+- Updated firmware and CHIRP version identifiers to 3.1.1 and bumped the bundled custom APRS TX app to v0.7.
+
+### Build information
+
+- Firmware: `f4hwn.gogufw.v3.1.1.bin`
+- Multiboot image: 120,640 bytes
+- Firmware Flash: 119,716 / 120,832 bytes (1,116 bytes free before the 924-byte multiboot stub; 192 bytes free in the final image)
+- RAM: 13,744 / 16,384 bytes (2,640 bytes free)
+
 ## GOGUFW 3.1.0 — 2026-10-10
 
 - Ported Full Watch from F4HWN 6.1.0, including Full RX/Main TX modes, priority-channel rotation and Triple/Quad Watch display.

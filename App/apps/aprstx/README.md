@@ -1,14 +1,15 @@
 # APRS TX: on-radio APRS position beacon (work in progress)
 
 Sends one APRS position frame (AX.25 UI frame, Bell 202 AFSK 1200 bauds) on
-**FM 144.800 MHz** at each press of PTT or MENU. The app uses a private radio
-context independently of A/B/C/D and restores the radio context on exit.
+**FM 144.800 MHz at HIGH power** at each press of PTT or MENU. The app uses a
+private radio context independently of the selected A/B/C/D frequency and power,
+then restores the user's radio context on exit.
 Companion of [APRS RX](../aprsrx/README.md), which is also the test receiver.
 
 | Step | State |
 |---|---|
 | Frame and bit stream model (`test/tx_model.py`) | **Done**: identical to the RX app's AX.25 reference, decoded by the RX model |
-| Radio app (`aprstx_app.c`) | **v0.1 works on the radio** (2026-09-30); v0.2 edits the position; v0.3 adds the SSID and path; v0.4 adds the corrected 20x20 bitmap and the 48-symbol selector; v0.5 keeps the source fixed while the frame body scrolls (not built here) |
+| Radio app (`aprstx_app.c`) | **v0.1 works on the radio** (2026-09-30); v0.2 edits the position; v0.3 adds the SSID and path; v0.4 adds the corrected 20x20 bitmap and the 48-symbol selector; v0.5 keeps the source fixed while the frame body scrolls (not built here); v0.7 fixes the private 144.800 MHz TX context at HIGH power |
 | On-air test: APRS RX on a second radio, FT3D | **Done** (2026-09-30, v0.1: frames received by a UV-K1 running APRS RX and by the FT3D, first try, default level 66 and twist 0) |
 
 ## Station settings (`gen_assets.py`, then rebuild)

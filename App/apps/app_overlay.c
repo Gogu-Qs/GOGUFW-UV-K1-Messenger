@@ -395,12 +395,12 @@ static uint32_t app_rx_freq(void)      { return gRxVfo->pRX->Frequency; }
 static VFO_Info_t app_radio_vfo;
 static void app_radio_tune(uint32_t frequency)
 {
-    const uint8_t power = gTxVfo->OUTPUT_POWER;
     RADIO_InitInfo(&app_radio_vfo,
                    FREQ_CHANNEL_FIRST + FREQUENCY_GetBand(frequency), frequency);
     app_radio_vfo.Modulation = MODULATION_FM;
     app_radio_vfo.CHANNEL_BANDWIDTH = BANDWIDTH_WIDE;
-    app_radio_vfo.OUTPUT_POWER = power;
+    // GOGUFW's private APRS context is independent of the selected A/B/C/D VFO.
+    app_radio_vfo.OUTPUT_POWER = OUTPUT_POWER_HIGH;
     RADIO_ConfigureSquelchAndOutputPower(&app_radio_vfo);
     gRxVfo = gTxVfo = gCurrentVfo = &app_radio_vfo;
     RADIO_SetupRegisters(true);

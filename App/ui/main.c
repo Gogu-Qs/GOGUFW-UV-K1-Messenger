@@ -2494,7 +2494,10 @@ void UI_DisplayMain(void)
 #ifdef ENABLE_RSSI_BAR
         if (rx) {
             center_line = CENTER_LINE_RSSI;
-            memset(gFrameBuffer[3], 0, LCD_WIDTH);
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+            if (gEeprom.DUAL_WATCH == DUAL_WATCH_FULL)
+                memset(gFrameBuffer[3], 0, LCD_WIDTH);
+#endif
             DisplayRSSIBar(false);
         }
         else
