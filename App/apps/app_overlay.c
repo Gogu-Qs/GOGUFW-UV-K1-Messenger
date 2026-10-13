@@ -39,6 +39,9 @@
 #endif
 #include "app/app.h"
 #include "app/scanner.h"
+#ifdef ENABLE_MESSENGER
+#include "app/messenger_store.h"
+#endif
 #ifdef ENABLE_FEAT_F4HWN_RXTX_LOG
 #include "app/rxtx_log.h"
 #endif
@@ -530,8 +533,29 @@ static void     app_tx_mute(bool on)     { if (on) BK4819_EnterTxMute(); else BK
 static void     app_tx_end(void)         { BK4819_ToggleGpioOut(BK4819_GPIO1_PIN29_PA_ENABLE, false); RADIO_SetupRegisters(true); }
 static void     app_tx_carrier(bool on)  { BK4819_ToggleGpioOut(BK4819_GPIO1_PIN29_PA_ENABLE, on); }
 static uint32_t app_tx_freq(void)        { return gTxVfo->pTX->Frequency; }
+
 static void app_boot_callsign(char *buf, uint8_t len)
 {
+#ifdef ENABLE_MESSENGER
+    MSG_STORE_Init();
+    uint8_t msg_n = 0;
+    bool valid = len > 1u;
+    while (valid && msg_n < MSG_CALLSIGN_EDIT_LEN && gMessengerConfig.callsign[msg_n]) {
+        char c = gMessengerConfig.callsign[msg_n];
+        if (c >= 'a' && c <= 'z') c -= 32;
+        if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) ||
+            (uint8_t)(msg_n + 1u) >= len) {
+            valid = false;
+            break;
+        }
+        buf[msg_n++] = c;
+    }
+    if (valid && msg_n != 0u) {
+        buf[msg_n] = '\0';
+        return;
+    }
+#endif
+
     char raw[12]; uint8_t n = 0;
     PY25Q16_ReadBuffer(SETTINGS_BOOT_MESSAGE_LINE1_ADDR, raw, sizeof(raw));
     for (uint8_t i = 0; i < sizeof(raw) && (uint8_t)(n + 1) < len; i++) {

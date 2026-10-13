@@ -15,7 +15,7 @@ GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3 based on **F4HWN 
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **Multiboot image** | 120,640 / 120,832 bytes · **99.84%** · 192 bytes free |
+| 💾 **Multiboot image** | 120,716 / 120,832 bytes · **99.90%** · 116 bytes free |
 | 🧠 **RAM usage** | 13,744 / 16,384 bytes · **83.89%** · 2,640 bytes free |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · RF Log Lite · Full Watch · FM names/RSSI |
 | 🔌 **CHIRP support** | Matching 3.1.1 module with 1024 memories, Messenger settings, FM names and channel policies |
@@ -65,7 +65,7 @@ Messenger sends and receives short text messages directly between compatible GOG
 - delivery acknowledgements, retry status and up to three responding callsigns;
 - Reply, Resend and Delete controls;
 - duplicate-message protection;
-- callsign, receive, ACK, alert-beep and LED settings;
+- a shared `CllSgn` station callsign used by Messenger and compatible APRS TX/Beacon apps, plus receive, ACK, alert-beep and LED settings;
 - a short wake frame before the first normal message attempt to improve reception while the destination radio is idle;
 - per-channel **No FSK TX** protection for channels where Messenger transmission must remain disabled;
 - TX-frequency, F Lock, modulation and channel-policy checks before every message, retry, ACK, PING or PONG;

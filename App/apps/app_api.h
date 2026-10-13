@@ -203,7 +203,7 @@ typedef struct app_api {
     void     (*tx_end)(void);        /* PA off + RADIO_SetupRegisters (back to RX) */
     void     (*tx_carrier)(bool on); /* gate the PA on/off (beacon CARR carrier keying) */
     uint32_t (*tx_freq)(void);       /* current TX VFO frequency (x10 Hz)          */
-    void     (*boot_callsign)(char *buf, uint8_t len); /* sanitised callsign from the boot message */
+    void     (*boot_callsign)(char *buf, uint8_t len); /* CllSgn first, sanitised boot-message fallback */
     void     (*print_string)(const char *s, uint8_t start, uint8_t end,
                              uint8_t line, uint8_t width);   /* UI_PrintString (big font) */
 

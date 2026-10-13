@@ -194,10 +194,10 @@ const t_menu_item MenuList[] =
 #endif
 #ifdef ENABLE_MESSENGER
     {"MsgRx",       MENU_MSG_RX       },
-    {"MsgCsg",      MENU_MSG_CSG      },
     {"MsgAck",      MENU_MSG_ACK      },
     {"MsgBep",      MENU_MSG_BEEP     },
     {"MsgLed",      MENU_MSG_LED      },
+    {"CllSgn",      MENU_MSG_CSG      },
     {"RngRsp",      MENU_RNG_RSP      },
 #endif
     // hidden menu items from here on
@@ -621,7 +621,7 @@ static void UI_MENU_DrawUnifiedTextEditor(const int m)
      * all-caps heading style as COMPOSE once the shared editor is open. */
     const char *title = m == MENU_MEM_NAME ? "CHNAME" :
 #ifdef ENABLE_MESSENGER
-                        m == MENU_MSG_CSG ? "MSGCSG" :
+                        m == MENU_MSG_CSG ? "CLLSGN" :
 #endif
                         MenuList[gMenuCursor].name;
     UI_GOGU_DrawTextEditor(title, edit, max_len, "SAVE",

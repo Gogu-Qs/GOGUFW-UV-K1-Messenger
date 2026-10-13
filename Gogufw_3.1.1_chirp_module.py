@@ -3,7 +3,7 @@
 # Matches the GOGUFW external-flash EEPROM aliases:
 #   FM names: 0x00D000 alias -> firmware flash 0x013000
 #   Messenger/Call config: 0x00E000 alias -> firmware flash 0x012000
-# Includes GGFW settings: MsgRx, MsgAck, MsgBeep, MsgLed, CllTon, CllVol, RngRsp, Callsign, Drafts, FM names.
+# Includes GGFW settings: MsgRx, MsgAck, MsgBeep, MsgLed, CllTon, CllVol, CllSgn, RngRsp, Drafts, FM names.
 
 # Quansheng UV-K5 driver (c) 2023 Jacek Lipkowski <sq5bpf@lipkowski.org>
 # Adapted For UV-K5 EGZUMER custom software By EGZUMER, JOC2
@@ -3141,13 +3141,15 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         val = RadioSettingValueList(GGFW_CALL_VOL_LIST, GGFW_CALL_VOL_LIST[int(_mem.ggfw_call_vol)])
         ggfw.append(RadioSetting("ggfw_call_vol", "CllVol", val))
 
-        val = RadioSettingValueList(GGFW_MSG_OFF_ON_LIST, GGFW_MSG_OFF_ON_LIST[int(_mem.ggfw_rng_rsp)])
-        ggfw.append(RadioSetting("ggfw_rng_rsp", "RngRsp", val))
-
         current_callsign = _ggfw_char_from_slot(_mem.ggfw_msg_callsign)
         val = RadioSettingValueString(0, 6, current_callsign)
         val.set_charset(GGFW_CALLSIGN_CHARS)
-        ggfw.append(RadioSetting("ggfw_msg_callsign", "Callsign", val))
+        callsign_setting = RadioSetting("ggfw_msg_callsign", "CllSgn", val)
+        callsign_setting.set_doc('Shared station callsign used by Messenger and, when valid for AX.25, by APRS TX and Beacon. Enter the base callsign only; APRS TX adds its SSID separately.')
+        ggfw.append(callsign_setting)
+
+        val = RadioSettingValueList(GGFW_MSG_OFF_ON_LIST, GGFW_MSG_OFF_ON_LIST[int(_mem.ggfw_rng_rsp)])
+        ggfw.append(RadioSetting("ggfw_rng_rsp", "RngRsp", val))
 
         for j in range(0, 8):
             current_draft = _ggfw_char_from_slot(_mem.ggfw_msg_draft[j].text)

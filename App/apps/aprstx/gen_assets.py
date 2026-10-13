@@ -5,7 +5,7 @@
 # them in one asset_read into a word-aligned stack block, so every text costs a
 # 2-byte sp-relative add instead of a literal-pool load and a pool word.
 # The frame parts are AX.25-encoded here (addresses shifted left, SSID bytes):
-# the app adds the source (boot-message callsign + SSID), the path (the first 0,
+# the app adds the source (shared CllSgn + SSID), the path (the first 0,
 # 1 or 2 entries of WIDE, end-of-address bit set by the app), the position and
 # the FCS. SSID, PATH and the position are the defaults, until they are edited
 # on the radio. Edit the station settings below, then rebuild;
@@ -37,7 +37,7 @@ UI = [
     ("T_TITLE",  TITLE),
     ("T_TX",     TX_CAPS),
     ("T_DENIED", "TX denied"),
-    ("T_NOCALL", "No boot callsign"),
+    ("T_NOCALL", "No valid callsign"),
     ("T_LVL",    "lvl "),
     ("T_TW",     "  tw "),
     ("T_SENT",   "  sent "),

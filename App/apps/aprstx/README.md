@@ -9,14 +9,14 @@ Companion of [APRS RX](../aprsrx/README.md), which is also the test receiver.
 | Step | State |
 |---|---|
 | Frame and bit stream model (`test/tx_model.py`) | **Done**: identical to the RX app's AX.25 reference, decoded by the RX model |
-| Radio app (`aprstx_app.c`) | **v0.1 works on the radio** (2026-09-30); v0.2 edits the position; v0.3 adds the SSID and path; v0.4 adds the corrected 20x20 bitmap and the 48-symbol selector; v0.5 keeps the source fixed while the frame body scrolls (not built here); v0.7 fixes the private 144.800 MHz TX context at HIGH power |
+| Radio app (`aprstx_app.c`) | **v0.1 works on the radio** (2026-09-30); v0.2 edits the position; v0.3 adds the SSID and path; v0.4 adds the corrected 20x20 bitmap and the 48-symbol selector; v0.5 keeps the source fixed while the frame body scrolls (not built here); v0.7 fixes the private 144.800 MHz TX context at HIGH power; v0.8 documents the shared `CllSgn` source and reports a generic invalid-callsign error |
 | On-air test: APRS RX on a second radio, FT3D | **Done** (2026-09-30, v0.1: frames received by a UV-K1 running APRS RX and by the FT3D, first try, default level 66 and twist 0) |
 
 ## Station settings (`gen_assets.py`, then rebuild)
 
 | Setting | Default |
 |---|---|
-| Source | the boot-message callsign (API `boot_callsign`, 1-6 letters/digits) + `SSID` = 7 (0-15, 0 = none): the **default**, until one is chosen on the radio |
+| Source | the radio's `CllSgn` setting (1-6 letters/digits) + `SSID` = 7 (0-15, 0 = none). The Power On Message is used only when `CllSgn` is empty or invalid |
 | `DEST` | `APZK5` (APZ = experimental software) |
 | `PATH` | `1` = `WIDE1-1`, an index in `PATHS`: `DIRECT` (no digipeater), `WIDE1-1`, `WIDE1-1,WIDE2-1`; the **default**, until one is chosen on the radio |
 | `LAT`, `LON` | `4850.90N`, `00216.25E`: the **default** position, until one is edited on the radio (key 3) |
@@ -25,9 +25,9 @@ Companion of [APRS RX](../aprsrx/README.md), which is also the test receiver.
 
 Frame sent: `F4HWN-7>APZK5,WIDE1-1:!4850.90N/00216.25E[UV-K5/K1 F4HWN Firmware` (68 bytes,
 ~0.79 s on the air: 50 ms of tone settle, 40 flags = 267 ms, the frame, 3 flags).
-If the boot message is not a plain callsign (empty, more than 6 characters once
-spaces are dropped, or with a `/`), the app shows `No boot callsign` and does not
-transmit.
+Enter only the base callsign in `CllSgn`; APRS TX adds the selected SSID. If
+neither `CllSgn` nor the Power On Message supplies a valid plain callsign, the
+app shows `No valid callsign` and does not transmit.
 
 In the normal view, the TX frequency is aligned left below the separator and
 the selected APRS symbol is shown as a 20x20 bitmap at x=108, y=33-52. The 48-symbol

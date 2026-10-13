@@ -19,7 +19,7 @@
  * 1200 bauds) on a private FM 144.800 MHz radio context at each press of PTT
  * or MENU, independently of A/B/C/D.
  *
- * The source is the boot-message callsign (API boot_callsign) with an SSID;
+ * The source is the shared CllSgn (boot-message fallback via API) with an SSID;
  * destination, the WIDE path entries, symbol and comment are AX.25-encoded in
  * gen_assets.py (assets). The position, the SSID, the path (DIRECT, WIDE1-1
  * or WIDE1-1,WIDE2-1) and the symbol are edited on the radio (key 3) and saved; gen_assets.py
@@ -255,7 +255,7 @@ static bool posOk(const uint8_t *d){
     return true;
 }
 
-/* ---- the frame: dest, source (boot callsign + SSID), path, UI, info, FCS ---- */
+/* ---- the frame: dest, source (shared callsign + SSID), path, UI, info, FCS ---- */
 static void build(void){
     const app_api_t *A=g.A;
     uint8_t *f=g.frm;
