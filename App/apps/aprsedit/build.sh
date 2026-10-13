@@ -2,7 +2,7 @@
 set -euo pipefail
 APP=aprsedit
 APP_NAME="APRS Edit"
-APP_VER=2.0-gogu
+APP_VER=2.1-gogu
 APP_API_MIN=5
 APP_VMA=${APP_VMA:-0x20000280}
 CC=/opt/toolchain/bin/arm-none-eabi-gcc

@@ -19,11 +19,14 @@
 #define CUR_SSID (CUR_EW + 1u)
 #define CUR_PATH (CUR_EW + 2u)
 #define CUR_SYM (CUR_EW + 3u)
+#define PAGE_MENU 0u
+#define PAGE_MESSAGE 1u
+#define PAGE_SETTINGS 2u
 
 static const app_api_t *A;
 static char text[MSG_LEN + 1u];
 static uint8_t cfg[EDIT_CFG_LEN], pos[POS_DIGITS];
-static uint8_t len, mode, pending, cycle, held, page, cur;
+static uint8_t len, mode, pending, cycle, held, page, cur, menu_sel;
 static uint8_t hemi, ssid, path, sym;
 static uint16_t pending_ticks, held_ticks;
 static bool has_pending, fired_long, dirty, running, from_tx, f_arm, bad_pos;
@@ -51,6 +54,18 @@ static char *u8toa(char *o, uint8_t v)
     *o++=(char)('0'+v%10u); *o=0; return o;
 }
 
+static void draw_menu(void)
+{
+    A->display_clear(); A->status_clear(); A->draw_battery();
+    A->print_bold("APRS EDIT",0u,127u,0u); dots(9u); dots(46u);
+    if(menu_sel==0u) A->print_inverse("APRS MESSAGE",40u,2u,false,true,88u);
+    else A->print_tiny("APRS MESSAGE",40u,17u,false,true);
+    if(menu_sel==1u) A->print_inverse("SETTINGS",48u,4u,false,true,80u);
+    else A->print_tiny("SETTINGS",48u,33u,false,true);
+    A->print_tiny("SELECT",1u,49u,false,true);
+    A->print_tiny("EXIT",112u,49u,false,true);
+}
+
 static void draw_message(void)
 {
     char count[6], mode_text[4]="*:B", line[18];
@@ -65,7 +80,7 @@ static void draw_message(void)
         line[n]=0; A->print_small_y(line,1u,(uint8_t)(13u+row*10u),false);
     }
     dots(46u); A->print_tiny("SAVE",1u,49u,false,true);
-    A->print_tiny("PTT:SET",43u,49u,false,true); A->print_tiny("EXIT",112u,49u,false,true);
+    A->print_tiny("F:DEL",54u,49u,false,true); A->print_tiny("EXIT",112u,49u,false,true);
 }
 
 static void put_coord(char *s,const char *label,const uint8_t *d,uint8_t n,char h,int8_t cursor,uint8_t line)
@@ -103,13 +118,15 @@ static void draw_settings(void)
               (int8_t)((int8_t)cur-(int8_t)(CUR_NS+1u)),2u);
     u8toa(v,ssid); field("SSID ",v,3u,cur==CUR_SSID); field("PATH ",paths[path],4u,cur==CUR_PATH);
     A->asset_read((uint16_t)(SYM_CODES+sym*2u),v,2u); v[2]=0; field("SYMB ",v,5u,cur==CUR_SYM);
-    A->print_tiny(bad_pos?"INVALID POSITION":"PTT:MESSAGE",1u,49u,false,true);
+    A->print_tiny(bad_pos?"INVALID POSITION":"",1u,49u,false,true);
     A->print_tiny("SAVE",88u,49u,false,true); A->print_tiny("EXIT",112u,49u,false,true);
 }
 
 static void draw(void)
 {
-    if(page) draw_settings(); else draw_message();
+    if(page==PAGE_MENU) draw_menu();
+    else if(page==PAGE_MESSAGE) draw_message();
+    else draw_settings();
     A->blit_status(); A->blit_full();
 }
 
@@ -146,14 +163,40 @@ static bool pos_ok(void)
     return true;
 }
 
-static void save_and_exit(void)
+static void store_settings(void)
 {
-    if(!pos_ok()){ bad_pos=true; page=1u; dirty=true; return; }
     cfg[0]=CFG_MAGIC; for(uint8_t i=3u;i<=10u;i++) cfg[i]=0u;
     for(uint8_t i=0u;i<POS_DIGITS;i++) cfg[3u+i/2u]|=(uint8_t)(pos[i]<<((i&1u)*4u));
     cfg[9]|=(uint8_t)(hemi<<4); cfg[10]=(uint8_t)(0x80u|(path<<4)|ssid); cfg[12]=sym;
-    for(uint8_t i=0u;i<MSG_LEN;i++) cfg[TX_CFG_LEN+i]=i<len?(uint8_t)text[i]:(uint8_t)' ';
-    A->cfg_save(cfg,EDIT_CFG_LEN); if(from_tx) A->chain_app(APP_CHAIN_APRS_TX); running=false;
+}
+
+static void load_settings(void)
+{
+    for(uint8_t i=0u;i<POS_DIGITS;i++) pos[i]=(uint8_t)((cfg[3u+i/2u]>>((i&1u)*4u))&15u);
+    hemi=(uint8_t)(cfg[9]>>4); ssid=(uint8_t)(cfg[10]&15u);
+    path=(uint8_t)((cfg[10]>>4)&3u); sym=cfg[12];
+    if(hemi>3u || !pos_ok()){ A->asset_read(POS_DEFAULT,pos,POS_DIGITS); hemi=HEMI_DEFAULT; }
+    if((cfg[10]&0xC0u)!=0x80u || path>PATH_MAX){ ssid=7u; path=1u; }
+    if(sym>=SYM_COUNT) sym=SYM_DEFAULT;
+}
+
+static void load_message(void)
+{
+    const uint8_t *saved=cfg+TX_CFG_LEN;
+    if(saved[0]==0xFFu){ static const char initial[]="UV-K5/K1 F4HWN Firmware"; memcpy(text,initial,MSG_LEN); len=MSG_LEN; }
+    else { memcpy(text,saved,MSG_LEN); len=MSG_LEN; while(len && (text[len-1u]==' ' || (uint8_t)text[len-1u]==0xFFu)) len--; }
+    text[len]=0;
+}
+
+static void save_page(void)
+{
+    if(page==PAGE_SETTINGS){
+        if(!pos_ok()){ bad_pos=true; dirty=true; return; }
+        store_settings();
+    } else {
+        for(uint8_t i=0u;i<MSG_LEN;i++) cfg[TX_CFG_LEN+i]=i<len?(uint8_t)text[i]:(uint8_t)' ';
+    }
+    A->cfg_save(cfg,EDIT_CFG_LEN); page=PAGE_MENU; bad_pos=false; f_arm=false; commit();
 }
 
 static void edit_settings(uint8_t key)
@@ -174,10 +217,21 @@ static void edit_settings(uint8_t key)
 static void short_key(uint8_t key)
 {
     A->backlight_on();
-    if(key==APP_KEY_MENU) save_and_exit();
-    else if(key==APP_KEY_EXIT){ if(from_tx) A->chain_app(APP_CHAIN_APRS_TX); running=false; }
-    else if(key==APP_KEY_PTT){ page^=1u; f_arm=false; commit(); }
-    else if(page) edit_settings(key); else edit_message(key,false);
+    if(page==PAGE_MENU){
+        if(key==APP_KEY_EXIT){ if(from_tx) A->chain_app(APP_CHAIN_APRS_TX); running=false; }
+        else if(key==APP_KEY_MENU){
+            page=menu_sel==0u?PAGE_MESSAGE:PAGE_SETTINGS;
+            if(page==PAGE_MESSAGE) load_message(); else { load_settings(); cur=0u; bad_pos=false; }
+        } else {
+            int8_t d=A->nav_dir(key);
+            if(d) menu_sel^=1u;
+        }
+    } else if(key==APP_KEY_MENU) save_page();
+    else if(key==APP_KEY_EXIT){
+        if(page==PAGE_MESSAGE) load_message(); else load_settings();
+        page=PAGE_MENU; bad_pos=false; f_arm=false; commit();
+    } else if(page==PAGE_SETTINGS) edit_settings(key);
+    else edit_message(key,false);
     dirty=true;
 }
 
@@ -190,24 +244,16 @@ void app_main(const app_api_t *api)
     if(cfg[0]!=CFG_MAGIC){
         cfg[0]=CFG_MAGIC; cfg[1]=66u; cfg[2]=0u; cfg[10]=0x97u; cfg[11]=0u; cfg[12]=SYM_DEFAULT;
         api->asset_read(POS_DEFAULT,pos,POS_DIGITS); hemi=HEMI_DEFAULT; ssid=7u; path=1u; sym=SYM_DEFAULT;
-    } else {
-        for(uint8_t i=0u;i<POS_DIGITS;i++) pos[i]=(uint8_t)((cfg[3u+i/2u]>>((i&1u)*4u))&15u);
-        hemi=(uint8_t)(cfg[9]>>4); ssid=(uint8_t)(cfg[10]&15u); path=(uint8_t)((cfg[10]>>4)&3u); sym=cfg[12];
-        if(hemi>3u || !pos_ok()){ api->asset_read(POS_DEFAULT,pos,POS_DIGITS); hemi=HEMI_DEFAULT; }
-        if((cfg[10]&0xC0u)!=0x80u || path>PATH_MAX){ ssid=7u; path=1u; }
-        if(sym>=SYM_COUNT) sym=SYM_DEFAULT;
-    }
-    const uint8_t *saved=cfg+TX_CFG_LEN;
-    if(saved[0]==0xFFu){ static const char initial[]="UV-K5/K1 F4HWN Firmware"; memcpy(text,initial,MSG_LEN); len=MSG_LEN; }
-    else { memcpy(text,saved,MSG_LEN); len=MSG_LEN; while(len && (text[len-1u]==' ' || (uint8_t)text[len-1u]==0xFFu)) len--; }
-    text[len]=0; api->backlight_on();
+        store_settings();
+    } else load_settings();
+    load_message(); page=PAGE_MENU; api->backlight_on();
     while(running){
         if(dirty){ dirty=false; draw(); }
         uint8_t key=api->get_key();
         if(key==APP_KEY_SAVER || key==APP_KEY_WAKE){ held=APP_KEY_INVALID; held_ticks=0u; fired_long=false; dirty=true; }
         else if(key==APP_KEY_INVALID){ if(held!=APP_KEY_INVALID && !fired_long) short_key(held); held=APP_KEY_INVALID; held_ticks=0u; fired_long=false; }
         else if(key!=held){ held=key; held_ticks=0u; fired_long=false; }
-        else if(!page){
+        else if(page==PAGE_MESSAGE){
             held_ticks++;
             if(!fired_long && key<=APP_KEY_9 && held_ticks>=HOLD_TICKS){ fired_long=true; edit_message(key,true); dirty=true; }
             else if(key==APP_KEY_F && held_ticks>=HOLD_TICKS && (uint16_t)(held_ticks-HOLD_TICKS)%REPEAT_TICKS==0u){ fired_long=true; edit_message(key,false); dirty=true; }
