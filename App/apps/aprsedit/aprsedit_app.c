@@ -5,6 +5,7 @@
 
 #define MSG_LEN      23u
 #define HOLD_TICKS   40u
+#define REPEAT_TICKS 8u
 #define COMMIT_TICKS 80u
 
 static const app_api_t *A;
@@ -151,8 +152,14 @@ void app_main(const app_api_t *api)
             held = APP_KEY_INVALID; held_ticks = 0u; fired_long = false;
         } else if (key != held) {
             held = key; held_ticks = 0u; fired_long = false;
-        } else if (!fired_long && key <= APP_KEY_9 && ++held_ticks >= HOLD_TICKS) {
-            fired_long = true; edit_key(key, true); dirty = true;
+        } else {
+            held_ticks++;
+            if (!fired_long && key <= APP_KEY_9 && held_ticks >= HOLD_TICKS) {
+                fired_long = true; edit_key(key, true); dirty = true;
+            } else if (key == APP_KEY_F && held_ticks >= HOLD_TICKS &&
+                       (uint16_t)(held_ticks - HOLD_TICKS) % REPEAT_TICKS == 0u) {
+                fired_long = true; edit_key(key, false); dirty = true;
+            }
         }
         if (has_pending && ++pending_ticks >= COMMIT_TICKS) commit();
         api->battery_sample(); api->delay_ms(10u); api->backlight_update();

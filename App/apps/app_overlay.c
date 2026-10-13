@@ -393,9 +393,14 @@ static void     app_set_af(uint8_t m)  { BK4819_SetAF((BK4819_AF_Type_t)m); }
 static void     app_audio_path(bool on){ if (on) AUDIO_AudioPathOn(); else AUDIO_AudioPathOff(); }
 static void     app_prepare_tone(void) { BK4819_PrepareToPlayTone(true); }
 static void     app_play_tone_raw(uint16_t hz, uint16_t ms) { BK4819_PlayToneRaw(hz, ms); }
-static uint32_t app_rx_freq(void)      { return gRxVfo->pRX->Frequency; }
-
 static VFO_Info_t app_radio_vfo;
+static uint32_t app_rx_freq(void)
+{
+    return gRxVfo == &app_radio_vfo
+        ? app_radio_vfo.freq_config_RX.Frequency
+        : gRxVfo->pRX->Frequency;
+}
+
 static void app_radio_tune(uint32_t frequency)
 {
     RADIO_InitInfo(&app_radio_vfo,
@@ -532,25 +537,33 @@ static void     app_tx_tone(uint16_t hz) { BK4819_TransmitTone(false, hz); }
 static void     app_tx_mute(bool on)     { if (on) BK4819_EnterTxMute(); else BK4819_ExitTxMute(); }
 static void     app_tx_end(void)         { BK4819_ToggleGpioOut(BK4819_GPIO1_PIN29_PA_ENABLE, false); RADIO_SetupRegisters(true); }
 static void     app_tx_carrier(bool on)  { BK4819_ToggleGpioOut(BK4819_GPIO1_PIN29_PA_ENABLE, on); }
-static uint32_t app_tx_freq(void)        { return gTxVfo->pTX->Frequency; }
+static uint32_t app_tx_freq(void)
+{
+    return gTxVfo == &app_radio_vfo
+        ? app_radio_vfo.freq_config_TX.Frequency
+        : gTxVfo->pTX->Frequency;
+}
 
 static void app_boot_callsign(char *buf, uint8_t len)
 {
 #ifdef ENABLE_MESSENGER
     MSG_STORE_Init();
     uint8_t msg_n = 0;
+    uint8_t kinds = 0;
     bool valid = len > 1u;
     while (valid && msg_n < MSG_CALLSIGN_EDIT_LEN && gMessengerConfig.callsign[msg_n]) {
         char c = gMessengerConfig.callsign[msg_n];
         if (c >= 'a' && c <= 'z') c -= 32;
-        if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) ||
-            (uint8_t)(msg_n + 1u) >= len) {
+        if (c >= 'A' && c <= 'Z') kinds |= 1u;
+        else if (c >= '0' && c <= '9') kinds |= 2u;
+        else {
             valid = false;
             break;
         }
+        if ((uint8_t)(msg_n + 1u) >= len) { valid = false; break; }
         buf[msg_n++] = c;
     }
-    if (valid && msg_n != 0u) {
+    if (valid && msg_n >= 3u && kinds == 3u) {
         buf[msg_n] = '\0';
         return;
     }

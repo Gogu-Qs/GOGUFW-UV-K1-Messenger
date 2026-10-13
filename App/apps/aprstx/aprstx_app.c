@@ -261,9 +261,15 @@ static void build(void){
     uint8_t *f=g.frm;
     char call[12];
     A->boot_callsign(call,sizeof call);
-    uint8_t n=0;
-    while(call[n]){ if(call[n]=='/') return; n++; }   /* AX.25: letters and digits */
-    if(!n || n>CALL_MAX) return;                      /* flen stays 0: no TX        */
+    uint8_t n=0, kinds=0;
+    while(call[n] && n<=CALL_MAX){
+        char c=call[n];
+        if(c>='A' && c<='Z') kinds|=1u;
+        else if(c>='0' && c<='9') kinds|=2u;
+        else return;
+        n++;
+    }
+    if(n<3u || n>CALL_MAX || kinds!=3u || call[n]) return;
 
     A->asset_read(F_DEST,f,F_DEST_LEN);
     for(uint8_t i=0;i<6u;i++) f[7+i]=(uint8_t)((i<n?call[i]:' ')<<1);

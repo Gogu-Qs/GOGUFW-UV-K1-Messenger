@@ -2,7 +2,7 @@
 set -euo pipefail
 APP=aprsedit
 APP_NAME="APRS Edit"
-APP_VER=1.1-gogu
+APP_VER=1.2-gogu
 APP_API_MIN=3
 APP_VMA=${APP_VMA:-0x20000280}
 CC=/opt/toolchain/bin/arm-none-eabi-gcc
@@ -14,6 +14,6 @@ rm -f ./*.app ./*.elf ./*.bin
 "$CC" $CFLAGS $LDFLAGS "${APP}_app.c" -lgcc -o "${APP}.elf"
 "$OBJCOPY" -O binary "${APP}.elf" "${APP}.bin"
 python3 ../pack_app.py "${APP}.bin" APRSEdit.app --name "$APP_NAME" --ver "$APP_VER" \
-  --api-min "$APP_API_MIN" --vma "$APP_VMA" --shortcut none --exit-main
+  --api-min "$APP_API_MIN" --vma "$APP_VMA" --shortcut none
 BYTES=$(wc -c < "${APP}.bin")
 printf 'APRSEdit.app: %d B (%d%% of 4 KiB)\n' "$BYTES" "$((BYTES * 100 / 4096))"
