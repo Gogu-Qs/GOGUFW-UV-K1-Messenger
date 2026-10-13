@@ -45,9 +45,10 @@
  *      idivmod, uidivmod (the resident division helpers), Labs system info,
  *      current and minimum-since-boot free stack/RAM margin
  *   3  launch_shortcut, pixel-positioned small text, modal radio service
- *   4  temporary private app frequency, restored automatically on exit */
+ *   4  temporary private app frequency, restored automatically on exit
+ *   5  deferred app-to-app chaining */
 #define APP_ABI_MAJOR  1u
-#define APP_API_LEVEL  4u
+#define APP_API_LEVEL  5u
 
 /* Minimum API level of an app that ships read-only assets (pack_app.py). */
 #define APP_API_ASSETS 2u
@@ -76,6 +77,15 @@ enum {
     APP_KEY_SAVER   = 0xFD, /* virtual: saver active, skip this app frame       */
     APP_KEY_WAKE    = 0xFE, /* virtual: saver dismissed, redraw without action */
 };
+
+enum {
+    APP_CHAIN_NONE      = 0,
+    APP_CHAIN_APRS_EDIT = 1,
+    APP_CHAIN_APRS_TX   = 2,
+};
+
+/* launch_shortcut() context used only for an app-to-app hand-off. */
+#define APP_LAUNCH_FROM_APRS_TX 0x80u
 
 /* The framebuffer is the resident gFrameBuffer[FRAME_LINES][128]; the app draws
  * into it and calls a blit_* to push it to the LCD. */
@@ -299,9 +309,14 @@ typedef struct app_api {
      * the user's selected Full Watch/A/B target when the app returns. */
     void (*radio_tune)(uint32_t frequency);
 
+    /* ---- API level 5: deferred app-to-app chaining ----
+     * The request is acted on only after the current overlay has returned and
+     * its staged configuration has been committed. */
+    void (*chain_app)(uint8_t target);
+
 } app_api_t;
 
-_Static_assert(sizeof(app_api_t) == 356u,
+_Static_assert(sizeof(app_api_t) == 360u,
                "Labs information or launch context changed API layout");
 
 /* BK4819 AF modes for set_af (mirror driver/bk4819.h values). */

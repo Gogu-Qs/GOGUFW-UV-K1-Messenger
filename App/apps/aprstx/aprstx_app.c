@@ -21,10 +21,9 @@
  *
  * The source is the shared CllSgn (boot-message fallback via API) with an SSID;
  * destination, the WIDE path entries, symbol and comment are AX.25-encoded in
- * gen_assets.py (assets). The position, the SSID, the path (DIRECT, WIDE1-1
- * or WIDE1-1,WIDE2-1) and the symbol are edited on the radio (key 3) and saved; gen_assets.py
- * holds the defaults. The frame is built at launch and after each edit, FCS
- * included.
+ * gen_assets.py (assets). Key 3 hands off to APRS Edit for the position, SSID,
+ * path, symbol and comment; gen_assets.py holds the defaults. The frame is
+ * rebuilt when APRS TX returns, FCS included.
  *
  * AFSK comes from the BK4829 tone generator, as the Beacon app keys MCW: the tone
  * frequency (REG_71) is rewritten at each NRZI transition, 1200 Hz mark / 2200 Hz
@@ -36,14 +35,9 @@
  * Keys (UV-K5 and UV-K1): PTT or MENU send · UP/DOWN (held) scroll the frame
  *   1 px per loop · 1 / F then 1 tone level up / down (deviation, REG_70 gain
  *   10-127) · 2 / F then 2 twist up / down: 2200 Hz gain = level x (8 + tw) / 8,
- *   tw -4..+8 (-6..+6 dB), for a receiver's de-emphasis · 3 edit the position,
- *   SSID, path and symbol · * scroll view / compact view · EXIT quit. F as FoxHunt's: the next key goes down, an icon
+ *   tw -4..+8 (-6..+6 dB), for a receiver's de-emphasis · 3 open APRS Edit ·
+ *   * scroll view / compact view · EXIT quit. F as FoxHunt's: the next key goes down, an icon
  *   in the status bar while armed.
- * Editor (the field under the cursor in bold): 0-9 type a digit (the cursor
- *   skips the separators and N/S, and moves on) · * toggle N/S or E/W on the
- *   position lines, next SSID, path or symbol on theirs · F then * the previous
- *   value · UP/DOWN move the cursor (6 digits, N/S, 7 digits, E/W, SSID, path, symbol) ·
- *   MENU check and keep · EXIT cancel.
  * Level, twist, position, SSID, path, symbol and view are saved on exit (cfg_save, 13
  * bytes).
  */
@@ -569,14 +563,7 @@ static void handleKeys(void){
         else if(g.tw<TW_MAX) g.tw++;
     }
     else if(key==APP_KEY_STAR){ g.cw^=CW_COMPACT; g.top=0; }   /* the view */
-    else if(key==APP_KEY_3){
-        memcpy(g.ed,g.pos,POS_DIGITS);
-        g.ehemi=g.hemi; g.essid=g.ssid; g.epath=g.path; g.esym=g.sym;
-        g.cur=0;
-        g.top=0;                         /* the frame may change: back to its top */
-        g.edit=true;
-        if(g.status!=ST_NOCALL) g.status=ST_IDLE;
-    }
+    else if(key==APP_KEY_3){ A->chain_app(APP_CHAIN_APRS_EDIT); g.running=false; }
 }
 
 __attribute__((section(".text.entry"),used))

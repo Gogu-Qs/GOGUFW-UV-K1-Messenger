@@ -113,9 +113,10 @@ static struct {
     uint8_t shortcut_mask;
     uint8_t shortcut_slots[4];
     uint8_t launch_shortcut;
+    uint8_t chain_target;
     uint8_t slot_revision;
     uint8_t cfg_target;
-    uint8_t cfg_buf[23];
+    uint8_t cfg_buf[36];
 } app_state;
 
 /* ---- ABI wrappers: the few resident calls that are not a direct signature match ---- */
@@ -427,17 +428,24 @@ static void app_radio_tune(uint32_t frequency)
 #define APP_CFG_OWNER   0x50u    /* name of the app the config belongs to */
 #define APP_APRS_COMMENT_OFFSET 259u
 #define APP_APRS_COMMENT_LEN     23u
+#define APP_APRS_TX_CFG_LEN      13u
+#define APP_APRS_EDITOR_LEN      (APP_APRS_TX_CFG_LEN + APP_APRS_COMMENT_LEN)
 
 static void app_cfg_load(uint8_t *buf, uint8_t len)
 {
-    if (len == APP_APRS_COMMENT_LEN) {
+    if (len == APP_APRS_COMMENT_LEN || len == APP_APRS_EDITOR_LEN) {
         app_header_t h;
         for (uint8_t slot = 0; slot < APP_SLOT_COUNT; slot++) {
             PY25Q16_ReadBuffer(APP_SLOT_BASE(slot), &h, sizeof(h));
             if (h.magic == APP_MAGIC && !memcmp(h.name, "APRS TX", 8u)) {
                 app_state.cfg_target = slot;
+                if (len == APP_APRS_EDITOR_LEN) {
+                    PY25Q16_ReadBuffer(APP_SLOT_BASE(slot) + APP_CFG_OFFSET,
+                                       buf, APP_APRS_TX_CFG_LEN);
+                    buf += APP_APRS_TX_CFG_LEN;
+                }
                 PY25Q16_ReadBuffer(APP_SLOT_BASE(slot) + APP_ASSET_OFFSET +
-                                   APP_APRS_COMMENT_OFFSET, buf, len);
+                                   APP_APRS_COMMENT_OFFSET, buf, APP_APRS_COMMENT_LEN);
                 return;
             }
         }
@@ -458,7 +466,7 @@ static void app_cfg_load(uint8_t *buf, uint8_t len)
 }
 static void app_cfg_save(const uint8_t *buf, uint8_t len)
 {
-    if (len != APP_APRS_COMMENT_LEN && len > 16u) len = 16u;
+    if (len != APP_APRS_COMMENT_LEN && len != APP_APRS_EDITOR_LEN && len > 16u) len = 16u;
     memcpy(app_state.cfg_buf, buf, len);
     app_state.cfg_len = len;   /* mark dirty; the loader commits after the app returns */
 }
@@ -976,6 +984,11 @@ uint8_t APP_LaunchOverlayShortcut(uint8_t shortcut)
 }
 
 static uint8_t app_launch_shortcut(void) { return app_state.launch_shortcut; }
+static void app_chain_app(uint8_t target)
+{
+    if (target == APP_CHAIN_APRS_EDIT || target == APP_CHAIN_APRS_TX)
+        app_state.chain_target = target;
+}
 
 uint8_t APP_SlotInfo(uint8_t slot, app_header_t *out_header)
 {
@@ -1065,6 +1078,7 @@ static const app_api_t app_api = {
     .search_channel_info = SCANNER_OverlayChannelInfo,
     .search_save      = SCANNER_OverlaySave,
     .radio_tune       = app_radio_tune,
+    .chain_app        = app_chain_app,
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_INFO
     .sys_edition         = Edition,
     .sys_version         = Version,
@@ -1082,7 +1096,7 @@ static const app_api_t app_api = {
 #endif
 };
 
-uint8_t APP_LaunchOverlay(uint8_t slot)
+static uint8_t app_launch_overlay_once(uint8_t slot)
 {
     app_header_t h;
     uint8_t rc = app_read_validated_header(slot, &h);
@@ -1195,15 +1209,24 @@ uint8_t APP_LaunchOverlay(uint8_t slot)
 
     /* Commit any deferred config the app staged (RMW keeps the slot header),
      * tagged with the app's name. */
-    if (app_state.cfg_len == APP_APRS_COMMENT_LEN && app_state.cfg_target < APP_SLOT_COUNT) {
-        const uint32_t base = APP_SLOT_BASE(app_state.cfg_target);
-        PY25Q16_ReadBuffer(base, ws, APP_SECTOR_SIZE);
-        memcpy(ws + APP_ASSET_OFFSET + APP_APRS_COMMENT_OFFSET,
-               app_state.cfg_buf, APP_APRS_COMMENT_LEN);
-        app_header_t *const target = (app_header_t *)ws;
-        target->asset_crc = (uint16_t)MB_Crc32Bytes(
-            ws + APP_ASSET_OFFSET, target->asset_size);
-        PY25Q16_WriteOverlaySector(base);
+    if (app_state.cfg_len == APP_APRS_COMMENT_LEN ||
+        app_state.cfg_len == APP_APRS_EDITOR_LEN) {
+        if (app_state.cfg_target < APP_SLOT_COUNT) {
+            const uint32_t base = APP_SLOT_BASE(app_state.cfg_target);
+            PY25Q16_ReadBuffer(base, ws, APP_SECTOR_SIZE);
+            const uint8_t *comment = app_state.cfg_buf;
+            if (app_state.cfg_len == APP_APRS_EDITOR_LEN) {
+                memcpy(ws + APP_CFG_OFFSET, app_state.cfg_buf, APP_APRS_TX_CFG_LEN);
+                memcpy(ws + APP_CFG_OWNER, ((app_header_t *)ws)->name, APP_NAME_LEN);
+                comment += APP_APRS_TX_CFG_LEN;
+            }
+            memcpy(ws + APP_ASSET_OFFSET + APP_APRS_COMMENT_OFFSET,
+                   comment, APP_APRS_COMMENT_LEN);
+            app_header_t *const target = (app_header_t *)ws;
+            target->asset_crc = (uint16_t)MB_Crc32Bytes(
+                ws + APP_ASSET_OFFSET, target->asset_size);
+            PY25Q16_WriteOverlaySector(base);
+        }
     } else if (app_state.cfg_len) {
         const uint32_t base = APP_SLOT_BASE(slot);
         PY25Q16_WriteBuffer(base + APP_CFG_OFFSET, app_state.cfg_buf, app_state.cfg_len, false);
@@ -1214,6 +1237,41 @@ uint8_t APP_LaunchOverlay(uint8_t slot)
     RXTX_LOG_Resume();
 #endif
     return APP_OK;
+}
+
+static bool app_find_named_slot(const char *name, uint8_t name_len, uint8_t *slot_out)
+{
+    app_header_t h;
+    for (uint8_t slot = 0; slot < APP_SLOT_COUNT; slot++) {
+        if (app_read_validated_header(slot, &h) == APP_OK &&
+            !memcmp(h.name, name, name_len) && h.name[name_len] == '\0') {
+            *slot_out = slot;
+            return true;
+        }
+    }
+    return false;
+}
+
+uint8_t APP_LaunchOverlay(uint8_t slot)
+{
+    const uint8_t saved_context = app_state.launch_shortcut;
+    uint8_t rc;
+    for (;;) {
+        app_state.chain_target = APP_CHAIN_NONE;
+        rc = app_launch_overlay_once(slot);
+        const uint8_t target = app_state.chain_target;
+        if (rc != APP_OK || target == APP_CHAIN_NONE)
+            break;
+
+        const char *name = target == APP_CHAIN_APRS_EDIT ? "APRS Edit" : "APRS TX";
+        const uint8_t len = target == APP_CHAIN_APRS_EDIT ? 9u : 7u;
+        if (!app_find_named_slot(name, len, &slot))
+            break;
+        app_state.launch_shortcut = target == APP_CHAIN_APRS_EDIT
+                                  ? APP_LAUNCH_FROM_APRS_TX : 0u;
+    }
+    app_state.launch_shortcut = saved_context;
+    return rc;
 }
 
 uint8_t APP_SlotErase(uint8_t slot)
