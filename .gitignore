@@ -12,6 +12,11 @@ compile_commands.json
 k5_eeprom.raw
 
 /build
+/App/apps/*/*.app
+/App/apps/*/*.bin
+/App/apps/*/*.elf
+/App/apps/*/*.map
+/App/apps/*/*_assets.h
 __pycache__/
 /archive/local-development-notes/
 

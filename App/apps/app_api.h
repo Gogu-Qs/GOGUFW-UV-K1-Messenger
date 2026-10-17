@@ -46,9 +46,11 @@
  *      current and minimum-since-boot free stack/RAM margin
  *   3  launch_shortcut, pixel-positioned small text, modal radio service
  *   4  temporary private app frequency, restored automatically on exit
- *   5  deferred app-to-app chaining */
+ *   5  deferred app-to-app chaining
+ *   6  temporary private app frequency plus explicit output power
+ *   7  tune RX to the persistent APRS Edit/TX profile frequency */
 #define APP_ABI_MAJOR  1u
-#define APP_API_LEVEL  5u
+#define APP_API_LEVEL  7u
 
 /* Minimum API level of an app that ships read-only assets (pack_app.py). */
 #define APP_API_ASSETS 2u
@@ -314,13 +316,33 @@ typedef struct app_api {
      * its staged configuration has been committed. */
     void (*chain_app)(uint8_t target);
 
+    /* ---- API level 6: private RF target with explicit output power ----
+     * Power is APP_RADIO_POWER_LOW1..HIGH. Like radio_tune(), the user's VFO
+     * is restored automatically when the app returns. */
+    void (*radio_tune_power)(uint32_t frequency, uint8_t power);
+
+    /* ---- API level 7: shared APRS profile receive target ----
+     * Tunes the private app VFO to APRS TX's persistent profile frequency,
+     * falling back to 144.800 MHz if the profile is missing or invalid. */
+    void (*radio_tune_aprs)(void);
+
 } app_api_t;
 
-_Static_assert(sizeof(app_api_t) == 360u,
+_Static_assert(sizeof(app_api_t) == 368u,
                "Labs information or launch context changed API layout");
 
 /* BK4819 AF modes for set_af (mirror driver/bk4819.h values). */
 enum { APP_AF_MUTE = 0, APP_AF_FM = 1, APP_AF_AM = 7 };
+
+enum {
+    APP_RADIO_POWER_LOW1 = 0,
+    APP_RADIO_POWER_LOW2,
+    APP_RADIO_POWER_LOW3,
+    APP_RADIO_POWER_LOW4,
+    APP_RADIO_POWER_LOW5,
+    APP_RADIO_POWER_MID,
+    APP_RADIO_POWER_HIGH
+};
 
 /* Register ids the apps use (mirror driver/bk4819-regs.h). */
 enum { APP_BK_REG_13 = 0x13 };

@@ -16,12 +16,13 @@ Status:
 
 ## Using the app
 
-1. Set the VFO to the beacon frequency, **FM, wide bandwidth**: 406.031 MHz for
-   real beacons, or the generator frequency (433.650 MHz on the bench).
-2. Launch **EPIRB 406** with no burst in progress: the noise floor is measured at
+1. Launch **EPIRB 406** with no burst in progress. GOGUFW v1.9 opens its own
+   **406.000 MHz, FM wide** receive context regardless of the selected A/B/C/D
+   channel; the firmware restores that channel when the app exits.
+2. The noise floor is measured at
    launch.
-3. Lower the volume: the RX audio must stay on (it is what reaches PA4), so the
-   speaker plays each burst.
+3. The decoder's internal RX audio remains active for PA4 sampling, but the
+   loudspeaker is off by default. Press **1** if you want to monitor the bursts.
 
 Each burst is detected on RSSI (10 dB above the floor), sampled for up to 900 ms
 and decoded. The last decoded message stays on screen (the 2-message history was
@@ -32,7 +33,7 @@ dropped in v1.5 to make room for tuning).
 | Line 0 | 15-hex ID |
 | Line 1 | Country code and protocol |
 | Line 2 | Position (5 decimals, truncated) or "no position" |
-| Line 3 | Tuned frequency and offset from the VFO, e.g. `433.645 -5 kHz` (v1.5; up to v1.4: `END` + raw bits 105-144) |
+| Line 3 | Tuned frequency and offset from the 406.000 MHz base |
 | Small rows | SELF-TEST, LONG/SHORT, BCH-1/BCH-2; `#` decode number, RSSI of the burst, internal/external position source, 121.5 homing, `coarse` (no PDF-2 offsets), `rawID` (not a standard location protocol, ID = raw bits 26-85) |
 | Bottom row | RSSI / floor, decodes ok, errors, last error: `nosync` (no frame sync found) or `cut` (sync found, message incomplete) |
 
@@ -40,10 +41,11 @@ Keys (UV-K5 and UV-K1):
 
 | Key | Action |
 |---|---|
-| UP / DOWN | Tune ±5 kHz from the VFO, up to ±50 kHz (direction follows the firmware's navigation setting, so K1 LEFT/RIGHT work as on the main screen) |
-| 5 | Back to the VFO frequency |
+| UP / DOWN | Tune ±5 kHz from 406.000 MHz, up to ±50 kHz (direction follows the firmware's navigation setting, so K1 LEFT/RIGHT work as on the main screen) |
+| 5 | Back to 406.000 MHz |
+| 1 | Toggle the loudspeaker; the choice is saved |
 | MENU | Clear the last message and the counters |
-| EXIT | Quit (the firmware retunes to the VFO frequency) |
+| EXIT | Quit (the firmware restores the selected radio channel) |
 
 Tuning writes the BK4829 frequency registers (0x38/0x39, 10 Hz units) and
 restarts the synthesizer (REG_30 to 0, then back) so it relocks; it only lasts
@@ -91,14 +93,14 @@ beacon RF --> BK4829 (RAW: no HPF300 / LPF3K / de-emphasis, AFC off)
 - **PA4** is the voice-prompt DAC pin. Voice is disabled in every preset, so the
   app switches the DAC off and reads PA4 as an analog input. Measured on the K1:
   idle 518, message range 165-894 (about 0.6 V p-p), no clipping.
-- The receive audio must be on (AF output enabled, audio path on): the speaker
-  plays the burst.
+- The BK4829 AF output remains enabled for PA4 sampling. The separate speaker
+  amplifier is off by default and can be toggled with key **1**.
 - **PA4 bias**: the pin has no DC reference; the app holds it at mid-scale with
   the MCU DAC (output buffer off, code 2048) for the whole run. The volume knob is analog; whether it changes the PA4 level
   still has to be checked.
-- Tuning: first-generation channels span 406.025-406.040 MHz. One VFO at
-  406.031 MHz with the wide filter covers them all; a carrier offset only shifts
-  the audio DC level, which the decoder removes.
+- Tuning starts from the app's private 406.000 MHz base. UP/DOWN can move the
+  receiver in 5 kHz steps across the first-generation channel range without
+  modifying the selected radio VFO.
 
 ## First-generation message (C/S T.001)
 

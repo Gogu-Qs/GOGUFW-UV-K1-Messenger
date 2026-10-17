@@ -15,6 +15,8 @@
  */
 
 #include "apps/app_overlay.h"
+#include "apps/app_config_proxy.h"
+#include "apps/aprs_profile.h"
 
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
 
@@ -84,9 +86,14 @@ _Static_assert(APP_ASSET_OFFSET + APP_ASSET_MAX == APP_CODE_OFFSET,
                "assets must end where the code sector starts");
 _Static_assert(APP_ASSET_MAX <= APP_OVERLAY_MAX,
                "assets are CRC-checked through the overlay buffer");
+_Static_assert(APP_SLOT_BASE(APP_SLOT_COUNT) <= 0x001DE000u,
+               "overlay app slots overlap the Sonic 4K reserve");
 
 enum {
-    APP_AVAILABLE_CAPS = 0u
+    APP_AVAILABLE_CAPS = APP_CAP_CFG_PROXY
+#ifdef ENABLE_FMRADIO
+                       | APP_CAP_FM
+#endif
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_BEAM
                        | APP_CAP_BEAM2
 #endif
@@ -98,7 +105,13 @@ enum {
 /* Keep the small zero-initialized state together so callbacks can address it
  * from one base. The nonzero RNG seed stays separate to keep this in .bss. */
 static struct {
+    VFO_Info_t *saved_rx;
+    VFO_Info_t *saved_tx;
+    VFO_Info_t *saved_current;
+    uint16_t loaded_entry_off;
     uint16_t asset_size;
+    uint16_t cfg_target_offset;
+    uint32_t cfg_target_magic;
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_BEAM
     uint16_t beam_pending_channel;
 #endif
@@ -106,6 +119,9 @@ static struct {
     uint8_t cfg_len;       /* staged length; 0 = nothing to commit */
     bool allow_screen_saver;
     bool screen_saver_wake;
+#ifdef ENABLE_FMRADIO
+    bool fm_dirty;
+#endif
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_BEAM
     bool beam_dirty;
 #endif
@@ -116,8 +132,15 @@ static struct {
     uint8_t chain_target;
     uint8_t slot_revision;
     uint8_t cfg_target;
-    uint8_t cfg_buf[36];
+    uint8_t cfg_proxy_len;
+    bool cfg_proxy;
+    uint8_t saved_rx_vfo;
+    char loaded_name[APP_NAME_LEN];
+    uint8_t cfg_buf[APP_CONFIG_PROXY_MAX];
 } app_state;
+
+static uint8_t app_read_validated_header(uint8_t slot, app_header_t *h);
+static bool app_find_named_slot(const char *name, uint8_t name_len, uint8_t *slot_out);
 
 /* ---- ABI wrappers: the few resident calls that are not a direct signature match ---- */
 
@@ -402,17 +425,39 @@ static uint32_t app_rx_freq(void)
         : gRxVfo->pRX->Frequency;
 }
 
-static void app_radio_tune(uint32_t frequency)
+static void app_radio_tune_power(uint32_t frequency, uint8_t power)
 {
     RADIO_InitInfo(&app_radio_vfo,
                    FREQ_CHANNEL_FIRST + FREQUENCY_GetBand(frequency), frequency);
     app_radio_vfo.Modulation = MODULATION_FM;
     app_radio_vfo.CHANNEL_BANDWIDTH = BANDWIDTH_WIDE;
-    // GOGUFW's private APRS context is independent of the selected A/B/C/D VFO.
-    app_radio_vfo.OUTPUT_POWER = OUTPUT_POWER_HIGH;
+    if (power > APP_RADIO_POWER_HIGH)
+        power = APP_RADIO_POWER_HIGH;
+    app_radio_vfo.OUTPUT_POWER = (uint8_t)(OUTPUT_POWER_LOW1 + power);
     RADIO_ConfigureSquelchAndOutputPower(&app_radio_vfo);
     gRxVfo = gTxVfo = gCurrentVfo = &app_radio_vfo;
     RADIO_SetupRegisters(true);
+}
+
+static void app_radio_tune(uint32_t frequency)
+{
+    app_radio_tune_power(frequency, APP_RADIO_POWER_HIGH);
+}
+
+static void app_radio_tune_aprs(void)
+{
+    uint32_t frequency = 144800u;
+    uint8_t slot;
+    if (app_find_named_slot("APRS TX", 7u, &slot)) {
+        uint32_t magic, saved;
+        const uint32_t base = APP_SLOT_BASE(slot) + APP_ASSET_OFFSET;
+        PY25Q16_ReadBuffer(base, &magic, sizeof(magic));
+        PY25Q16_ReadBuffer(base + APRS_PROFILE_FREQ_KHZ, &saved, sizeof(saved));
+        if (magic == APRS_PROFILE_MAGIC && saved >= APRS_FREQ_KHZ_MIN &&
+            saved <= APRS_FREQ_KHZ_MAX)
+            frequency = saved;
+    }
+    app_radio_tune(frequency * 100u);
 }
 
 /* ---- v2 config (deferred, flash-backed) ----
@@ -433,6 +478,15 @@ static void app_radio_tune(uint32_t frequency)
 
 static void app_cfg_load(uint8_t *buf, uint8_t len)
 {
+    if (app_state.cfg_proxy) {
+        const uint8_t requested = len;
+        if (app_state.cfg_target < APP_SLOT_COUNT && len <= app_state.cfg_proxy_len)
+            PY25Q16_ReadBuffer(APP_SLOT_BASE(app_state.cfg_target) + APP_ASSET_OFFSET +
+                               app_state.cfg_target_offset, buf, len);
+        else
+            memset(buf, 0xFF, requested);
+        return;
+    }
     if (len == APP_APRS_COMMENT_LEN || len == APP_APRS_EDITOR_LEN) {
         app_header_t h;
         for (uint8_t slot = 0; slot < APP_SLOT_COUNT; slot++) {
@@ -466,12 +520,23 @@ static void app_cfg_load(uint8_t *buf, uint8_t len)
 }
 static void app_cfg_save(const uint8_t *buf, uint8_t len)
 {
-    if (len != APP_APRS_COMMENT_LEN && len != APP_APRS_EDITOR_LEN && len > 16u) len = 16u;
+    if (app_state.cfg_proxy) {
+        uint32_t magic;
+        if (app_state.cfg_target >= APP_SLOT_COUNT || len != app_state.cfg_proxy_len ||
+            len < sizeof(magic))
+            return;
+        memcpy(&magic, buf, sizeof(magic));
+        if (magic != app_state.cfg_target_magic)
+            return;
+    } else if (len != APP_APRS_COMMENT_LEN && len != APP_APRS_EDITOR_LEN &&
+               len > APP_CONFIG_LOCAL_MAX) {
+        len = APP_CONFIG_LOCAL_MAX;
+    }
     memcpy(app_state.cfg_buf, buf, len);
     app_state.cfg_len = len;   /* mark dirty; the loader commits after the app returns */
 }
 
-_Static_assert(APP_CFG_OFFSET + 16u <= APP_CFG_OWNER &&
+_Static_assert(APP_CFG_OFFSET + APP_CONFIG_LOCAL_MAX <= APP_CFG_OWNER &&
                APP_CFG_OWNER + APP_NAME_LEN <= APP_ASSET_OFFSET,
                "config area overlaps its owner tag or the assets");
 
@@ -588,8 +653,8 @@ static void app_boot_callsign(char *buf, uint8_t len)
     buf[n] = '\0';
 }
 
-#if 0
-/* Retired overlay Broadcast-FM bridge. GOGUFW FM is resident again. */
+#ifdef ENABLE_FMRADIO
+/* ---- v2 broadcast FM bridge (BK1080; shared with the resident FM radio) ---- */
 #if 0 /* GOGU FM is resident again; keep no FM-specific overlay ABI/state. */
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -902,6 +967,50 @@ static uint8_t app_read_validated_header(uint8_t slot, app_header_t *h)
     return APP_OK;
 }
 
+/* Resolve the bounded cross-app configuration descriptor used by current
+ * upstream APRS Edit/TX. A recognized but invalid descriptor stays read-only
+ * and never falls back to the editor's own config sector. */
+static void app_config_proxy_resolve(void)
+{
+    app_state.cfg_proxy = false;
+    app_state.cfg_target = 0xFFu;
+    app_state.cfg_proxy_len = 0u;
+    app_state.cfg_target_offset = 0u;
+    app_state.cfg_target_magic = 0u;
+    if (app_state.asset_size < sizeof(app_config_proxy_t))
+        return;
+
+    app_config_proxy_t proxy;
+    PY25Q16_ReadBuffer(APP_SLOT_BASE(app_state.run_slot) + APP_ASSET_OFFSET,
+                       &proxy, sizeof(proxy));
+    if (proxy.magic != APP_CONFIG_PROXY_MAGIC)
+        return;
+    app_state.cfg_proxy = true;
+    if (proxy.reserved != 0u || proxy.target_len == 0u ||
+        proxy.target_len > APP_CONFIG_PROXY_MAX)
+        return;
+
+    for (uint8_t slot = 0; slot < APP_SLOT_COUNT; slot++) {
+        app_header_t target;
+        if (slot == app_state.run_slot ||
+            app_read_validated_header(slot, &target) != APP_OK ||
+            memcmp(target.name, proxy.target_name, APP_NAME_LEN) != 0 ||
+            proxy.target_offset > target.asset_size ||
+            proxy.target_len > target.asset_size - proxy.target_offset)
+            continue;
+        uint32_t magic;
+        PY25Q16_ReadBuffer(APP_SLOT_BASE(slot) + APP_ASSET_OFFSET +
+                           proxy.target_offset, &magic, sizeof(magic));
+        if (magic != proxy.target_magic)
+            continue;
+        app_state.cfg_target = slot;
+        app_state.cfg_target_offset = proxy.target_offset;
+        app_state.cfg_target_magic = proxy.target_magic;
+        app_state.cfg_proxy_len = proxy.target_len;
+        return;
+    }
+}
+
 uint8_t APP_ValidateSlot(uint8_t slot, app_header_t *out_header)
 {
     app_header_t h;
@@ -952,7 +1061,16 @@ static void app_cache_shortcuts(void)
         for (uint8_t i = 0; i < sizeof(known); i++) {
             const uint8_t shortcut = known[i];
             const int8_t index = app_shortcut_index(shortcut);
-            if ((shortcuts & shortcut) && !(app_state.shortcut_mask & shortcut)) {
+            /* Current upstream apps store one shortcut ID, not a bit mask.
+             * Search is our intentional exception: ID 9 owns both F+4 and F+*.
+             * Let that combined Search binding override an earlier FM/Beam app,
+             * while all other IDs remain exact matches. */
+            const bool matches = shortcuts == shortcut ||
+                                 (shortcuts == APP_SHORTCUT_SEARCH &&
+                                  (shortcut == APP_SHORTCUT_SEARCH_FREQ ||
+                                   shortcut == APP_SHORTCUT_SEARCH_TONE));
+            if (matches && (!(app_state.shortcut_mask & shortcut) ||
+                            shortcuts == APP_SHORTCUT_SEARCH)) {
                 app_state.shortcut_mask |= shortcut;
                 app_state.shortcut_slots[index] = slot;
             }
@@ -1057,6 +1175,18 @@ static const app_api_t app_api = {
     .tx_freq          = app_tx_freq,
     .boot_callsign    = app_boot_callsign,
     .print_string     = UI_PrintString,
+#ifdef ENABLE_FMRADIO
+    .fm_enter         = app_fm_enter,
+    .fm_exit          = app_fm_exit,
+    .fm_set_freq      = BK1080_SetFrequency,
+    .fm_lo            = BK1080_GetFreqLoLimit,
+    .fm_hi            = BK1080_GetFreqHiLimit,
+    .fm_mute          = BK1080_Mute,
+    .fm_valid         = app_fm_valid,
+    .fm_channels      = gFM_Channels,
+    .fm_state         = app_fm_state,
+    .fm_commit        = app_fm_commit,
+#endif
     .nav_dir          = app_nav_dir,
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_BEAM
     .beam_prepare     = app_beam_prepare,
@@ -1079,6 +1209,8 @@ static const app_api_t app_api = {
     .search_save      = SCANNER_OverlaySave,
     .radio_tune       = app_radio_tune,
     .chain_app        = app_chain_app,
+    .radio_tune_power = app_radio_tune_power,
+    .radio_tune_aprs  = app_radio_tune_aprs,
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_INFO
     .sys_edition         = Edition,
     .sys_version         = Version,
@@ -1096,7 +1228,12 @@ static const app_api_t app_api = {
 #endif
 };
 
-static uint8_t app_launch_overlay_once(uint8_t slot)
+/* Preparation and cleanup deliberately live in separate non-inlined calls.
+ * This keeps their headers/proxy temporaries off the stack while app code is
+ * running; unlike switching SP to RAM top, it cannot overwrite a suspended
+ * caller frame. */
+__attribute__((noinline))
+static uint8_t app_prepare_overlay(uint8_t slot)
 {
     app_header_t h;
     uint8_t rc = app_read_validated_header(slot, &h);
@@ -1110,6 +1247,9 @@ static uint8_t app_launch_overlay_once(uint8_t slot)
     uint8_t *ws = PY25Q16_OverlayBuffer();
     if (h.link_vma != (uint32_t)ws)
         return APP_ERR_VMA;
+
+    app_state.loaded_entry_off = h.entry_off;
+    memcpy(app_state.loaded_name, h.name, APP_NAME_LEN);
 
     /* Flush and suspend RF logging before the sector cache becomes executable
      * app code. Both a pending RX and an app-owned TX could otherwise write a
@@ -1148,8 +1288,11 @@ static uint8_t app_launch_overlay_once(uint8_t slot)
     app_state.run_slot   = slot;   /* for cfg_load / cfg_save / asset_read */
     app_state.asset_size = h.asset_size;
     app_state.cfg_len    = 0;
-    app_state.cfg_target = 0xFFu;
+    app_config_proxy_resolve();
     app_rng_mix();
+#ifdef ENABLE_FMRADIO
+    app_state.fm_dirty = false;
+#endif
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_BEAM
     app_state.beam_dirty = false;
 #endif
@@ -1177,27 +1320,32 @@ static uint8_t app_launch_overlay_once(uint8_t slot)
      * other VFO, so a TX app (APRS TX, Beacon, SSTV) would transmit there while
      * tx_freq() shows the selected one. Save all three pointers:
      * radio apps such as BEAM temporarily replace them while they run. */
-    const uint8_t     saved_rx_vfo = gEeprom.RX_VFO;
-    VFO_Info_t *const saved_rx      = gRxVfo;
-    VFO_Info_t *const saved_tx      = gTxVfo;
-    VFO_Info_t *const saved_current = gCurrentVfo;
+    app_state.saved_rx_vfo = gEeprom.RX_VFO;
+    app_state.saved_rx      = gRxVfo;
+    app_state.saved_tx      = gTxVfo;
+    app_state.saved_current = gCurrentVfo;
     gEeprom.RX_VFO = gEeprom.TX_VFO;
     gRxVfo         = gTxVfo;
     gCurrentVfo    = gTxVfo;
     RADIO_SetupRegisters(true);
 
-    app_entry_t entry = (app_entry_t)(((uint32_t)ws + h.entry_off) | 1u);
-    entry(&app_api);
+    return APP_OK;
+}
 
+__attribute__((noinline))
+static void app_finish_overlay(uint8_t slot)
+{
+    uint8_t *const ws = PY25Q16_OverlayBuffer();
     APP_ModalScreenSaverExit();
+    BACKLIGHT_TurnOn();
     app_state.allow_screen_saver = false;
     app_state.screen_saver_wake = false;
 
     /* Restore the resident RX/dual-watch tuning the app ran on top of. */
-    gEeprom.RX_VFO = saved_rx_vfo;
-    gRxVfo         = saved_rx;
-    gTxVfo         = saved_tx;
-    gCurrentVfo    = saved_current;
+    gEeprom.RX_VFO = app_state.saved_rx_vfo;
+    gRxVfo         = app_state.saved_rx;
+    gTxVfo         = app_state.saved_tx;
+    gCurrentVfo    = app_state.saved_current;
     RADIO_SetupRegisters(true);
 
     /* The overlay held app code, not a valid config sector. */
@@ -1207,10 +1355,34 @@ static uint8_t app_launch_overlay_once(uint8_t slot)
     app_beam_commit();
 #endif
 
-    /* Commit any deferred config the app staged (RMW keeps the slot header),
-     * tagged with the app's name. */
-    if (app_state.cfg_len == APP_APRS_COMMENT_LEN ||
-        app_state.cfg_len == APP_APRS_EDITOR_LEN) {
+    /* Commit a validated upstream proxy target, GOGUFW's extended APRS editor
+     * payload, or ordinary local app config. All writes remain deferred until
+     * after the app has returned. */
+    if (app_state.cfg_len && app_state.cfg_proxy &&
+        app_state.cfg_target < APP_SLOT_COUNT) {
+        app_header_t target;
+        uint32_t magic;
+        const uint32_t base = APP_SLOT_BASE(app_state.cfg_target);
+        if (app_read_validated_header(app_state.cfg_target, &target) == APP_OK &&
+            app_state.cfg_target_offset <= target.asset_size &&
+            app_state.cfg_len <= target.asset_size - app_state.cfg_target_offset) {
+            PY25Q16_ReadBuffer(base + APP_ASSET_OFFSET + app_state.cfg_target_offset,
+                               &magic, sizeof(magic));
+            if (magic == app_state.cfg_target_magic) {
+                PY25Q16_ReadBuffer(base + APP_ASSET_OFFSET, ws, target.asset_size);
+                memcpy(ws + app_state.cfg_target_offset,
+                       app_state.cfg_buf, app_state.cfg_len);
+                const uint16_t crc = (uint16_t)MB_Crc32Bytes(ws, target.asset_size);
+                PY25Q16_WriteBuffer(base + APP_ASSET_OFFSET + app_state.cfg_target_offset,
+                                   app_state.cfg_buf, app_state.cfg_len, false);
+                PY25Q16_WriteBuffer(base + offsetof(app_header_t, asset_crc),
+                                   &crc, sizeof(crc), false);
+            }
+        }
+        PY25Q16_InvalidateCache();
+    } else if (!app_state.cfg_proxy &&
+               (app_state.cfg_len == APP_APRS_COMMENT_LEN ||
+                app_state.cfg_len == APP_APRS_EDITOR_LEN)) {
         if (app_state.cfg_target < APP_SLOT_COUNT) {
             const uint32_t base = APP_SLOT_BASE(app_state.cfg_target);
             PY25Q16_ReadBuffer(base, ws, APP_SECTOR_SIZE);
@@ -1227,16 +1399,22 @@ static uint8_t app_launch_overlay_once(uint8_t slot)
                 ws + APP_ASSET_OFFSET, target->asset_size);
             PY25Q16_WriteOverlaySector(base);
         }
-    } else if (app_state.cfg_len) {
+    } else if (!app_state.cfg_proxy && app_state.cfg_len) {
         const uint32_t base = APP_SLOT_BASE(slot);
         PY25Q16_WriteBuffer(base + APP_CFG_OFFSET, app_state.cfg_buf, app_state.cfg_len, false);
-        PY25Q16_WriteBuffer(base + APP_CFG_OWNER, h.name, APP_NAME_LEN, false);
+        PY25Q16_WriteBuffer(base + APP_CFG_OWNER, app_state.loaded_name, APP_NAME_LEN, false);
         PY25Q16_InvalidateCache();
     }
+#ifdef ENABLE_FMRADIO
+    if (app_state.fm_dirty) {
+        app_state.fm_dirty = false;
+        SETTINGS_SaveFM();
+        PY25Q16_InvalidateCache();
+    }
+#endif
 #ifdef ENABLE_FEAT_F4HWN_RXTX_LOG
     RXTX_LOG_Resume();
 #endif
-    return APP_OK;
 }
 
 static bool app_find_named_slot(const char *name, uint8_t name_len, uint8_t *slot_out)
@@ -1258,7 +1436,14 @@ uint8_t APP_LaunchOverlay(uint8_t slot)
     uint8_t rc;
     for (;;) {
         app_state.chain_target = APP_CHAIN_NONE;
-        rc = app_launch_overlay_once(slot);
+        rc = app_prepare_overlay(slot);
+        if (rc == APP_OK) {
+            uint8_t *const ws = PY25Q16_OverlayBuffer();
+            app_entry_t entry = (app_entry_t)(
+                ((uint32_t)ws + app_state.loaded_entry_off) | 1u);
+            entry(&app_api);
+            app_finish_overlay(slot);
+        }
         const uint8_t target = app_state.chain_target;
         if (rc != APP_OK || target == APP_CHAIN_NONE)
             break;

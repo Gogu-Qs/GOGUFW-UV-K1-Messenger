@@ -18,6 +18,7 @@
 #define VERSION_H
 
 extern const char Version[];
+extern const char HostVersion[];
 extern const char UART_Version[];
 
 #endif

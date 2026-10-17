@@ -116,6 +116,26 @@ static void draw_dots(uint8_t y)
     for (uint8_t x = 1; x < 127; x += 4) A->draw_line(A->fb, x, y, x + 1, y, true);
 }
 
+static void invert_menu_row(uint8_t y, uint8_t width)
+{
+    for (uint8_t py = y; py < (uint8_t)(y + 9u); py++) {
+        const uint8_t mask = (uint8_t)(1u << (py & 7u));
+        for (uint8_t x = 0u; x < width; x++) A->fb[py >> 3u][x] ^= mask;
+    }
+}
+
+static void draw_menu(void)
+{
+    A->display_clear(); A->status_clear(); A->draw_battery();
+    A->print_bold("SEARCH", 0u, 127u, 0u); draw_dots(9u); draw_dots(46u);
+    A->print_normal("FREQUENCY", 1u, 0u, 2u);
+    A->print_normal("TONE", 1u, 0u, 4u);
+    invert_menu_row(mode == SC_FREQ ? 15u : 31u, mode == SC_FREQ ? 67u : 32u);
+    A->print_tiny("SELECT", 1u, 49u, false, true);
+    A->print_tiny("EXIT", 112u, 49u, false, true);
+    A->blit_status(); A->blit_full();
+}
+
 static void small_y(const char *text, uint8_t x, uint8_t y)
 {
     if (A->api_level >= 3u &&
@@ -342,34 +362,44 @@ static uint8_t launch_mode(void)
 
 __attribute__((section(".text.entry"))) void app_main(const app_api_t *api)
 {
-    A = api; mode = launch_mode();
-    if (mode != SC_FREQ && mode != SC_TONE) {
+    A = api;
+    mode = launch_mode();
+    const bool launched_from_menu = mode != SC_FREQ && mode != SC_TONE;
+    if (launched_from_menu)
         mode = SC_FREQ;
+
+    for (;;) {
+        if (launched_from_menu) {
+            for (;;) {
+                draw_menu();
+                service_radio();
+                uint8_t k = get_key_press();
+                if (k == APP_KEY_EXIT) return;
+                if (k == APP_KEY_UP || k == APP_KEY_DOWN) mode = mode == SC_FREQ ? SC_TONE : SC_FREQ;
+                if (k == APP_KEY_MENU) break;
+            }
+        }
+
+        start();
         for (;;) {
-            A->display_clear(); A->print_bold("SEARCH", 0, 127, 0); draw_dots(9);
-            small_y(mode == SC_FREQ ? "> FREQUENCY" : "  FREQUENCY", 0, 16);
-            small_y(mode == SC_TONE ? "> TONE" : "  TONE", 0, 29);
-            draw_dots(46); A->print_tiny("SELECT", 1, 49, false, true); A->print_tiny("EXIT", 112, 49, false, true); A->blit_full();
             service_radio();
             uint8_t k = get_key_press();
-            if (k == APP_KEY_EXIT) return;
-            if (k == APP_KEY_UP || k == APP_KEY_DOWN) mode = mode == SC_FREQ ? SC_TONE : SC_FREQ;
-            if (k == APP_KEY_MENU) break;
+            if (k == APP_KEY_EXIT || k == APP_KEY_PTT) break;
+            if (k == APP_KEY_MENU && found) {
+                if (save_dialog()) break;
+            } else if (k == APP_KEY_STAR) {
+                start();
+            }
+            poll(); A->delay_ms(20);
         }
+        A->bk_write(REG_SCAN, 0x0244u); A->bk_write(REG_RX, 0u);
+
+        /* A shortcut is already owned by the main radio screen, so one EXIT
+         * returns there.  A normal Apps-menu launch keeps this overlay alive:
+         * the first EXIT returns to SEARCH, and EXIT there returns to Apps. */
+        if (!launched_from_menu)
+            return;
     }
-    start();
-    for (;;) {
-        service_radio();
-        uint8_t k = get_key_press();
-        if (k == APP_KEY_EXIT || k == APP_KEY_PTT) break;
-        if (k == APP_KEY_MENU && found) {
-            if (save_dialog()) return;
-        } else if (k == APP_KEY_STAR) {
-            start();
-        }
-        poll(); A->delay_ms(20);
-    }
-    A->bk_write(REG_SCAN, 0x0244u); A->bk_write(REG_RX, 0u);
 }
 
 uint64_t __aeabi_uidivmod(uint32_t n, uint32_t d) { return A->uidivmod(n, d); }

@@ -32,12 +32,12 @@
  * install apps you trust.
  *
  * External-flash "Apps" region (carved from the free space in the PY25Q16 map,
- * after the multiboot markers, before the RX/TX log):
+ * after the multiboot markers and before the Sonic 4K reserve):
  *
- *   0x102000  slot 0   ]  16 slots x 8 KiB = 128 KiB
+ *   0x102000  slot 0   ]  48 slots x 8 KiB = 384 KiB
  *   0x104000  slot 1   ]  each slot: 4 KiB header sector + 4 KiB code
  *     ...              ]
- *   0x120000  slot 15  ]
+ *   0x160000  slot 47  ]
  *
  * Header sector layout (slot-relative):
  *
@@ -64,7 +64,7 @@
 #define APP_SLOT_STRIDE   0x00002000u   /* 8 KiB per slot                        */
 #define APP_CODE_OFFSET   0x00001000u   /* code starts after the 4 KiB header sector */
 #define APP_SECTOR_SIZE   0x00001000u   /* external NOR erase granularity        */
-#define APP_SLOT_COUNT    16u
+#define APP_SLOT_COUNT    48u
 #define APP_SLOT_BASE(s)  (APP_REGION_BASE + (uint32_t)(s) * APP_SLOT_STRIDE)
 
 /* ---- overlay RAM budget: the PY25Q16 4 KiB sector cache reused as workspace.
@@ -84,6 +84,8 @@
 #define APP_FLAG_COMMITTED   0x0001u
 #define APP_FLAG_SCREEN_SAVER 0x0002u
 #define APP_FLAG_EXIT_TO_MAIN 0x0004u   /* leave the Apps menu when the app returns */
+#define APP_FLAG_SAVE_SCREEN 0x0008u
+#define APP_SCREEN_SAVE_LEN  1024u
 #define APP_FLAG_SHORTCUT_SHIFT 8u
 #define APP_FLAG_SHORTCUT_MASK  0x0F00u
 #define APP_NAME_LEN      16
@@ -108,6 +110,8 @@
 /* BEAM channel bridge only (beam_prepare/get/save/draw); the app drives the
  * FSK modem itself through bk_read/bk_write. */
 #define APP_CAP_BEAM2         0x00000010u
+/* Declarative cross-app configuration bridge used by current APRS Edit/TX. */
+#define APP_CAP_CFG_PROXY     0x00000020u
 
 /* Aligned RAM objects; app_overlay.c pins every serialized field offset. */
 typedef struct {
@@ -147,7 +151,7 @@ uint8_t APP_ValidateSlot(uint8_t slot, app_header_t *out_header);
  * Returns when the app exits; the internal flash is never touched. */
 uint8_t APP_LaunchOverlay(uint8_t slot);
 
-/* Launch the first installed app advertising this shortcut bit. */
+/* Launch the installed app advertising this shortcut ID. */
 uint8_t APP_LaunchOverlayShortcut(uint8_t shortcut);
 
 /* Cached availability of apps exposed as resident quick actions. */

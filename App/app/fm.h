@@ -51,6 +51,7 @@ extern bool              gFM_AutoScan;
 extern uint8_t           gFM_ChannelPosition;
 extern bool              gFM_FoundFrequency;
 extern uint16_t          gFM_RestoreCountdown_10ms;
+extern uint8_t           gFM_ManualTuneGuard_10ms;
 
 void    FM_TurnOff(void);
 void    FM_Suspend(void);

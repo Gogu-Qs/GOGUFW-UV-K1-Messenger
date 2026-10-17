@@ -34,7 +34,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fdata-sections -ffunction-sections")
 
 set(CMAKE_C_FLAGS_DEBUG "-O0 -g3")
 # Measured size win with ARM GCC; retain RF regression testing when changed.
-set(CMAKE_C_FLAGS_RELEASE "-Os -g0 -fno-inline-small-functions")
+set(CMAKE_C_FLAGS_RELEASE "-Oz -g0 -fno-inline-small-functions -flto-partition=one")
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g3")
 set(CMAKE_CXX_FLAGS_RELEASE "-Os -g0")
 set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -fno-rtti -fno-exceptions -fno-threadsafe-statics")

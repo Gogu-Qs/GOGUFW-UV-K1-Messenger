@@ -43,6 +43,7 @@ bool              gFM_AutoScan;
 uint8_t           gFM_ChannelPosition;
 bool              gFM_FoundFrequency;
 uint16_t          gFM_RestoreCountdown_10ms;
+uint8_t           gFM_ManualTuneGuard_10ms;
 static uint8_t     s_fmRssiLevel = 0xFFu;
 static bool        s_fmLiveRssi = true;
 static uint16_t    s_fmRssiFrequency = 0xFFFFu;
@@ -916,6 +917,11 @@ static void Key_UP_DOWN(uint8_t state, int8_t Step)
     gRequestSaveFM = true;
 
 Bail:
+    /* BK1080 retuning can hold the BK4829 squelch-open latch longer on some
+     * frequency combinations (notably with a 439.400 MHz main VFO).  The
+     * 10-ms task releases this guard after the latch closes, or after a
+     * bounded 1.5 s so a genuine carrier cannot be hidden indefinitely. */
+    gFM_ManualTuneGuard_10ms = 150u;
     BK1080_SetFrequency(gEeprom.FM_FrequencyPlaying, gEeprom.FM_Band/*, gEeprom.FM_Space*/);
 
     gRequestDisplayScreen = DISPLAY_FM;

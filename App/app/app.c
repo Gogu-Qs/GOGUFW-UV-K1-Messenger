@@ -388,7 +388,8 @@ static void CheckForIncoming(void)
 
 #ifdef ENABLE_FMRADIO_EMBEDDED
     // Upstream 5.9: FM scan in progress must not be interrupted by main-channel RX.
-    if (gFmRadioMode && gFM_ScanState != FM_SCAN_OFF)
+    if (gFmRadioMode &&
+        (gFM_ScanState != FM_SCAN_OFF || gFM_ManualTuneGuard_10ms > 0))
         return;
 #endif
 
@@ -911,6 +912,7 @@ uint32_t APP_SetFrequencyByStep(VFO_Info_t *pInfo, int8_t direction)
 #ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
 static VFO_Info_t gFullWatchPriorityVfo[2];
 static bool gFullWatchPriorityCacheValid[2];
+static uint16_t gFullWatchPrioritySourceChannel[2];
 static VFO_Info_t *gFullWatchForegroundVfo;
 static VFO_Info_t *gFullWatchManualTxVfo;
 static VFO_Info_t *gFullWatchBackgroundVfo[2];
@@ -938,7 +940,7 @@ static VFO_Info_t *FullWatchLoadPriority(uint8_t priority, uint16_t channel, con
      * a menu change would disappear as soon as the channel returned from the
      * background list.  A different priority channel naturally reloads it. */
     if (gFullWatchPriorityCacheValid[priority] &&
-        vfo->CHANNEL_SAVE == channel)
+        gFullWatchPrioritySourceChannel[priority] == channel)
         return vfo;
     if (!SETTINGS_FetchChannelScanDisplayInfo(channel, &info))
         return NULL;
@@ -950,6 +952,7 @@ static VFO_Info_t *FullWatchLoadPriority(uint8_t priority, uint16_t channel, con
         vfo->pRX->Frequency = 43300000;
     SETTINGS_FetchChannelName(vfo->Name, channel);
     RADIO_ConfigureSquelchAndOutputPower(vfo);
+    gFullWatchPrioritySourceChannel[priority] = channel;
     gFullWatchPriorityCacheValid[priority] = true;
     return vfo;
 }
@@ -1162,6 +1165,37 @@ bool APP_FullWatchManualTxSelected(void)
     VFO_Info_t *display = APP_GetFullWatchDisplayVfo(gEeprom.TX_VFO);
     return display != NULL && display != &gEeprom.VfoInfo[gEeprom.TX_VFO] &&
            gTxVfo == display;
+}
+
+bool APP_FullWatchSwitchSelectedVfoMode(void)
+{
+    if (gEeprom.DUAL_WATCH != DUAL_WATCH_FULL)
+        return false;
+
+    FullWatchInitialize();
+    for (uint8_t priority = 0u; priority < 2u; ++priority)
+    {
+        VFO_Info_t *const selected = &gFullWatchPriorityVfo[priority];
+        if (gTxVfo != selected || !gFullWatchPriorityCacheValid[priority])
+            continue;
+
+        /* C/D are independent live channel objects.  Toggle the selected
+         * object itself instead of modifying its physical A/B host slot.  The
+         * source memory is retained separately, so A/B/C/D navigation keeps
+         * this temporary mode until the priority channel is actually reloaded. */
+        if (IS_MR_CHANNEL(selected->CHANNEL_SAVE))
+            selected->CHANNEL_SAVE = FREQ_CHANNEL_FIRST +
+                                     FREQUENCY_GetBand(selected->pRX->Frequency);
+        else
+            selected->CHANNEL_SAVE = gFullWatchPrioritySourceChannel[priority];
+
+        gCurrentVfo = selected;
+        gRxVfoIsActive = false;
+        gUpdateStatus = true;
+        gUpdateDisplay = true;
+        return true;
+    }
+    return false;
 }
 #endif
 
@@ -2225,6 +2259,15 @@ void APP_TimeSlice10ms(void)
     }
 
 #ifdef ENABLE_FMRADIO_EMBEDDED
+    if (gFM_ManualTuneGuard_10ms > 0) {
+        --gFM_ManualTuneGuard_10ms;
+        /* Keep at least 200 ms for the delayed retune edge to arrive.  After
+         * that, re-arm normal RX as soon as squelch is closed; if it stays
+         * open, the countdown itself is the 1.5-second safety ceiling. */
+        if (!g_SquelchLost && gFM_ManualTuneGuard_10ms < 130u)
+            gFM_ManualTuneGuard_10ms = 0;
+    }
+
     if (gFmRadioMode && gFM_RestoreCountdown_10ms > 0) {
         if (--gFM_RestoreCountdown_10ms == 0) { 
             FM_Start(); // switch back to FM radio mode

@@ -18,13 +18,15 @@ Status:
 
 ## Using the app
 
-1. Launch **APRS RX**. The app temporarily tunes to **FM 144.800 MHz**, no
-   matter which A/B/C/D channel is selected; it restores the radio context on exit.
+1. Set the APRS frequency in **APRS Edit**, then launch **APRS RX**. It reads the
+   same persistent frequency as APRS TX, independently of A/B/C/D, and restores
+   the radio context on exit. A missing or invalid profile falls back to
+   **FM 144.800 MHz**.
 2. For the 433.650 MHz Flipper bench files, change `APRS_FREQUENCY` and rebuild.
 3. The speaker is off by default (v0.6): the decoder does not need it, only the
    BK4829 AF output (tested on the radio: PA4 joins the audio before the
-   amplifier). Key 1 turns it on to listen to the channel, as FoxHunt's audio
-   key; since v0.8 the app keeps it as you left it.
+   amplifier). Key 1 enables listening to the channel, with the loudspeaker
+   gated by squelch between signals; since v0.8 the app keeps it as you left it.
 
 Since v0.4 the app decodes **continuously**, as a TNC does: no RSSI trigger,
 the FCS and a UI-frame check (control 0x03, PID 0xF0) sort frames from noise.
@@ -38,11 +40,11 @@ back-to-back flags) or a frame whose first bytes look like a callsign (busy
 ~4 % of the time on noise, in the model), and after 3 s of busy at the latest.
 The screen is redrawn after a new frame, a key, or every 5 s.
 
-The RAM history holds five frames, newest first; a new frame replaces the
+The GOGUFW RAM history holds three frames, newest first; a new frame replaces the
 oldest when the history is full. The screen shows one frame at a time: its
 callsign in the large bold font, fixed on line 0, and its body scrolled under it
 (y = 8 to 30). At the right of the callsign, once several frames are kept, a capsule
-tells which frame is shown: `2/5`, the second newest of five kept (`1` is the
+tells which frame is shown: `2/3`, the second newest of three kept (`1` is the
 newest). Left of it (or alone at the edge with a single frame), a second capsule
 shows the count of frames received. The symbol and RSSI are those of the frame shown. A new frame is
 shown at once, from its first row. UP/DOWN held scrolls the body and stops at
@@ -62,11 +64,11 @@ Keys (UV-K5 and UV-K1):
 
 | Key | Action |
 |---|---|
-| UP/DOWN (held) | Scroll the body of the frame shown 1 px per 50 ms slot (UV-K1: LEFT/RIGHT, as `nav_dir`), down to its last row |
+| UP/DOWN (held) | Scroll the body of the frame shown 1 px per 50 ms slot (UV-K1: physical LEFT/RIGHT), down to its last row |
 | UP/DOWN (pressed again at the first / last row) | Show the newer / older frame, from its first row |
 | * | Normal / compact view, saved on exit, returns to the first row of the frame shown. The callsign stays large and bold on line 0. Body rows use the normal font (18 characters) or 3x5 font (32 characters), continuous 1 px scrolling |
-| 1 | Speaker on/off, saved on exit (v0.8; off by default); FoxHunt's speaker icon in the status bar while on |
-| 2 | Clear all five frames and the counters |
+| 1 | Allow speaker audio on/off, saved on exit (off by default); squelch mutes idle-channel noise and the icon remains visible while enabled |
+| 2 | Clear all three frames and the counters |
 | EXIT | Quit |
 
 The receive path is the firmware's own (STD: 300 Hz high-pass, de-emphasis,
@@ -74,7 +76,7 @@ The receive path is the firmware's own (STD: 300 Hz high-pass, de-emphasis,
 EPIRB 406); every on-air decode was made in STD and the model shows no gain
 for RAW, so v0.4 dropped it to fit the 4 KiB overlay.
 
-The five frame buffers and their rotating pointers live on `app_main`'s stack;
+The three frame buffers and their rotating pointers live on `app_main`'s stack;
 the demodulator state lives in `listen`. Frames are copied only once on receipt;
 rotation moves pointers, not payloads. Buffers and pointers take 1690 bytes on
 the MCU, 1360 bytes more than the former 330-byte buffer (676 more than three

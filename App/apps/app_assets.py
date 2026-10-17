@@ -19,7 +19,7 @@ import os, re, struct, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-def _cdefine(header, name):
+def cdefine(header, name):
     pat = re.compile(r"^\s*#define\s+" + re.escape(name) + r"\s+(0[xX][0-9a-fA-F]+|\d+)[uUlL]*\b")
     with open(os.path.join(HERE, header)) as f:
         for line in f:
@@ -28,11 +28,12 @@ def _cdefine(header, name):
                 return int(m.group(1), 0)
     sys.exit(f"{header}: #define {name} not found")
 
-ASSET_MAX = _cdefine("app_overlay.h", "APP_ASSET_MAX")
+ASSET_MAX = cdefine("app_overlay.h", "APP_ASSET_MAX")
 
 class Assets:
     def __init__(self, guard):
         self.guard = guard
+        self.prefixes = []   # (name, bytes), before every text/data item
         self.texts = []      # (name, bytes)
         self.data = []       # (name, bytes)
         self.extra = []      # (name, value) plain constants
@@ -46,6 +47,11 @@ class Assets:
     def text(self, name, s):
         self._name(name)
         self.texts.append((name, s.encode("ascii") + b"\x00"))
+
+    def prefix(self, name, payload):
+        """Binary metadata that must start the asset blob."""
+        self._name(name)
+        self.prefixes.append((name, bytes(payload)))
 
     def table(self, name, strings, stride=None):
         """Fixed-stride string table: entry i is at name + i * name_STRIDE."""
@@ -76,6 +82,9 @@ class Assets:
         lines = []
         text_max = 1
         strides = dict(self.extra)
+        for name, payload in self.prefixes:
+            lines.append((name, len(blob), len(payload)))
+            blob += payload
         for name, payload in self.texts:
             lines.append((name, len(blob), len(payload)))
             text_max = max(text_max, strides.get(name + "_STRIDE", len(payload)))

@@ -1,33 +1,43 @@
 # APRS TX: on-radio APRS position beacon (work in progress)
 
-Sends one APRS position frame (AX.25 UI frame, Bell 202 AFSK 1200 bauds) on
-**FM 144.800 MHz at HIGH power** at each press of PTT or MENU. The app uses a
-private radio context independently of the selected A/B/C/D frequency and power,
-then restores the user's radio context on exit.
-Companion of [APRS RX](../aprsrx/README.md), which is also the test receiver.
+Sends one APRS position frame (AX.25 UI frame, Bell 202 AFSK 1200 bauds) on the
+frequency and power saved by APRS Edit at each press of PTT or MENU. It does
+not inherit either setting from the selected A/B/C/D VFO. Companion of [APRS RX](../aprsrx/README.md),
+which is also the test receiver.
 
 | Step | State |
 |---|---|
 | Frame and bit stream model (`test/tx_model.py`) | **Done**: identical to the RX app's AX.25 reference, decoded by the RX model |
-| Radio app (`aprstx_app.c`) | **v0.1 works on the radio** (2026-09-30); v0.2 edits the position; v0.3 adds the SSID and path; v0.4 adds the corrected 20x20 bitmap and the 48-symbol selector; v0.5 keeps the source fixed while the frame body scrolls (not built here); v0.7 fixes the private 144.800 MHz TX context at HIGH power; v0.8 documents the shared `CllSgn` source and reports a generic invalid-callsign error |
+| Radio app (`aprstx_app.c`) | **v0.1 works on the radio** (2026-09-30); v0.2-v0.7 add and refine the original editor and display; v0.8 introduces APRS Edit; v0.9 moves the complete beacon-profile editor into APRS Edit; v1.0-v1.2 extend comments to five editor lines and 89 characters; v1.3 adds the editable source callsign; v1.4 changes the default comment; v1.5 adds the beacon timer (key 3), **works on the radio** (2026-10-13) |
 | On-air test: APRS RX on a second radio, FT3D | **Done** (2026-09-30, v0.1: frames received by a UV-K1 running APRS RX and by the FT3D, first try, default level 66 and twist 0) |
 
 ## Station settings (`gen_assets.py`, then rebuild)
 
 | Setting | Default |
 |---|---|
-| Source | the radio's `CllSgn` setting (1-6 letters/digits) + `SSID` = 7 (0-15, 0 = none). The Power On Message is used only when `CllSgn` is empty or invalid |
+| Source | optional profile callsign (1-6 uppercase letters/digits) + `SSID` = 7 (0-15, 0 = none), editable in APRS Edit; an empty profile callsign uses API `boot_callsign` |
 | `DEST` | `APZK5` (APZ = experimental software) |
-| `PATH` | `1` = `WIDE1-1`, an index in `PATHS`: `DIRECT` (no digipeater), `WIDE1-1`, `WIDE1-1,WIDE2-1`; the **default**, until one is chosen on the radio |
-| `LAT`, `LON` | `4850.90N`, `00216.25E`: the **default** position, until one is edited on the radio (key 3) |
-| `SYMBOL` | `/[` (person): the default, until one of the 48 symbols is chosen on the radio |
-| `COMMENT` | `UV-K5/K1 F4HWN Firmware` (43 characters at most) |
+| `PATH` | `1` = `WIDE1-1`, an index in `PATHS`: `DIRECT` (no digipeater), `WIDE1-1`, `WIDE1-1,WIDE2-1`; editable in APRS Edit |
+| `LAT`, `LON` | `4850.90N`, `00216.25E`: default position, editable in APRS Edit |
+| `SYMBOL` | `/[` (person): one of 48 symbols, editable in APRS Edit |
+| `COMMENT` | `Portable, UV-K5/K1 F4HWN firmware (github.com/armel)` by default; up to 89 characters, editable with the companion APRS Edit app |
+| `FREQ` | `144.800 MHz` by default; 18.000–999.999 MHz, editable in APRS Edit |
+| `POWER` | `HIGH` by default; `LOW1`…`LOW5`, `MID`, `HIGH`, editable in APRS Edit |
 
-Frame sent: `F4HWN-7>APZK5,WIDE1-1:!4850.90N/00216.25E[UV-K5/K1 F4HWN Firmware` (68 bytes,
-~0.79 s on the air: 50 ms of tone settle, 40 flags = 267 ms, the frame, 3 flags).
-Enter only the base callsign in `CllSgn`; APRS TX adds the selected SSID. If
-neither `CllSgn` nor the Power On Message supplies a valid plain callsign, the
-app shows `No valid callsign` and does not transmit.
+Frame sent: `F4HWN-7>APZK5,WIDE1-1:!4850.90N/00216.25E[Portable, UV-K5/K1 F4HWN firmware (github.com/armel)` (97 bytes,
+~0.98 s on the air: 50 ms of tone settle, 40 flags = 267 ms, the frame, 3 flags).
+If neither the profile nor boot message supplies a plain 1-6 character uppercase
+alphanumeric callsign, the app shows `No callsign` and does not transmit.
+
+APRS Edit changes the callsign, SSID, position, path, symbol, comment,
+frequency and power without duplicating the transmitter. APRS TX 1.6-gogu
+stores them in one versioned 122-byte
+profile asset. Reinstalling APRS TX restores the bundled defaults.
+
+APRS TX 1.6-gogu requires GOGUFW 3.1.1 or later. Its configuration proxy lets
+APRS Edit change the profile, and API level 6 applies the stored frequency and
+power in a private radio context while preserving the user's VFO. Earlier
+firmware refuses to launch it (`NOT SUPPORTED`).
 
 In the normal view, the TX frequency is aligned left below the separator and
 the selected APRS symbol is shown as a 20x20 bitmap at x=108, y=33-52. The 48-symbol
@@ -38,61 +48,27 @@ Yaesu bitmap set is stored in the app assets; the editor keeps the full width.
 | Key | Action |
 |---|---|
 | PTT or MENU | Send one frame |
-| UP / DOWN (held) | Scroll the frame body above the separator 1 px per 40 ms loop (UV-K1: LEFT/RIGHT, as `nav_dir`), while the source callsign stays fixed in bold on line 0 as in APRS RX. In the status bar (x = 72-76), ▲ while rows are hidden above and ▼ while rows are hidden below; while F is armed its icon (x = 70-78, centred on them) takes their place, and they are not drawn while transmitting (the `TRANSMIT` capsule ends at x = 72). The body uses the small font, 18 characters a row, 3 visible rows at a time: `>DEST,WIDE…` (a row breaks after a comma), latitude, longitude, then symbol and comment |
-
+| UP / DOWN (held) | Scroll the frame body above the separator 1 px per 40 ms loop, according to `SET_NAV` (UV-K1: LEFT/RIGHT), while the source callsign stays fixed in bold on line 0 as in APRS RX. In the status bar (x = 72-76), ▲ while rows are hidden above and ▼ while rows are hidden below; while F is armed its icon (x = 70-78, centred on them) takes their place, and they are not drawn while transmitting (the `TRANSMIT` capsule ends at x = 72). The body uses the small font, 18 characters a row, 3 visible rows at a time: `>DEST,WIDE…` (a row breaks after a comma), latitude, longitude, then symbol and comment |
 | 1 / F then 1 | Tone level (deviation) up / down: REG_70 gain 10-127, step 4, default 66 (the firmware's tone gain) |
 | 2 / F then 2 | Twist `tw` up / down, -4..+8: 2200 Hz gain = level × (8 + tw) / 8 (-6..+6 dB) |
-| F | Arm the next key's down direction (1, 2), as FoxHunt's F; icon in the status bar while armed |
+| 3 / F then 3 | Beacon interval: off, 1, 5, 15, 30, 60 min (saved) / beacon off. While an interval is set, the time left before the next frame counts down in a status-bar capsule (`4:32`, x = 40, where `TRANSMIT` shows while on the air) and the frame is sent at zero. The countdown restarts from the whole interval at launch, at each change of interval and at each send, PTT / MENU included: nothing goes on the air right at launch |
+| F | Arm the next key's down direction (1, 2) or the beacon off (3), as FoxHunt's F; icon in the status bar while armed |
 | * | Scroll view / compact view (saved): compact shows the source in bold, then the path, the position `48 50.90N 002 16.25E`, the symbol and the comment in the tiny 3x5 font, 32 characters a row, without scroll |
-| 3 | Edit the position, SSID, path and symbol |
-| EXIT | Quit (level, twist, position, SSID, path, symbol and view are saved) |
-
-### Editor (v0.3)
-
-```
-LAT  48 50.90 N
-LON 002 16.25 E
-SSID 7
-PATH WIDE1-1
-SYMB /[
-
-0-9, * change, F+* back
-UP/DN move  MENU ok  EXIT
-```
-
-The field under the cursor is drawn in bold: a digit or the N/S, E/W letter of
-the position, or the whole SSID, path or symbol value. Type the 13 digits in a row, as a
-frequency: `485090` then `0021625` (degrees, minutes, hundredths of a minute: the
-APRS format, read as is from a GPS or aprs.fi in degrees-minutes). The cursor
-skips the separators and N/S, and goes on from the latitude to the longitude;
-UP/DOWN also stop on N/S and E/W, then take it on to SSID, PATH and SYMB.
-When SYMB is selected, both shortened help rows remain visible and the edited
-20x20 symbol is previewed at x=108, the same position as on the normal screen.
-
-| Key | Action |
-|---|---|
-| 0-9 | Digit at the cursor, then the next one (on a position digit) |
-| * | N/S (latitude line), E/W (longitude line), next SSID 0-15 (SSID), next path (PATH), or next symbol (SYMB) |
-| F then * | Previous SSID, path or symbol (the `F` icon in the status bar while F is armed, as in FoxHunt; F again disarms it) |
-| UP / DOWN | Move the cursor: 6 digits, N/S, 7 digits, E/W, SSID, PATH, SYMB |
-| MENU | Check (degrees ≤ 90 / 180, minutes < 60) and keep: the frame is rebuilt; `Invalid position` otherwise |
-| EXIT | Cancel |
+| EXIT | Quit (level, twist, view and beacon interval are saved); the beacon only runs while the app is open |
 
 Paths: `DIRECT` (heard only by the stations and iGates in range), `WIDE1-1` (one
 repeat by a nearby digipeater), `WIDE1-1,2-1` (`WIDE1-1,WIDE2-1`: the usual
 mobile / portable path, two repeats).
 
-Everything is saved on exit (`cfg_save`, 13 bytes: magic 0xA8, level, twist, 13
-digits and the hemispheres in nibbles, `0x80 | path << 4 | SSID`, then the view:
-14 compact, anything else scroll, then the symbol index). An older config with
-byte 12 erased uses the default person symbol. A v0.2 config (10 bytes: byte 10 erased)
-keeps its position and takes the default SSID and path; an 11-byte config
-(byte 11 erased) opens in the scroll view; a v0.1 config (magic 0xA7) is
-ignored: defaults.
+APRS TX keeps only its operational settings in ordinary app config: level,
+twist, display view and beacon interval (5 bytes, magic `0xAA`). It migrates the
+first three from the former `0xA9` and `0xA8` layouts, with the beacon off. Beacon content belongs to the profile edited by
+APRS Edit.
 
 ## How it transmits
 
-As the Beacon app keys MCW: `tx_set_params` (carrier + PA on the TX VFO),
+After the app opens its private stored-frequency/stored-power VFO, it keys MCW:
+`tx_set_params` (carrier + PA on that private VFO),
 REG_51 = 0 (no CTCSS/DCS under the AFSK), `tx_tone(1200)` (tone path on, mic ADC
 off, 50 ms settle). Then each bit is timed from SysTick, 40000 cycles at 48 MHz
 (exact), and at each NRZI transition the tone frequency REG_71 (1200 Hz = 12389,
@@ -117,13 +93,9 @@ SPI writes, a few tens of µs out of 833. `tx_mute` + `tx_end` restore RX.
    the FT3D (APRS on band B, same frequency).
 3. PTT, check both; adjust level and twist; then 144.800.
 
-`test/tx_model.py` (needs `../aprsrx/test`): frame from the real assets vs
-`ax25.build`, bit stream vs `ax25.hdlc_bits`, bad boot callsigns refused, an
-edited position (south/west) vs `ax25.build`, every path with SSID 0, 15 and 9
-and a selected symbol vs `ax25.build`, the config round trip (and a v0.2 config
-falling back to the default SSID, path and symbol), the editor rows and bold column, the editor keys (13
-digits typed in a row, cursor stops, `*` and F then `*` on each field; the
-UP/DOWN keys through `nav_dir()`, with SET_NAV on and off), the position limits,
-then
+`test/tx_model.py` (needs `../aprsrx/test`): the versioned profile, frame from
+the real assets vs `ax25.build`, bit stream vs `ax25.hdlc_bits`, invalid
+callsigns refused, profile callsign precedence, an edited position (south/west), every path with SSID 0, 15
+and 9, a selected symbol, the position limits, then
 AFSK (continuous phase or reset, tw 0/+4, TX path twist 0/+5 dB) decoded by the
 RX model through its RAW and STD audio paths, with and without noise.

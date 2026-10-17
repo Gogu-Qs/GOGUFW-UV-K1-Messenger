@@ -64,9 +64,15 @@ static void app_invert_name(uint8_t y)
                        y > 0u ? (uint8_t)(y - 1u) : y, 9u);
 }
 
-/* Debounced blocking key read, then wait for release (mirrors mb_get_key). */
+/* UP / DOWN repeat while held, in 10 ms units. */
+#define APP_KEY_REPEAT_FIRST 40u
+#define APP_KEY_REPEAT_NEXT   5u
+
+/* Debounced blocking key read. Held UP/DOWN is returned repeatedly; the
+ * release which ends a repeat sequence is consumed. */
 static KEY_Code_t app_get_key(void)
 {
+    static bool held;
 #if defined(ENABLE_UART) || defined(ENABLE_USB)
     const uint8_t slot_revision = APP_SlotRevision();
 #endif
@@ -110,15 +116,27 @@ static KEY_Code_t app_get_key(void)
             if (KEYBOARD_Poll() == key)
             {
                 BACKLIGHT_TurnOn();
+                uint8_t wait = 0u;
+                if (key == KEY_UP || key == KEY_DOWN)
+                    wait = held ? APP_KEY_REPEAT_NEXT : APP_KEY_REPEAT_FIRST;
                 while (KEYBOARD_Poll() != KEY_INVALID)
                 {
                     SYSTEM_DelayMs(10);
                     APP_ModalBacklightTick(false);
                     APP_ModalRadioService();
+                    if (wait && --wait == 0u)
+                    {
+                        held = true;
+                        return key;
+                    }
                 }
+                if (held)
+                    continue;
                 return key;
             }
         }
+        else
+            held = false;
         SYSTEM_DelayMs(10);
     }
 }
@@ -149,6 +167,24 @@ static void app_copy(char *dst, uint8_t cap, const char *src, uint8_t src_cap)
     dst[n] = '\0';
 }
 
+/* Code payload rounded up to 0.1 KiB, never understating occupied space. */
+static void app_format_size(char out[6], uint32_t bytes)
+{
+    if (bytes > APP_OVERLAY_MAX)
+    {
+        memcpy(out, "--KB", 5u);
+        return;
+    }
+
+    const uint16_t tenths = (uint16_t)((bytes * 10u + 1023u) / 1024u);
+    out[0] = (char)('0' + tenths / 10u);
+    out[1] = '.';
+    out[2] = (char)('0' + tenths % 10u);
+    out[3] = 'K';
+    out[4] = 'B';
+    out[5] = '\0';
+}
+
 /* A launch failed: name the app and keep the compact standard chrome. */
 static void app_show_error(const app_header_t *header, uint8_t rc)
 {
@@ -174,6 +210,8 @@ static void app_show_error(const app_header_t *header, uint8_t rc)
 
 _Static_assert(APP_MENU_SLOT_COUNT <= APP_SLOT_COUNT,
                "APP_MENU_SLOT_COUNT exceeds the physical app slot count");
+_Static_assert(APP_MENU_SLOT_COUNT <= UINT8_MAX,
+               "app menu slot indexes exceed uint8_t");
 
 static uint8_t app_scan_slots(uint8_t slots[APP_MENU_SLOT_COUNT])
 {
@@ -211,6 +249,7 @@ void APP_MenuOpen(void)
     /* Remember the physical slot and scrolling window across menu openings. */
     static uint8_t sel = 0;
     static uint8_t top = 0;             /* first visible row of the scrolling window */
+    static bool show_version = false;
     if (sel >= count || top >= count)
         sel = top = 0u;
     app_wait_release();
@@ -251,6 +290,7 @@ void APP_MenuOpen(void)
         {
             char number[3];
             char name[14];
+            char meta[6];
             const uint8_t slot = slots[index];
             const uint8_t visible_number = (uint8_t)(slot + 1u);
             const uint8_t y = UI_GOGU_CONTENT_ROW_Y((uint8_t)(index - top));
@@ -263,7 +303,17 @@ void APP_MenuOpen(void)
             app_header_t hdr;
             APP_SlotInfo(slot, &hdr);
             app_copy(name, sizeof(name), hdr.name, APP_NAME_LEN);
+            if (show_version)
+            {
+                meta[0] = 'v';
+                app_copy(meta + 1, sizeof(meta) - 1u, hdr.version, APP_VERSION_LEN);
+            }
+            else
+                app_format_size(meta, hdr.code_size);
             UI_GOGU_PrintSmallAtY(name, APP_NAME_TEXT_X, y, false);
+            GUI_DisplaySmallest(meta,
+                                (uint8_t)(LCD_WIDTH - 2u - strlen(meta) * 4u),
+                                (uint8_t)(y + 1u), false, true);
 
             if (index == sel)
                 app_invert_name(y);
@@ -288,6 +338,9 @@ void APP_MenuOpen(void)
                 break;
             case KEY_DOWN:
                 sel = (uint8_t)((sel + 1u) % count);
+                break;
+            case KEY_STAR:
+                show_version = !show_version;
                 break;
             case KEY_MENU:
             {

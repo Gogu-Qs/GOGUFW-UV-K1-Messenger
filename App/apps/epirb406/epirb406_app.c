@@ -16,8 +16,8 @@
 
 /*
  * EPIRB 406 (RX only) - decodes first-generation Cospas-Sarsat 406 MHz beacon
- * messages on the radio. Tune the VFO (FM, wide; 406.031 MHz covers the
- * 406.025-406.040 channels, or a test generator's frequency), then launch.
+ * messages on the radio. GOGUFW opens a private FM/wide receive context at
+ * 406.000 MHz, independently of the selected A/B/C/D channel.
  *
  * The receiver is switched to RAW (RX HPF300 / LPF3K / de-emphasis and AFC off)
  * and the RX audio is left on: it reaches PA4 (the voice DAC pin, unused while
@@ -26,9 +26,9 @@
  * SysTick, from the moment RSSI shows a burst. Samples go straight into dec406
  * (see README.md); the last decoded message stays on screen.
  *
- * Keys (UV-K5 and UV-K1): UP/DOWN tune +/-5 kHz from the VFO (up to +/-50 kHz,
- *   while the app runs; direction as set by nav_dir) · 5 back to the VFO frequency
- *   MENU clear · EXIT quit. The speaker plays the bursts: lower the volume.
+ * Keys (UV-K5 and UV-K1): UP/DOWN tune +/-5 kHz from 406.000 MHz (up to +/-50 kHz,
+ *   while the app runs; direction as set by nav_dir) · 5 back to 406.000 MHz
+ *   1 speaker on/off · MENU clear · EXIT quit. The speaker is off by default.
  * The loader re-runs RADIO_SetupRegisters on exit; the app restores the ADC,
  * PA4, the DAC and its clock itself.
  * Screen texts and protocol names are read-only assets (gen_assets.py, API
@@ -75,6 +75,7 @@
 #define REG_39      0x39   /* RX frequency, high 16 bits              */
 #define STEP_10HZ   500    /* 5 kHz                                   */
 #define OFF_MAX     10     /* +/- 10 steps = +/- 50 kHz               */
+#define EPIRB_FREQUENCY 40600000u /* 406.000 MHz in 10 Hz units        */
 
 #define TRIG_DB     10
 #define REARM_DB    5
@@ -87,11 +88,12 @@
  * ldr <= 124). The loader zeroes the overlay (.bss) at every launch. */
 static struct {
     const app_api_t *A;
-    uint32_t vfoFreq;                  /* VFO RX frequency at launch, 10 Hz units  */
+    uint32_t vfoFreq;                  /* private base RX frequency, 10 Hz units   */
     int32_t  floorQ;                   /* noise floor, dBm x64                     */
     uint32_t tPrev, tCyc;              /* SysTick cycle counter                    */
     uint8_t  have, seq, prevKey, lastErr;
-    int8_t   offSteps;                 /* tuning offset from the VFO, 5 kHz steps  */
+    uint8_t  speaker;
+    int8_t   offSteps;                 /* tuning offset from the base, 5 kHz steps */
     bool     running;
     int16_t  rssi, burstRssi;          /* current RSSI, RSSI of the last burst     */
     uint16_t nSync, nFail;
@@ -128,7 +130,7 @@ static char *putPos(char *o,int32_t s,char pos,char neg){
 static void tiny(uint8_t x,uint8_t y,char *end){ *end='\0'; g.A->print_tiny(str,x,y,false,true); }
 static void line(uint8_t l,char *end){ *end='\0'; g.A->print_normal(str,0,0,l); }
 
-/* ---- tuning: offset the RX frequency from the VFO (restored by the loader on exit) ---- */
+/* ---- tuning: offset the private RX frequency (user radio restored on exit) ---- */
 static void tune(void){
     uint32_t f=(uint32_t)((int32_t)g.vfoFreq+(int32_t)g.offSteps*STEP_10HZ);
     g.A->bk_write(REG_38,(uint16_t)(f&0xFFFFu));
@@ -260,6 +262,7 @@ static void handleKeys(void){
     g.prevKey=key;
     switch(key){
         case APP_KEY_EXIT: g.running=false; break;
+        case APP_KEY_1:    g.speaker^=1u; g.A->audio_path(g.speaker); break;
         case APP_KEY_5:    g.offSteps=0; tune(); break;
         case APP_KEY_MENU: g.have=0; g.nSync=g.nFail=0; g.lastErr=0; break;
         case APP_KEY_UP:
@@ -283,6 +286,8 @@ void app_main(const app_api_t *api){
     g.A=api;
     g.prevKey=APP_KEY_INVALID;   /* the rest of g starts at 0 (overlay zeroed by the loader) */
 
+    api->radio_tune(EPIRB_FREQUENCY);
+
     g.savedSqr3=ADC_SQR3; g.savedSmpr3=ADC_SMPR3; g.savedModer=GPIOA_MODER; g.savedDac=DAC_CR;
     g.savedRcc=RCC_APBENR1; g.savedDhr=DAC_DHR12R1;
     biasOn();
@@ -290,7 +295,9 @@ void app_main(const app_api_t *api){
     g.vfoFreq=g.A->rx_freq();
     g.A->bk_write(REG_2B,(uint16_t)((g.A->bk_read(REG_2B)|0x0700u)&~0x0007u));
     g.A->bk_write(REG_73,(uint16_t)(g.A->bk_read(REG_73)|0x0010u));
-    g.A->audio_path(true);
+    g.A->cfg_load(&g.speaker,1u);
+    g.speaker=(uint8_t)(g.speaker==1u);
+    g.A->audio_path(g.speaker);
     g.A->set_af(APP_AF_FM);
     g.A->delay_ms(50);
 
@@ -323,4 +330,5 @@ void app_main(const app_api_t *api){
     biasOff();                   /* the ADC is already restored after each capture */
     g.A->set_af(APP_AF_MUTE);
     g.A->audio_path(false);
+    g.A->cfg_save(&g.speaker,1u);
 }

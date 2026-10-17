@@ -1,19 +1,33 @@
 # Changelog
 
-## GOGUFW 3.1.1 — 2026-10-13
+## GOGUFW 3.1.1 — 2026-10-17
 
+- Removed Rescue Ops and the 1750 Hz call tone from the Fusion build, retained Screenshot support, and switched LTO to a single optimization partition for lower Flash usage without changing runtime features.
+- Fixed Full Watch VFO/MR switching while priority channel C or D is selected. V/M now changes the selected C/D object's temporary mode in place without jumping to or modifying its physical A/B host; A/B/C/D navigation preserves that mode until the priority channel is reloaded.
+- Reclaimed 576 bytes of overlay-app runtime stack without removing firmware features by allocating Spectrum's channel bitmap, RSSI history and peak-hold arrays only while Spectrum owns the foreground. This fixes APRS RX launch failure in both the bundled and original Armel packages while leaving Spectrum's own effective memory budget unchanged.
+- Fixed overlay launch preparation and cleanup retaining an oversized live stack frame while an app was running. The safe split-phase launcher leaves only a 40-byte dispatcher frame alive and never moves the stack over suspended caller data.
+- Apps re-arm the backlight when closing, and settings loading repairs a persisted invalid `BLMax=0` to 10.
 - Restricted the middle-row pre-RSSI cleanup to Full Watch. Triple/Quad Watch still clears its center indicator before drawing the RSSI meter, while Main Only RX no longer erases unrelated middle-screen content when its RSSI meter is drawn on the lower row.
 - Verified the late F4HWN erased packed-settings-byte correction is already present in GOGUFW. Erased FM/AM audio-profile data is stored separately and already falls back safely to profile 0, so no audio profile is removed or loaded from an erased value.
-- Kept the bundled custom APRS RX/TX apps on their private 144.800 MHz radio context. APRS TX now also forces HIGH power independently of the selected A/B/C/D VFO's power setting; the user's radio context is still restored on exit.
 - Renamed the Messenger `MsgCsg` menu item to `CllSgn` and moved it to the end of the Messenger settings immediately before `RngRsp`. Compatible APRS TX and Beacon apps now use this shared station callsign, falling back to the unchanged Power On Message only when `CllSgn` is empty or invalid.
-- Updated firmware and CHIRP version identifiers to 3.1.1 and bumped the bundled custom APRS TX app to v0.8.
+- Updated firmware and CHIRP version identifiers to 3.1.1.
+- Restored the complete deferred Broadcast FM overlay bridge when the resident FM radio is enabled. Armel's original Broadcast FM app now receives real BK1080/state/save callbacks; GOGUFW's resident FM names, live-RSSI interface and Messenger return flow remain unchanged.
+- Added the bounded configuration-proxy capability used by current Armel APRS Edit/TX packages, extended it for GOGUFW's 122-byte APRS profile, and added saved-screen persistence for current SSTV packages.
+- Corrected overlay shortcut parsing for current single-ID headers. GOGUFW Search's combined ID still owns F+4/F+STAR regardless of slot order, while unrelated IDs can no longer be mistaken for multiple bit-mask shortcuts.
+- Verified the archived Armel v6.1.0 and v6.2.0 app sets against the final loader headers, VMA, CRCs and capability mask. Beam remains intentionally unsupported because its dedicated resident FSK bridge is disabled; all other archived apps validate with their required services.
+- Ported the applicable F4HWN 6.2.0 reliability fixes: the automatic keypad-lock countdown is now wide enough for every menu duration, S-meter band 1/2 corrections are preserved on settings saves and repaired after the historical zeroing bug, and the K1 battery entry is correctly labelled 1400 mAh.
+- Expanded the external-Flash app region from 16 to 48 slots. Empty slots remain hidden; held UP/DOWN repeats through long lists, and `*` toggles the right column between code size and app version. The loader, UART/USB management and config-proxy lookup all use the same 48-slot limit.
+- Fixed UV Studio still reporting `16 of 16 slots used`: the host-only UART identity now advertises the compatible F4HWN 6.2 baseline first, allowing UV Studio to select its 48-slot layout. The radio UI and SysInfo continue to show GOGUFW 3.1.1.
+- Suppressed the false main-channel RX indication caused by a manual Broadcast FM retune on frequency-sensitive VFO combinations such as 439.400 MHz. The guard follows the BK4829 squelch latch instead of expiring while its stale open event is still active, with a bounded timeout for a real carrier.
+
+Only the firmware image and matching CHIRP module are published as 3.1.1 release assets. Personal GOGUFW-modified overlay-app packages are not included.
 
 ### Build information
 
 - Firmware: `f4hwn.gogufw.v3.1.1.bin`
-- Multiboot image: 120,716 bytes
-- Firmware Flash: 119,792 / 120,832 bytes (1,040 bytes free before the 924-byte multiboot stub; 116 bytes free in the final image)
-- RAM: 13,744 / 16,384 bytes (2,640 bytes free)
+- Multiboot image: 120,828 bytes
+- Firmware Flash: 119,908 / 120,832 bytes (924 bytes free before the 920-byte multiboot stub; 4 bytes free in the final image)
+- RAM: 13,288 / 16,384 bytes (3,096 bytes free after the linker reservation; the overlay launcher's live frame while app code runs is reduced from 224 to 40 bytes without moving the stack)
 
 ## GOGUFW 3.1.0 — 2026-10-10
 

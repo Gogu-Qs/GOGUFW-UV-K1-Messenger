@@ -5,19 +5,24 @@
 # them in one asset_read into a word-aligned stack block, so every text costs a
 # 2-byte sp-relative add instead of a literal-pool load and a pool word.
 # The frame parts are AX.25-encoded here (addresses shifted left, SSID bytes):
-# the app adds the source (shared CllSgn + SSID), the path (the first 0,
+# the app adds the source (profile or boot-message callsign + SSID), the path (the first 0,
 # 1 or 2 entries of WIDE, end-of-address bit set by the app), the position and
-# the FCS. SSID, PATH and the position are the defaults, until they are edited
-# on the radio. Edit the station settings below, then rebuild;
+# the FCS. APRS Edit updates the mutable profile prefix. Edit the station
+# defaults below, then rebuild;
 # test/tx_model.py checks the resulting frame.
 #
 #   ./gen_assets.py aprstx_assets.bin aprstx_assets.h
-import os, re, sys
+import os, re, struct, sys
 sys.dont_write_bytecode = True
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
-from app_assets import Assets
+from app_assets import Assets, cdefine
 from aprs_symbols_20 import BITMAPS, BYTES_PER_ICON, CODES, WIDTH
+
+APRS_PROFILE_MAGIC = cdefine("aprs_profile.h", "APRS_PROFILE_MAGIC")
+APRS_PROFILE_LEN = cdefine("aprs_profile.h", "APRS_PROFILE_LEN")
+APRS_COMMENT_MAX = cdefine("aprs_profile.h", "APRS_COMMENT_MAX")
+APRS_CALL_MAX = cdefine("aprs_profile.h", "APRS_CALL_MAX")
 
 # ---- station settings ----
 SSID = 7                                   # F4HWN-7 (0-15, 0 = no SSID)
@@ -27,7 +32,9 @@ WIDE = ["WIDE1-1", "WIDE2-1"]              # path n = the first n entries
 PATHS = ["DIRECT", "WIDE1-1", "WIDE1-1,2-1"]   # shown on the radio, per path
 LAT, LON = "4850.90N", "00216.25E"         # default position: DDMM.hhN, DDDMM.hhE
 SYMBOL = "/["                              # table, code: '[' = person
-COMMENT = "UV-K5/K1 F4HWN Firmware"
+COMMENT = "Portable, UV-K5/K1 F4HWN firmware (github.com/armel)"
+FREQ_KHZ = 144800                         # independent APRS TX frequency
+POWER = 6                                 # LOW1..LOW5, MID, HIGH
 # info field: "!" + LAT + SYMBOL[0] + LON + SYMBOL[1] + COMMENT
 
 TITLE = "APRS TX"
@@ -37,18 +44,10 @@ UI = [
     ("T_TITLE",  TITLE),
     ("T_TX",     TX_CAPS),
     ("T_DENIED", "TX denied"),
-    ("T_NOCALL", "No valid callsign"),
+    ("T_NOCALL", "No callsign"),
     ("T_LVL",    "lvl "),
     ("T_TW",     "  tw "),
     ("T_SENT",   "  sent "),
-    ("T_LAT",    "LAT  "),              # 2 spaces: digits aligned with LON
-    ("T_LON",    "LON "),
-    ("T_SSID",   "SSID "),              # FIELD_COL (5) characters: the value
-    ("T_PATH",   "PATH "),              # starts at the same column
-    ("T_SYM",    "SYMB "),              # selected APRS table/code pair
-    ("T_HELP1",  "0-9, * change, F+* back"),        # * on the bold field
-    ("T_HELP2",  "UP/DN move  MENU ok  EXIT"),
-    ("T_BADPOS", "Invalid position"),
 ]
 
 
@@ -68,33 +67,33 @@ if any(len(s) > 18 - 5 for s in PATHS):
     sys.exit("a PATHS name does not fit the line after 'PATH '")
 if not (re.fullmatch(r"\d{4}\.\d{2}[NS]", LAT) and re.fullmatch(r"\d{5}\.\d{2}[EW]", LON)):
     sys.exit("LAT must be DDMM.hhN/S, LON DDDMM.hhE/W")
-if len(SYMBOL) != 2 or len(COMMENT) > 43:
-    sys.exit("SYMBOL is 2 characters, COMMENT at most 43 (frame buffer)")
+if len(SYMBOL) != 2 or len(COMMENT) > APRS_COMMENT_MAX:
+    sys.exit(f"SYMBOL is 2 characters, COMMENT at most {APRS_COMMENT_MAX} (frame buffer)")
 # 13 digits (DDMMhh DDDMMhh), then the hemispheres: bit 0 south, bit 1 west
 POS = [int(c) for c in LAT + LON if c.isdigit()]
 HEMI = (LAT[-1] == "S") | (LON[-1] == "W") << 1
 
 a = Assets("APRSTX")
-ui_size = 0
+comment = COMMENT.encode("ascii")
+a.prefix("F_PROFILE", struct.pack("<IBBBB", APRS_PROFILE_MAGIC, len(comment),
+         PATH << 4 | SSID, CODES.index(SYMBOL), HEMI) + bytes(POS) +
+         comment.ljust(APRS_COMMENT_MAX, b" ") + bytes([0]) + b" " * APRS_CALL_MAX +
+         struct.pack("<IB", FREQ_KHZ, POWER))
+if APRS_PROFILE_LEN != 8 + len(POS) + APRS_COMMENT_MAX + 1 + APRS_CALL_MAX + 5:
+    raise ValueError("APRS profile layout changed")
+a.const("COMMENT_MAX", APRS_COMMENT_MAX)
+ui_size = APRS_PROFILE_LEN
 for name, s in UI:
     pad = -(len(s) + 1) % 4                 # keep every offset word-aligned
     a.text(name, s + "\0" * pad)
     ui_size += len(s) + 1 + pad
-PATHS_STRIDE = -(-(max(len(s) for s in PATHS) + 1) // 4) * 4   # word-aligned entries
-a.table("T_PATHS", PATHS, stride=PATHS_STRIDE)
-ui_size += len(PATHS) * PATHS_STRIDE
 a.const("UI_SIZE", ui_size)                 # the UI block read by draw()
 a.const("T_TITLE_CHARS", len(TITLE))
 a.const("T_TX_CHARS", len(TX_CAPS))
-a.const("CFG_SSID", SSID)
-a.const("CFG_PATH", PATH)
 a.raw("F_DEST", addr(DEST))
 a.raw("F_WIDE", b"".join(addr(h) for h in WIDE))
-a.u8("POS_DEF", POS + [HEMI])
-a.raw("F_COMMENT", COMMENT.encode("ascii"))
 a.raw("SYM_CODES", "".join(CODES).encode("ascii"))
 a.raw("SYM_BITMAPS", BITMAPS)
-a.const("SYM_INDEX", CODES.index(SYMBOL))
 a.const("SYM_COUNT", len(CODES))
 a.const("SYM_W", WIDTH)
 a.const("SYM_BYTES", BYTES_PER_ICON)

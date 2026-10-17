@@ -18,7 +18,8 @@
  * APRS RX - receives APRS (AX.25 UI frames, Bell 202 AFSK 1200 bauds) in
  * software and keeps the last five frames, shown one at a time: source,
  * destination and path, the info field. The app temporarily tunes its private
- * radio context to FM 144.800 MHz at launch, independently of A/B/C/D.
+ * radio context to the frequency saved by APRS Edit (144.800 MHz fallback),
+ * independently of A/B/C/D.
  *
  * The BK4829 has no Bell 202 demodulator (see README.md), so the RX audio is
  * sampled as EPIRB 406 does: it reaches PA4 (the voice DAC pin), held at
@@ -85,7 +86,6 @@ static inline volatile uint32_t *hw(uint32_t a){
 #define REDRAW_ON      1u      /* g.redraw: a key or the periodic refresh        */
 #define REDRAW_FRAME   2u      /* g.redraw: a new frame, also wakes the backlight */
 #define DUP_MS         1000u   /* the same frame from another slicer             */
-#define APRS_FREQUENCY 14480000u
 
 /* ---- BK4829 ---- */
 
@@ -688,7 +688,8 @@ static void handleKeys(void){
     /* UP/DOWN, held: scroll the body 1 px per slot (20 px/s) while rows overflow.
      * Pressed again once at an end: the newer (UP) or older (DOWN) frame, from its
      * first row; holding the key never leaves the frame. */
-    int d=A->nav_dir(key);
+    /* Raw UP is UP on K5 and LEFT on K1; DOWN is DOWN / RIGHT. */
+    int d=(key==APP_KEY_DOWN)-(key==APP_KEY_UP);
     unsigned top=(unsigned)(g.top+d);     /* wraps past the first row */
     if(top<=g.lim){
         if(top!=g.top){ g.top=(uint16_t)top; g.redraw|=REDRAW_ON; }
@@ -701,7 +702,7 @@ static void handleKeys(void){
     g.redraw|=REDRAW_ON;
     if(key==APP_KEY_EXIT) g.running=false;
     else if(key==APP_KEY_2){ g.count=g.cur=0; g.nOk=0; g.top=0; }   /* g.lim: 0 at the redraw that follows */
-    else if(key==APP_KEY_1){ g.spk^=1u; A->audio_path(g.spk); }   /* speaker, as FoxHunt's audio */
+    else if(key==APP_KEY_1) g.spk^=1u;   /* listen() applies it with squelch */
     else if(key==APP_KEY_STAR){ g.cw^=CW_COMPACT; g.top=0; }   /* the view (saved on exit) */
 }
 
@@ -752,6 +753,9 @@ static void listen(void){
         for(uint8_t k=0;k<NSL;k++) slice(&sl[k],a,b);
         if(++cnt<HOUSE_EVERY) continue;
         cnt=0;
+        /* Gate only the loudspeaker with squelch. The decoder keeps sampling
+         * the AF path continuously, including the beginning of a frame. */
+        A->audio_path(g.spk & (A->bk_read(0x0Cu)>>1));
         bool bz=false;                  /* only the slot's own sample decides */
         for(uint8_t k=0;k<NSL;k++) bz|=busy(&sl[k]);
         if(bz && ++busyFor<BUSY_MAX) continue;
@@ -764,12 +768,14 @@ static void listen(void){
 
 __attribute__((section(".text.entry"),used))
 void app_main(const app_api_t *api){
-    frame_t frames[HISTORY];    /* on the stack: the 4 KiB overlay also holds .bss */
+    /* Full five-frame history. Firmware reserves the required overlay-app
+     * runtime stack by making Spectrum's large work arrays foreground-local. */
+    frame_t frames[HISTORY];
     frame_t *history[HISTORY];
     for(unsigned k=0;k<HISTORY;k++) history[k]=&frames[k];
     char text[34];
     g.A=api;
-    api->radio_tune(APRS_FREQUENCY);
+    api->radio_tune_aprs();
     g.text=text;
     g.history=history;
     /* The overlay loader zeroes g; the first idle key scan records APP_KEY_INVALID. */
@@ -788,7 +794,6 @@ void app_main(const app_api_t *api){
      * need it (tested on the radio, 2026-09-30): PA4, the voice-prompt DAC pin,
      * joins the audio before the amplifier; only the BK4829 AF output must be
      * on. Key 1 toggles the speaker to listen to the channel. */
-    api->audio_path(g.spk);
     api->set_af(APP_AF_FM);
     api->delay_ms(50);
 

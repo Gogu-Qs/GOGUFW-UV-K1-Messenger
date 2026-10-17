@@ -81,9 +81,23 @@ static uint16_t selectedPeakIndex;
 // table or duplicate Spectrum history is retained.
 #define SPECTRUM_MR_BITMAP_SIZE ((MR_CHANNEL_LAST - MR_CHANNEL_FIRST + 8u) / 8u)
 #define SPECTRUM_MR_MANUAL_TRIGGER_RSSI 100
+/* These arrays are needed only while APP_RunSpectrum() owns the foreground.
+ * Keeping them in that function's stack gives overlay apps the same bytes back
+ * as free runtime stack instead of permanently charging every app 576 bytes. */
+typedef struct {
+    uint8_t  validChannels[SPECTRUM_MR_BITMAP_SIZE];
+    uint16_t rssi[128];
+    uint8_t  peakY[128];
+    uint8_t  peakAge[64];
+} SpectrumScratch_t;
+static SpectrumScratch_t *spectrumScratch;
+#define spectrumValidChannels (spectrumScratch->validChannels)
+#define rssiHistory           (spectrumScratch->rssi)
+#define peakHoldY             (spectrumScratch->peakY)
+#define peakHoldAge           (spectrumScratch->peakAge)
+
 static bool spectrumChannelMode = false;
 static uint16_t spectrumChannelCount = 0;
-static uint8_t spectrumValidChannels[SPECTRUM_MR_BITMAP_SIZE];
 static uint16_t spectrumDisplayChannel;
 static uint16_t spectrumDisplayOrdinal = 0;
 static uint32_t spectrumDisplayFreq;
@@ -115,10 +129,7 @@ SpectrumSettings settings = {.stepsCount = STEPS_64,
 
 uint32_t fMeasure = 0;
 uint32_t currentFreq, tempFreq;
-uint16_t rssiHistory[128];
 // Peak hold: tracks the highest Y per column with timed decay
-static uint8_t  peakHoldY[128];       // Peak Y value per display column (0=top)
-static uint8_t  peakHoldAge[64];      // Shared decay timer (1 per 2 columns)
 #define PEAK_HOLD_DELAY  15           // Sweeps before decay starts
 #define PEAK_HOLD_INIT   0xFF         // "no peak" sentinel (same as SPECTRUM_TOPY_SKIP)
 
@@ -2890,6 +2901,8 @@ static void Tick()
 
 void APP_RunSpectrum()
 {
+    SpectrumScratch_t scratch;
+    spectrumScratch = &scratch;
     settings.backlightState = gEeprom.BACKLIGHT_TIME == 0 ? false : true;
 
     // TX here coz it always? set to active VFO
@@ -3005,4 +3018,5 @@ void APP_RunSpectrum()
     }
 
     BACKLIGHT_TurnOn();
+    spectrumScratch = NULL;
 }

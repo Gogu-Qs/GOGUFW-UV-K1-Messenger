@@ -1,264 +1,588 @@
+/* APRS Edit - companion editor for APRS TX's mutable beacon profile.
+ *
+ * The profile is edited in place: opening a field snapshots the whole block,
+ * EXIT restores the snapshot and MENU keeps the edit. The index and the editor
+ * therefore draw the same bytes with the same code; the editor only adds the
+ * cursor, the bold value and the hints. */
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include "../app_api.h"
+#include "../aprs_profile.h"
 #include "aprsedit_assets.h"
 
-#define MSG_LEN 23u
-#define TX_CFG_LEN 13u
-#define EDIT_CFG_LEN (TX_CFG_LEN + MSG_LEN)
-#define CFG_MAGIC 0xA8u
-#define POS_DIGITS 13u
-#define LAT_DIGITS 6u
-#define PATH_MAX 2u
-#define HOLD_TICKS 40u
-#define REPEAT_TICKS 8u
-#define COMMIT_TICKS 80u
-#define CUR_NS LAT_DIGITS
-#define CUR_EW (POS_DIGITS + 1u)
-#define CUR_SSID (CUR_EW + 1u)
-#define CUR_PATH (CUR_EW + 2u)
-#define CUR_SYM (CUR_EW + 3u)
-#define PAGE_MENU 0u
-#define PAGE_MESSAGE 1u
-#define PAGE_SETTINGS 2u
+#define HOLD_TICKS    40u
+#define COMMIT_TICKS  80u
+#define LOOP_MS       10u
+#define EDIT_CHARS    11u    /* comment: normal-font characters per pane row   */
+#define EDIT_ROWS     6u     /* rows above the bottom capsules: no scrolling   */
+#define PATH_MAX      2u
+#define LAT_DIGITS    6u
+#define FREQ_DIGITS   6u    /* kHz: 144800 is displayed as 144.800 MHz */
+#define INDEX_SEP_X   48u
+#define PANE_X        50u
+#define PANE_W        (128u - PANE_X)
+#define PANE_SYM_X    79u
+#define NO_CURSOR     0xFFu
+#define MODE_CAPS_X   115u   /* input mode capsule: 3 tiny characters, bottom right */
+#define RATIO_LEFT_X  54u    /* "xx/yy" capsule, bottom left of the pane */
+#define RATIO_RIGHT_X 107u   /* the same, bottom right */
+#define SYM_JUMP      5u     /* a number key selects symbol key * SYM_JUMP */
 
-static const app_api_t *A;
-static char text[MSG_LEN + 1u];
-static uint8_t cfg[EDIT_CFG_LEN], pos[POS_DIGITS];
-static uint8_t len, mode, pending, cycle, held, page, cur, menu_sel;
-static uint8_t hemi, ssid, path, sym;
-static uint16_t pending_ticks, held_ticks;
-static bool has_pending, fired_long, dirty, running, from_tx, f_arm, bad_pos;
+enum { SCREEN_INDEX = 0, SCREEN_EDIT, SCREEN_PRESET };
+enum {
+    ITEM_CALL = 0, ITEM_SSID, ITEM_LAT, ITEM_LON,
+    ITEM_PATH, ITEM_SYMBOL, ITEM_COMMENT, ITEM_FREQ, ITEM_POWER, MENU_COUNT
+};
+
+_Static_assert(PANE_X + EDIT_CHARS * 7u <= 128u, "comment editor row must fit the pane");
+_Static_assert(COMMENT_LIMIT < EDIT_ROWS * EDIT_CHARS && COMMENT_LIMIT <= APRS_COMMENT_MAX,
+               "a full comment and its insertion cursor must fit above the capsules");
+_Static_assert(PANE_SYM_X + SYM_W <= 128u, "APRS symbol must fit on screen");
+_Static_assert(PRESET_COUNT == 5u, "APRS preset selector shows five rows");
+_Static_assert(TEMPLATE_COUNT == 4u, "APRS preset selector has four templates");
+_Static_assert(T_MODE_LO == T_MODE_UP + 4u && T_MODE_NUM == T_MODE_UP + 8u,
+               "input mode names are indexed by mode * 4");
+_Static_assert(9u * SYM_JUMP < SYM_COUNT, "symbol jump must stay in the table");
+
+static struct {
+    const app_api_t *A;
+    uint8_t *profile, *backup;   /* live block, snapshot taken when a field opens */
+    char *custom;
+    char *text;                  /* callsign or comment inside the profile */
+    uint8_t len, cursor, custom_len, custom_cursor;
+    uint8_t mode, screen, item, preset, active_preset;
+    uint8_t pending_key, pending_pos, cycle, held_key;
+    uint16_t pending_ticks, held_ticks;
+    bool pending, long_fired, dirty, changed, running, missing, bad;
+} g;
 
 void *memcpy(void *dst, const void *src, size_t n)
 {
-    uint8_t *d=dst; const uint8_t *s=src;
-    while(n--) *d++=*s++;
+    uint8_t *d = dst; const uint8_t *s = src;
+    while (n--) *d++ = *s++;
+    return dst;
+}
+void *memset(void *dst, int value, size_t n)
+{
+    uint8_t *d = dst;
+    while (n--) *d++ = (uint8_t)value;
     return dst;
 }
 
-static uint8_t slen(const char *s, uint8_t max)
+static char *put_u8(char *out, uint8_t value)
 {
-    uint8_t n=0u; while(n<max && s[n]) n++; return n;
-}
-
-static void dots(uint8_t y)
-{
-    for(uint8_t x=1u;x<127u;x+=4u) A->draw_line(A->fb,x,y,(int16_t)(x+1u),y,true);
-}
-
-static char *u8toa(char *o, uint8_t v)
-{
-    if(v>=10u) *o++=(char)('0'+v/10u);
-    *o++=(char)('0'+v%10u); *o=0; return o;
-}
-
-static void draw_menu(void)
-{
-    A->display_clear(); A->status_clear(); A->draw_battery();
-    A->print_bold("APRS EDIT",0u,127u,0u); dots(9u); dots(46u);
-    if(menu_sel==0u) A->print_inverse("APRS MESSAGE",40u,2u,false,true,88u);
-    else A->print_tiny("APRS MESSAGE",40u,17u,false,true);
-    if(menu_sel==1u) A->print_inverse("SETTINGS",48u,4u,false,true,80u);
-    else A->print_tiny("SETTINGS",48u,33u,false,true);
-    A->print_tiny("SELECT",1u,49u,false,true);
-    A->print_tiny("EXIT",112u,49u,false,true);
-}
-
-static void draw_message(void)
-{
-    char count[6], mode_text[4]="*:B", line[18];
-    char *o=u8toa(count,len); *o++='/'; *o++='2'; *o++='3'; *o=0;
-    mode_text[2]=mode==0u?'B':mode==1u?'b':'2';
-    A->display_clear(); A->status_clear();
-    A->print_bold("APRS MESSAGE",0u,127u,0u);
-    A->print_tiny(count,(uint8_t)(128u-slen(count,5u)*4u),2u,false,true);
-    A->print_tiny(mode_text,1u,2u,false,true); dots(9u);
-    for(uint8_t row=0u,off=0u;row<2u && text[off];row++,off+=17u){
-        uint8_t n=0u; while(n<17u && text[off+n]){ line[n]=text[off+n]; n++; }
-        line[n]=0; A->print_small_y(line,1u,(uint8_t)(13u+row*10u),false);
+    if (value >= 10u) {
+        *out = '0';
+        while (value >= 10u) { (*out)++; value -= 10u; }
+        out++;
     }
-    dots(46u); A->print_tiny("SAVE",1u,49u,false,true);
-    A->print_tiny("F:DEL",54u,49u,false,true); A->print_tiny("EXIT",112u,49u,false,true);
+    *out++ = (char)('0' + value);
+    return out;
 }
 
-static void put_coord(char *s,const char *label,const uint8_t *d,uint8_t n,char h,int8_t cursor,uint8_t line)
+static uint32_t get_u32(const uint8_t *p)
 {
-    char *o=s; while(*label) *o++=*label++;
-    uint8_t col=0u;
-    for(uint8_t i=0u;i<n;i++){
-        if(i==n-4u) *o++=' ';
-        if(i==n-2u) *o++='.';
-        if((int8_t)i==cursor) col=(uint8_t)(o-s);
-        *o++=(char)('0'+d[i]);
+    return (uint32_t)p[0] | (uint32_t)p[1] << 8 |
+           (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+static void put_u32(uint8_t *p, uint32_t value)
+{
+    p[0] = (uint8_t)value; p[1] = (uint8_t)(value >> 8);
+    p[2] = (uint8_t)(value >> 16); p[3] = (uint8_t)(value >> 24);
+}
+
+static void freq_digits(uint8_t *digits)
+{
+    static const uint32_t place[FREQ_DIGITS] = {
+        100000u, 10000u, 1000u, 100u, 10u, 1u
+    };
+    uint32_t value = get_u32(g.profile + APRS_PROFILE_FREQ_KHZ);
+    for (uint8_t i = 0u; i < FREQ_DIGITS; i++) {
+        uint8_t digit = 0u;
+        while (value >= place[i]) { value -= place[i]; digit++; }
+        digits[i] = digit;
     }
-    *o++=' '; if((int8_t)n==cursor) col=(uint8_t)(o-s); *o++=h; *o=0;
-    A->print_normal(s,0u,0u,line);
-    if((uint8_t)cursor<=n){ char c[2]={s[col],0}; A->print_bold(c,(uint8_t)(col*7u),0u,line); }
 }
 
-static void field(const char *label,const char *value,uint8_t line,bool selected)
+static void set_freq_digit(uint8_t index, uint8_t digit)
 {
-    char s[19]; uint8_t n=0u;
-    while(*label) s[n++]=*label++;
-    uint8_t x=n; while(*value && n<18u) s[n++]=*value++;
-    s[n]=0; A->print_normal(s,0u,0u,line);
-    if(selected) A->print_bold(s+x,(uint8_t)(x*7u),0u,line);
+    uint8_t digits[FREQ_DIGITS]; uint32_t value = 0u;
+    freq_digits(digits); digits[index] = digit;
+    for (uint8_t i = 0u; i < FREQ_DIGITS; i++) value = value * 10u + digits[i];
+    put_u32(g.profile + APRS_PROFILE_FREQ_KHZ, value);
 }
 
-static void draw_settings(void)
+/* "3/7" */
+static char *put_ratio(char *out, uint8_t value, uint8_t total)
 {
-    char s[22],v[4];
-    static const char *const paths[3]={"DIRECT","WIDE1-1","WIDE1-1,2-1"};
-    A->display_clear(); A->status_clear(); A->print_bold("APRS SETTINGS",0u,127u,0u);
-    if(f_arm) A->print_tiny("F",70u,2u,false,true);
-    put_coord(s,"LAT  ",pos,LAT_DIGITS,(hemi&1u)?'S':'N',(int8_t)cur,1u);
-    put_coord(s,"LON ",pos+LAT_DIGITS,POS_DIGITS-LAT_DIGITS,(hemi&2u)?'W':'E',
-              (int8_t)((int8_t)cur-(int8_t)(CUR_NS+1u)),2u);
-    u8toa(v,ssid); field("SSID ",v,3u,cur==CUR_SSID); field("PATH ",paths[path],4u,cur==CUR_PATH);
-    A->asset_read((uint16_t)(SYM_CODES+sym*2u),v,2u); v[2]=0; field("SYMB ",v,5u,cur==CUR_SYM);
-    A->print_tiny(bad_pos?"INVALID POSITION":"",1u,49u,false,true);
-    A->print_tiny("SAVE",88u,49u,false,true); A->print_tiny("EXIT",112u,49u,false,true);
+    out = put_u8(out, value); *out++ = '/';
+    return put_u8(out, total);
+}
+
+/* v moved one step in direction d within 0..n-1, wrapping at both ends. */
+static uint8_t step(uint8_t v, int8_t d, uint8_t n)
+{
+    if (d > 0) return (uint8_t)(v + 1u < n ? v + 1u : 0u);
+    if (d < 0) return (uint8_t)(v ? v - 1u : n - 1u);
+    return v;
+}
+
+static bool is_text(void)
+{
+    return g.item == ITEM_CALL || g.item == ITEM_COMMENT;
+}
+
+/* Point the text editor at the selected item's characters (the comment for
+ * every item but the callsign) and load their length. */
+static void select_text(void)
+{
+    const bool call = g.item == ITEM_CALL;
+    g.text = (char *)g.profile + (call ? APRS_PROFILE_CALL : APRS_PROFILE_COMMENT);
+    g.len = g.profile[call ? APRS_PROFILE_CALL_LEN : APRS_PROFILE_COMMENT_LEN];
+}
+
+/* While a multi-tap character is pending the cursor stays on it. */
+static uint8_t text_cursor(void)
+{
+    return g.pending ? g.pending_pos : g.cursor;
+}
+
+static bool position_ok(void)
+{
+    const uint8_t *d = g.profile + APRS_PROFILE_POS;
+    for (uint8_t i = 0u; i < APRS_POS_DIGITS; i++) if (d[i] > 9u) return false;
+    const uint8_t lat = (uint8_t)(d[0] * 10u + d[1]);
+    const uint8_t lat_min = (uint8_t)(d[2] * 10u + d[3]);
+    const uint16_t lon = (uint16_t)(d[6] * 100u + d[7] * 10u + d[8]);
+    const uint8_t lon_min = (uint8_t)(d[9] * 10u + d[10]);
+    if (lat > 90u || lat_min > 59u || lon > 180u || lon_min > 59u) return false;
+    if (lat == 90u && (lat_min | d[4] | d[5])) return false;
+    if (lon == 180u && (lon_min | d[11] | d[12])) return false;
+    return true;
+}
+
+/* A string centred in the right pane. */
+static void pane(const char *s, uint8_t line, bool bold)
+{
+    (bold ? g.A->print_bold : g.A->print_normal)(s, PANE_X, 127u, line);
+}
+
+static void hint(const char *s, uint8_t y)
+{
+    g.A->print_tiny(s, PANE_X, y, false, true);
+}
+
+/* "06/48" capsule at the bottom of the pane: always 5 tiny characters. */
+static void draw_ratio(uint8_t value, uint8_t total, uint8_t x)
+{
+    char text[6], *out = text;
+    if (value < 10u) *out++ = '0';
+    *put_ratio(out, value, total) = '\0';
+    g.A->print_inverse(text, x, 6u, false, true, (uint8_t)(x + 20u));
+}
+
+static void draw_symbol(uint8_t symbol, uint8_t x)
+{
+    const uint16_t offset = (uint16_t)(SYM_BITMAPS + (uint16_t)symbol * SYM_BYTES);
+    for (uint8_t page = 0u; page < 3u; page++)
+        g.A->asset_read((uint16_t)(offset + page * SYM_W),
+                        g.A->fb[2u + page] + x, SYM_W);
+}
+
+static void draw_menu(const char *assets)
+{
+    char count[6];
+    const char *menu = assets + T_MENU;
+    g.A->print_normal(menu + step(g.item, -1, MENU_COUNT) * T_MENU_STRIDE, 0u, 0u, 1u);
+    g.A->print_string(menu + g.item * T_MENU_STRIDE, 0u, 0u, 2u, 8u);
+    g.A->print_normal(menu + step(g.item, 1, MENU_COUNT) * T_MENU_STRIDE, 0u, 0u, 4u);
+    *put_ratio(count, (uint8_t)(g.item + 1u), MENU_COUNT) = '\0';
+    g.A->print_normal(count, 6u, 0u, 6u);
+    g.A->draw_line(g.A->fb, INDEX_SEP_X, 0, INDEX_SEP_X, 55, true);
+    for (uint8_t x = 0u; x < INDEX_SEP_X; x += 2u) g.A->fb[5][x] = 0x40u;
+}
+
+/* The path name, in bold while it is being edited (as the SSID and symbol). */
+static void draw_path(const char *assets, uint8_t path, bool bold)
+{
+    /* The first hop never moves: "DIRECT" or "WIDE1-1" on line 2. The longest
+     * path adds its second hop on the line below, read after the comma of its
+     * own name "WIDE1-1,WIDE2-1". */
+    const char *paths = assets + T_PATHS;
+    pane(paths + (path ? T_PATHS_STRIDE : 0u), 2u, bold);
+    if (path == PATH_MAX) pane(paths + PATH_MAX * T_PATHS_STRIDE + 8u, 3u, bold);
+}
+
+/* The comment in rows of the normal font. */
+static void draw_text(void)
+{
+    char row[EDIT_CHARS + 1u];
+    for (uint8_t line = 0u; line < EDIT_ROWS; line++) {
+        const uint8_t start = (uint8_t)(line * EDIT_CHARS);
+        uint8_t n = 0u;
+        while (n < EDIT_CHARS && start + n < g.len) { row[n] = g.text[start + n]; n++; }
+        row[n] = '\0';
+        g.A->print_normal(row, PANE_X, 0u, line);
+    }
+}
+
+/* A row of len characters centred on line 2 of the pane. The character under
+ * the cursor is redrawn in bold; a cursor at len is an insertion mark below
+ * the next cell; NO_CURSOR shows none. */
+static void draw_row(const char *row, uint8_t len, uint8_t cursor)
+{
+    char one[2];
+    const uint8_t start = (uint8_t)(PANE_X + (PANE_W - len * 7u) / 2u);
+    const uint8_t x = (uint8_t)(start + cursor * 7u);
+    g.A->print_normal(row, start, 0u, 2u);
+    if (cursor < len) {
+        one[0] = row[cursor]; one[1] = '\0';
+        g.A->print_bold(one, x, 0u, 2u);
+    } else if (cursor == len) {
+        g.A->draw_line(g.A->fb, x, 23, (int16_t)(x + 5), 23, true);
+    }
+}
+
+static void draw_coord(uint8_t first, uint8_t count, char hemisphere, bool edit)
+{
+    char row[12]; char *out = row; uint8_t bold = NO_CURSOR;
+    const uint8_t *digits = g.profile + APRS_PROFILE_POS + first;
+    for (uint8_t i = 0u; i < count; i++) {
+        if (i == count - 4u) *out++ = ' ';
+        if (i == count - 2u) *out++ = '.';
+        if (edit && i == g.cursor) bold = (uint8_t)(out - row);
+        *out++ = (char)('0' + digits[i]);
+    }
+    *out++ = ' '; *out++ = hemisphere; *out = '\0';
+    draw_row(row, (uint8_t)(out - row), bold);
+}
+
+static void draw_freq(bool edit)
+{
+    uint8_t digits[FREQ_DIGITS]; char row[8]; uint8_t out = 0u;
+    freq_digits(digits);
+    for (uint8_t i = 0u; i < FREQ_DIGITS; i++) {
+        if (i == 3u) row[out++] = '.';
+        row[out++] = (char)('0' + digits[i]);
+    }
+    row[out] = '\0';
+    const uint8_t cursor = !edit ? NO_CURSOR :
+                           (uint8_t)(g.cursor + (g.cursor >= 3u));
+    draw_row(row, out, cursor);
+}
+
+static void draw_comment(bool edit)
+{
+    draw_text();
+    if (!edit) return;
+    uint8_t line = 0u, col = text_cursor();
+    while (col >= EDIT_CHARS) { col -= EDIT_CHARS; line++; }
+    const int16_t x = (int16_t)(PANE_X + col * 7u), y = (int16_t)(line * 8u + 7u);
+    g.A->draw_line(g.A->fb, x, y, (int16_t)(x + 5), y, true);
+    draw_ratio(g.len, COMMENT_LIMIT, RATIO_LEFT_X);   /* level with the mode capsule */
+}
+
+/* The selected field in the right pane: the index shows it as stored, the
+ * editor adds its cursor and hints. */
+static void draw_field(const char *assets)
+{
+    char value[12]; char *out = value;
+    const uint8_t *p = g.profile;
+    const bool edit = g.screen != SCREEN_INDEX;
+    draw_menu(assets);
+    if (g.item == ITEM_CALL) {
+        if (!g.len) pane(assets + T_AUTO, 2u, false);
+        else {
+            memcpy(value, g.text, g.len); value[g.len] = '\0';
+            draw_row(value, g.len, edit ? text_cursor() : NO_CURSOR);
+        }
+    } else if (g.item == ITEM_LAT) {
+        draw_coord(0u, LAT_DIGITS, (p[APRS_PROFILE_HEMI] & 1u) ? 'S' : 'N', edit);
+    } else if (g.item == ITEM_LON) {
+        draw_coord(LAT_DIGITS, APRS_POS_DIGITS - LAT_DIGITS,
+                   (p[APRS_PROFILE_HEMI] & 2u) ? 'W' : 'E', edit);
+    } else if (g.item == ITEM_PATH) {
+        draw_path(assets, (uint8_t)(p[APRS_PROFILE_ROUTE] >> 4), edit);
+    } else if (g.item == ITEM_COMMENT) {
+        draw_comment(edit);
+    } else if (g.item == ITEM_FREQ) {
+        draw_freq(edit);
+    } else if (g.item == ITEM_POWER) {
+        pane(assets + T_POWER_NAMES +
+             p[APRS_PROFILE_POWER] * T_POWER_NAMES_STRIDE, 2u, edit);
+    } else {
+        uint8_t line = 2u;
+        if (g.item == ITEM_SSID) out = put_u8(out, (uint8_t)(p[APRS_PROFILE_ROUTE] & 15u));
+        else {
+            /* table/code pair on line 1, the icon on lines 2-4 (stored 4 px
+             * down in its pages by gen_assets.py: y = 20-39); the editor
+             * adds the position in the table as a capsule on line 6 */
+            const uint8_t symbol = p[APRS_PROFILE_SYMBOL];
+            if (edit) draw_ratio((uint8_t)(symbol + 1u), SYM_COUNT, RATIO_RIGHT_X);
+            *out++ = assets[SYM_CODES + symbol * 2u];
+            *out++ = assets[SYM_CODES + symbol * 2u + 1u];
+            draw_symbol(symbol, PANE_SYM_X);
+            line = 1u;
+        }
+        *out = '\0';
+        pane(value, line, edit);
+    }
+    if (!edit) return;
+    if (g.bad) hint(assets + T_INVALID, 48u);
+    if (is_text())                           /* ABC / abc / 123 */
+        g.A->print_inverse(assets + T_MODE_UP + g.mode * 4u, MODE_CAPS_X, 6u, false, true,
+                           MODE_CAPS_X + 12u);
+}
+
+static void draw_presets(const char *assets)
+{
+    draw_menu(assets);
+    for (uint8_t i = 0u; i < PRESET_COUNT; i++)
+        pane(assets + T_PRESET_NAMES + i * T_PRESET_NAMES_STRIDE, (uint8_t)(i + 1u),
+             i == g.preset);                 /* five rows centred on lines 1-5 */
 }
 
 static void draw(void)
 {
-    if(page==PAGE_MENU) draw_menu();
-    else if(page==PAGE_MESSAGE) draw_message();
-    else draw_settings();
+    char assets[UI_SIZE] __attribute__((aligned(4)));
+    const app_api_t *A = g.A;
+    A->asset_read(0u, assets, UI_SIZE);
+    A->display_clear(); A->status_clear();
+    A->print_inverse(assets + T_TITLE, 2u, 0u, true, true,
+                     (uint8_t)(2u + T_TITLE_CHARS * 4u));
+    A->draw_battery();
+    if (g.missing) {
+        A->print_bold(assets + T_MISSING1, 0u, 127u, 2u);     /* full width: no menu here */
+        A->print_normal(assets + T_MISSING2, 0u, 127u, 3u);
+    } else if (g.screen == SCREEN_PRESET) draw_presets(assets);
+    else {
+        if (g.screen == SCREEN_INDEX) select_text();
+        draw_field(assets);
+    }
     A->blit_status(); A->blit_full();
 }
 
-static const char *key_chars(uint8_t key)
+static void commit_pending(void)
 {
-    static const char *const map[10]={" ",".,?!","ABC","DEF","GHI","JKL","MNO","PQRS","TUV","WXYZ"};
-    return key<=APP_KEY_9?map[key]:"";
+    g.pending = false; g.pending_key = APP_KEY_INVALID; g.cycle = 0u; g.pending_ticks = 0u;
 }
 
-static void commit(void){ has_pending=false; pending=APP_KEY_INVALID; cycle=0u; pending_ticks=0u; }
-static char letter_case(char c){ return mode==1u && c>='A' && c<='Z'?(char)(c+('a'-'A')):c; }
-static void insert_digit(uint8_t key){ commit(); if(len<MSG_LEN){ text[len++]=(char)('0'+key); text[len]=0; } }
-
-static void edit_message(uint8_t key,bool long_press)
+/* The profile pads both texts with spaces and stores their length apart, so
+ * the editor never writes a terminator. */
+static bool insert_char(char c)
 {
-    if(long_press && key<=APP_KEY_9){ insert_digit(key); return; }
-    if(key==APP_KEY_STAR){ commit(); mode=(uint8_t)((mode+1u)%3u); return; }
-    if(key==APP_KEY_F){ if(len) text[--len]=0; commit(); return; }
-    if(key>APP_KEY_9) return;
-    if(mode==2u){ insert_digit(key); return; }
-    const char *chars=key_chars(key); uint8_t count=slen(chars,4u);
-    if(has_pending && pending==key && len){ cycle=(uint8_t)((cycle+1u)%count); text[len-1u]=letter_case(chars[cycle]); pending_ticks=0u; return; }
-    commit(); if(len<MSG_LEN){ pending=key; has_pending=true; text[len++]=letter_case(chars[0]); text[len]=0; }
-}
-
-static bool pos_ok(void)
-{
-    for(uint8_t i=0u;i<POS_DIGITS;i++) if(pos[i]>9u) return false;
-    uint8_t la=(uint8_t)(pos[0]*10u+pos[1]),lm=(uint8_t)(pos[2]*10u+pos[3]);
-    uint16_t lo=(uint16_t)(pos[6]*100u+pos[7]*10u+pos[8]); uint8_t om=(uint8_t)(pos[9]*10u+pos[10]);
-    if(la>90u || lm>59u || lo>180u || om>59u) return false;
-    if(la==90u && (lm|pos[4]|pos[5])) return false;
-    if(lo==180u && (om|pos[11]|pos[12])) return false;
+    if (g.len >= (g.item == ITEM_CALL ? APRS_CALL_MAX : COMMENT_LIMIT)) return false;
+    for (uint8_t i = g.len; i > g.cursor; i--) g.text[i] = g.text[i - 1u];
+    g.text[g.cursor++] = c; g.len++;
     return true;
 }
 
-static void store_settings(void)
+static void sync_custom(void)
 {
-    cfg[0]=CFG_MAGIC; for(uint8_t i=3u;i<=10u;i++) cfg[i]=0u;
-    for(uint8_t i=0u;i<POS_DIGITS;i++) cfg[3u+i/2u]|=(uint8_t)(pos[i]<<((i&1u)*4u));
-    cfg[9]|=(uint8_t)(hemi<<4); cfg[10]=(uint8_t)(0x80u|(path<<4)|ssid); cfg[12]=sym;
+    if (g.item != ITEM_COMMENT) return;
+    g.active_preset = 0u; g.custom_len = g.len; g.custom_cursor = g.cursor;
+    memcpy(g.custom, g.text, g.len);
 }
 
-static void load_settings(void)
+static void edit_number(uint8_t key, bool long_press)
 {
-    for(uint8_t i=0u;i<POS_DIGITS;i++) pos[i]=(uint8_t)((cfg[3u+i/2u]>>((i&1u)*4u))&15u);
-    hemi=(uint8_t)(cfg[9]>>4); ssid=(uint8_t)(cfg[10]&15u);
-    path=(uint8_t)((cfg[10]>>4)&3u); sym=cfg[12];
-    if(hemi>3u || !pos_ok()){ A->asset_read(POS_DEFAULT,pos,POS_DIGITS); hemi=HEMI_DEFAULT; }
-    if((cfg[10]&0xC0u)!=0x80u || path>PATH_MAX){ ssid=7u; path=1u; }
-    if(sym>=SYM_COUNT) sym=SYM_DEFAULT;
-}
-
-static void load_message(void)
-{
-    const uint8_t *saved=cfg+TX_CFG_LEN;
-    if(saved[0]==0xFFu){ static const char initial[]="UV-K5/K1 F4HWN Firmware"; memcpy(text,initial,MSG_LEN); len=MSG_LEN; }
-    else { memcpy(text,saved,MSG_LEN); len=MSG_LEN; while(len && (text[len-1u]==' ' || (uint8_t)text[len-1u]==0xFFu)) len--; }
-    text[len]=0;
-}
-
-static void save_page(void)
-{
-    if(page==PAGE_SETTINGS){
-        if(!pos_ok()){ bad_pos=true; dirty=true; return; }
-        store_settings();
-    } else {
-        for(uint8_t i=0u;i<MSG_LEN;i++) cfg[TX_CFG_LEN+i]=i<len?(uint8_t)text[i]:(uint8_t)' ';
+    const bool digit = long_press || g.mode == 2u;
+    if (g.item == ITEM_CALL && !digit && key < 2u) return;
+    if (digit) {
+        commit_pending(); if (insert_char((char)('0' + key))) sync_custom(); return;
     }
-    A->cfg_save(cfg,EDIT_CFG_LEN); page=PAGE_MENU; bad_pos=false; f_arm=false; commit();
+    char chars[KEYMAP_STRIDE];   /* NUL-padded: every entry is shorter than its stride */
+    g.A->asset_read((uint16_t)(KEYMAP + key * KEYMAP_STRIDE), chars, KEYMAP_STRIDE);
+    if (g.pending && g.pending_key == key) {
+        if (!chars[++g.cycle]) g.cycle = 0u;
+    } else {
+        commit_pending();
+        if (!insert_char(' ')) return;
+        g.pending = true; g.pending_key = key; g.pending_pos = (uint8_t)(g.cursor - 1u);
+    }
+    char c = chars[g.cycle];
+    if (g.item == ITEM_COMMENT && g.mode == 1u && c >= 'A' && c <= 'Z') c += 'a' - 'A';
+    g.text[g.pending_pos] = c; g.pending_ticks = 0u; sync_custom();
 }
 
-static void edit_settings(uint8_t key)
+static void erase_before_cursor(void)
 {
-    bad_pos=false;
-    if(key==APP_KEY_F){ f_arm=!f_arm; return; }
-    bool back=f_arm; f_arm=false; uint8_t c=cur; bool lon=c>CUR_NS && c<=CUR_EW;
-    if(key<=APP_KEY_9){
-        if(c<CUR_NS || (lon && c<CUR_EW)){ pos[c-lon]=key; if(++c==CUR_NS) c++; if(c==CUR_EW) c--; cur=c; }
-    } else if(key==APP_KEY_STAR){
-        if(c<=CUR_EW) hemi^=(uint8_t)(lon?2u:1u);
-        else if(c==CUR_SSID) ssid=(uint8_t)((ssid+(back?15u:1u))&15u);
-        else if(c==CUR_PATH) path=back?(uint8_t)(path?path-1u:PATH_MAX):(uint8_t)(path<PATH_MAX?path+1u:0u);
-        else sym=back?(uint8_t)(sym?sym-1u:SYM_COUNT-1u):(uint8_t)(sym+1u<SYM_COUNT?sym+1u:0u);
-    } else { int8_t d=A->nav_dir(key); if(d<0 && cur) cur--; if(d>0 && cur<CUR_SYM) cur++; }
+    commit_pending(); if (!g.cursor) return; g.cursor--;
+    for (uint8_t i = g.cursor; i + 1u < g.len; i++) g.text[i] = g.text[i + 1u];
+    g.text[--g.len] = ' '; sync_custom();
+}
+
+static void open_editor(void)
+{
+    memcpy(g.backup, g.profile, APRS_PROFILE_LEN);
+    g.screen = SCREEN_EDIT; g.bad = false; g.mode = 0u; g.cursor = 0u;
+    select_text();
+    /* a longer comment written by another tool is cut to what the editor shows */
+    if (g.item == ITEM_COMMENT && g.len > COMMENT_LIMIT) {
+        g.len = COMMENT_LIMIT;
+        memset(g.text + COMMENT_LIMIT, ' ', APRS_COMMENT_MAX - COMMENT_LIMIT);
+    }
+    if (is_text()) g.cursor = g.len;
+    sync_custom();
+}
+
+static void commit_editor(void)
+{
+    commit_pending();
+    const uint32_t freq = get_u32(g.profile + APRS_PROFILE_FREQ_KHZ);
+    g.bad = ((g.item == ITEM_LAT || g.item == ITEM_LON) && !position_ok()) ||
+            (g.item == ITEM_FREQ &&
+             (freq < APRS_FREQ_KHZ_MIN || freq > APRS_FREQ_KHZ_MAX));
+    if (g.bad) return;
+    if (is_text())
+        g.profile[g.item == ITEM_CALL ? APRS_PROFILE_CALL_LEN : APRS_PROFILE_COMMENT_LEN] = g.len;
+    g.changed = true; g.screen = SCREEN_INDEX;
+}
+
+static void apply_preset(void)
+{
+    memset(g.text, ' ', APRS_COMMENT_MAX);
+    if (!g.preset) {
+        g.len = g.custom_len; memcpy(g.text, g.custom, g.len); g.cursor = g.custom_cursor;
+    } else {
+        const uint8_t index = (uint8_t)(g.preset - 1u);
+        g.A->asset_read((uint16_t)(P_PRESET_LENGTHS + index), &g.len, 1u);
+        g.A->asset_read((uint16_t)(P_PRESETS + (uint16_t)index * APRS_COMMENT_MAX), g.text, g.len);
+        g.cursor = g.len;
+    }
+    g.active_preset = g.preset; g.screen = SCREEN_EDIT;
+}
+
+static void index_key(uint8_t key)
+{
+    if (key == APP_KEY_MENU) open_editor();
+    else if (key == APP_KEY_EXIT) {
+        if (g.changed) g.A->cfg_save(g.profile, APRS_PROFILE_LEN);
+        g.running = false;
+    } else g.item = step(g.item, g.A->nav_dir(key), MENU_COUNT);
+}
+
+static void text_key(uint8_t key)
+{
+    if (g.item == ITEM_COMMENT && key == APP_KEY_PTT) {
+        commit_pending(); if (!g.active_preset) sync_custom();
+        g.preset = g.active_preset; g.screen = SCREEN_PRESET;
+    } else if (key == APP_KEY_STAR) {
+        commit_pending();
+        if (g.item == ITEM_CALL) g.mode = g.mode == 2u ? 0u : 2u;
+        else if (++g.mode == 3u) g.mode = 0u;
+    } else if (key == APP_KEY_F) erase_before_cursor();
+    else if (key <= APP_KEY_9) edit_number(key, false);
+    else {
+        commit_pending();   /* the cursor wraps between both ends of the text */
+        g.cursor = step(g.cursor, g.A->nav_dir(key), (uint8_t)(g.len + 1u));
+    }
+}
+
+static void value_key(uint8_t key)
+{
+    int8_t d = g.A->nav_dir(key);
+    uint8_t *p = g.profile;
+    const bool number = key <= APP_KEY_9;
+    if (g.item == ITEM_SSID) {
+        const uint8_t route = p[APRS_PROFILE_ROUTE];
+        const uint8_t ssid = number ? key : (uint8_t)((route + d) & 15u);
+        p[APRS_PROFILE_ROUTE] = (uint8_t)((route & 0xF0u) | ssid);
+    } else if (g.item == ITEM_PATH) {
+        const uint8_t route = p[APRS_PROFILE_ROUTE];
+        p[APRS_PROFILE_ROUTE] = (uint8_t)((step((uint8_t)(route >> 4), d, PATH_MAX + 1u) << 4) |
+                                          (route & 15u));
+    } else if (g.item == ITEM_SYMBOL) {
+        p[APRS_PROFILE_SYMBOL] = number ? (uint8_t)(key * SYM_JUMP)
+                                        : step(p[APRS_PROFILE_SYMBOL], d, SYM_COUNT);
+    } else if (g.item == ITEM_FREQ) {
+        if (number) { set_freq_digit(g.cursor, key); g.bad = false; d = 1; }
+        g.cursor = step(g.cursor, d, FREQ_DIGITS);
+    } else if (g.item == ITEM_POWER) {
+        p[APRS_PROFILE_POWER] = number && key < APP_APRS_POWER_COUNT
+                              ? key : step(p[APRS_PROFILE_POWER], d,
+                                           APP_APRS_POWER_COUNT);
+    } else {
+        const bool lat = g.item == ITEM_LAT;
+        const uint8_t first = lat ? 0u : LAT_DIGITS;
+        if (number) { p[APRS_PROFILE_POS + first + g.cursor] = key; g.bad = false; d = 1; }
+        else if (key == APP_KEY_STAR) p[APRS_PROFILE_HEMI] ^= lat ? 1u : 2u;
+        g.cursor = step(g.cursor, d, lat ? LAT_DIGITS : APRS_POS_DIGITS - LAT_DIGITS);
+    }
+}
+
+static void edit_key(uint8_t key)
+{
+    if (key == APP_KEY_MENU) commit_editor();
+    else if (key == APP_KEY_EXIT) {
+        commit_pending(); memcpy(g.profile, g.backup, APRS_PROFILE_LEN);
+        g.screen = SCREEN_INDEX;
+    } else if (is_text()) text_key(key);
+    else value_key(key);
+}
+
+static void preset_key(uint8_t key)
+{
+    if (key == APP_KEY_MENU) apply_preset();
+    else if (key == APP_KEY_EXIT) g.screen = SCREEN_EDIT;
+    else g.preset = step(g.preset, g.A->nav_dir(key), PRESET_COUNT);
 }
 
 static void short_key(uint8_t key)
 {
-    A->backlight_on();
-    if(page==PAGE_MENU){
-        if(key==APP_KEY_EXIT){ if(from_tx) A->chain_app(APP_CHAIN_APRS_TX); running=false; }
-        else if(key==APP_KEY_MENU){
-            page=menu_sel==0u?PAGE_MESSAGE:PAGE_SETTINGS;
-            if(page==PAGE_MESSAGE) load_message(); else { load_settings(); cur=0u; bad_pos=false; }
-        } else {
-            int8_t d=A->nav_dir(key);
-            if(d) menu_sel^=1u;
-        }
-    } else if(key==APP_KEY_MENU) save_page();
-    else if(key==APP_KEY_EXIT){
-        if(page==PAGE_MESSAGE) load_message(); else load_settings();
-        page=PAGE_MENU; bad_pos=false; f_arm=false; commit();
-    } else if(page==PAGE_SETTINGS) edit_settings(key);
-    else edit_message(key,false);
-    dirty=true;
+    if (g.missing) { if (key == APP_KEY_EXIT) g.running = false; return; }
+    if (g.screen == SCREEN_INDEX) index_key(key);
+    else if (g.screen == SCREEN_PRESET) preset_key(key);
+    else edit_key(key);
+    g.dirty = true;
 }
 
-__attribute__((section(".text.entry"),used))
+__attribute__((section(".text.entry"), used))
 void app_main(const app_api_t *api)
 {
-    A=api; held=APP_KEY_INVALID; running=true; dirty=true;
-    from_tx=api->launch_shortcut && api->launch_shortcut()==APP_LAUNCH_FROM_APRS_TX;
-    api->cfg_load(cfg,EDIT_CFG_LEN);
-    if(cfg[0]!=CFG_MAGIC){
-        cfg[0]=CFG_MAGIC; cfg[1]=66u; cfg[2]=0u; cfg[10]=0x97u; cfg[11]=0u; cfg[12]=SYM_DEFAULT;
-        api->asset_read(POS_DEFAULT,pos,POS_DIGITS); hemi=HEMI_DEFAULT; ssid=7u; path=1u; sym=SYM_DEFAULT;
-        store_settings();
-    } else load_settings();
-    load_message(); page=PAGE_MENU; api->backlight_on();
-    while(running){
-        if(dirty){ dirty=false; draw(); }
-        uint8_t key=api->get_key();
-        if(key==APP_KEY_SAVER || key==APP_KEY_WAKE){ held=APP_KEY_INVALID; held_ticks=0u; fired_long=false; dirty=true; }
-        else if(key==APP_KEY_INVALID){ if(held!=APP_KEY_INVALID && !fired_long) short_key(held); held=APP_KEY_INVALID; held_ticks=0u; fired_long=false; }
-        else if(key!=held){ held=key; held_ticks=0u; fired_long=false; }
-        else if(page==PAGE_MESSAGE){
-            held_ticks++;
-            if(!fired_long && key<=APP_KEY_9 && held_ticks>=HOLD_TICKS){ fired_long=true; edit_message(key,true); dirty=true; }
-            else if(key==APP_KEY_F && held_ticks>=HOLD_TICKS && (uint16_t)(held_ticks-HOLD_TICKS)%REPEAT_TICKS==0u){ fired_long=true; edit_message(key,false); dirty=true; }
+    uint8_t block[APRS_PROFILE_LEN], backup[APRS_PROFILE_LEN];
+    char custom[APRS_COMMENT_MAX];
+    uint32_t magic;
+    g.A = api; g.profile = block; g.backup = backup; g.custom = custom;
+    g.held_key = APP_KEY_INVALID; g.pending_key = APP_KEY_INVALID;
+    g.running = true; g.dirty = true;
+    api->cfg_load(block, sizeof(block));
+    memcpy(&magic, block, sizeof(magic));
+    g.missing = magic != APRS_PROFILE_MAGIC ||
+                block[APRS_PROFILE_COMMENT_LEN] > APRS_COMMENT_MAX ||
+                block[APRS_PROFILE_CALL_LEN] > APRS_CALL_MAX ||
+                (block[APRS_PROFILE_ROUTE] >> 4) > PATH_MAX ||
+                block[APRS_PROFILE_SYMBOL] >= SYM_COUNT ||
+                block[APRS_PROFILE_HEMI] > 3u || !position_ok() ||
+                get_u32(block + APRS_PROFILE_FREQ_KHZ) < APRS_FREQ_KHZ_MIN ||
+                get_u32(block + APRS_PROFILE_FREQ_KHZ) > APRS_FREQ_KHZ_MAX ||
+                block[APRS_PROFILE_POWER] >= APP_APRS_POWER_COUNT;
+    for (uint8_t i = 0u; !g.missing && i < block[APRS_PROFILE_CALL_LEN]; i++) {
+        const uint8_t c = block[APRS_PROFILE_CALL + i];
+        if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) g.missing = true;
+    }
+    api->backlight_on();
+    while (g.running) {
+        if (g.dirty) { g.dirty = false; draw(); }
+        const uint8_t key = api->get_key();
+        if (key == APP_KEY_SAVER || key == APP_KEY_WAKE) {
+            g.held_key = APP_KEY_INVALID; g.held_ticks = 0u; g.long_fired = false; g.dirty = true;
+        } else if (key == APP_KEY_INVALID) {
+            if (g.held_key != APP_KEY_INVALID && !g.long_fired) short_key(g.held_key);
+            g.held_key = APP_KEY_INVALID; g.held_ticks = 0u; g.long_fired = false;
+        } else if (key != g.held_key) {
+            g.held_key = key; g.held_ticks = 0u; g.long_fired = false;
+            if (api->nav_dir(key)) { g.long_fired = true; short_key(key); }
+        } else if (api->nav_dir(key)) {
+            if (++g.held_ticks >= 32u && !(g.held_ticks & 7u)) short_key(key);
+        } else if (!g.long_fired && !g.missing && g.screen == SCREEN_EDIT && is_text() &&
+                   key <= APP_KEY_9 && ++g.held_ticks >= HOLD_TICKS) {
+            g.long_fired = true; edit_number(key, true); g.dirty = true;
         }
-        if(has_pending && ++pending_ticks>=COMMIT_TICKS) commit();
-        api->battery_sample(); api->delay_ms(10u); api->backlight_update();
+        /* a multi-tap character settles: the cursor moves on past it */
+        if (g.pending && ++g.pending_ticks >= COMMIT_TICKS) { commit_pending(); g.dirty = true; }
+        api->battery_sample(); api->delay_ms(LOOP_MS); api->backlight_update();
     }
 }

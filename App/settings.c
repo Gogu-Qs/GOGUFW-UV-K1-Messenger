@@ -127,8 +127,11 @@ void SETTINGS_InitEEPROM(void)
                 }
             }
 
-            if (needsWrite) {
-                for (uint8_t i = 0; i < 7; i++)
+            // Older settings saves overwrote the first two band corrections
+            // with zero. Repair those entries without disturbing custom values
+            // for the remaining bands.
+            if (needsWrite || (buf[0] == 0 && buf[1] == 0)) {
+                for (uint8_t i = 0; i < (needsWrite ? 7 : 2); i++)
                     buf[i] = dBmCorrTable[i];
                 PY25Q16_WriteBuffer(0x00A0B9, buf, 7, false);
             }
@@ -162,7 +165,11 @@ void SETTINGS_InitEEPROM(void)
 
     // 0E78..0E7F
     PY25Q16_ReadBuffer(0x00A008, Data, 8);
-    gEeprom.BACKLIGHT_MAX         = (Data[0] & 0xF) <= 10 ? (Data[0] & 0xF) : 10;
+    /* Zero is not a usable maximum brightness.  Besides rejecting erased or
+     * corrupt settings, this repairs units affected by the former overlay-app
+     * stack collision that could persist BLMax=0 to EEPROM. */
+    gEeprom.BACKLIGHT_MAX         = (Data[0] & 0xF) >= 1 && (Data[0] & 0xF) <= 10
+                                  ? (Data[0] & 0xF) : 10;
     gEeprom.BACKLIGHT_MIN         = (Data[0] >> 4) < gEeprom.BACKLIGHT_MAX ? (Data[0] >> 4) : 0;
 #ifdef ENABLE_BLMIN_TMP_OFF
     gEeprom.BACKLIGHT_MIN_STAT    = BLMIN_STAT_ON;
@@ -1057,10 +1064,7 @@ void SETTINGS_SaveSettings(void)
 #ifdef ENABLE_VOICE
     State[0] = gEeprom.VOICE_PROMPT;
 #endif
-#ifdef ENABLE_RSSI_BAR
-    State[1] = gEeprom.S0_LEVEL;
-    State[2] = gEeprom.S9_LEVEL;
-#endif
+    // State[1..7] hold dBmCorrTable (0x00A0B9..0x00A0BF); preserve them.
 
     // 0x0EA8
     State = SecBuf + 0x18;

@@ -71,6 +71,10 @@ void COMMON_SwitchVFOs()
 
 void COMMON_SwitchVFOMode()
 {
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+    if (APP_FullWatchSwitchSelectedVfoMode())
+        return;
+#endif
 #ifdef ENABLE_NOAA
     if (gEeprom.VFO_OPEN && !IS_NOAA_CHANNEL(gTxVfo->CHANNEL_SAVE))
 #else

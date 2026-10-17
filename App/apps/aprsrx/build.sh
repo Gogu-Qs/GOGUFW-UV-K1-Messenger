@@ -8,8 +8,8 @@ set -euo pipefail
 
 APP="$(basename "$PWD")"            # breakout, foxhunt, beacon, fm, ...
 APP_NAME="APRS RX"                  # <-- the only per-app line
-APP_VER="0.10"
-APP_API_MIN=4
+APP_VER="0.15-gogu"
+APP_API_MIN=7
 APP_VMA=${APP_VMA:-0x20000280}      # pinned overlay VMA (Core/py32f071xb.ld)
 OUT="${APP_NAME// /}"               # blob basename ("Broadcast FM" -> BroadcastFM)
 
@@ -18,9 +18,9 @@ OBJCOPY=/opt/toolchain/bin/arm-none-eabi-objcopy
 command -v arm-none-eabi-gcc >/dev/null 2>&1 && { CC=arm-none-eabi-gcc; OBJCOPY=arm-none-eabi-objcopy; }
 
 # GCC 13 supports -Oz: prioritize overlay size over instruction count.
-CFLAGS="-mcpu=cortex-m0plus -mthumb -Oz -fno-jump-tables -std=gnu11 -ffreestanding -fno-builtin -fno-common \
+CFLAGS="-mcpu=cortex-m0plus -mthumb -Oz -flto -fno-jump-tables -fno-tree-loop-optimize -std=gnu11 -ffreestanding -fno-builtin -fno-common \
   -fomit-frame-pointer -ffunction-sections -fdata-sections -Wall -Wextra"
-LDFLAGS="-nostdlib -nostartfiles -T app.ld -Wl,--defsym,APP_VMA=${APP_VMA} \
+LDFLAGS="-flto -nostdlib -nostartfiles -T app.ld -Wl,--defsym,APP_VMA=${APP_VMA} \
   -Wl,--gc-sections -Wl,-Map=${APP}.map -Wl,--build-id=none -Wl,--no-warn-rwx-segments"
 
 rm -f ./*.app ./*.elf ./*.bin        # drop stale artifacts so discovery is unambiguous

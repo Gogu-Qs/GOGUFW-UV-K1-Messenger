@@ -146,8 +146,9 @@ uint8_t MB_SlotWrite(uint8_t slot, uint32_t offset, const uint8_t *data, uint32_
 /*   0x0F0000  bank 4 config  (64 KiB)                 ]                      */
 /*   0x100000  multiboot state A (4 KiB marker)        ] shared               */
 /*   0x101000  multiboot state B (4 KiB marker)        ] redundant            */
-/*   0x102000  -- free ~888 KiB --                                            */
-/*   0x1E0000  RX/TX log (32 KiB)                      ] shared               */
+/*   0x102000  overlay apps (48 x 8 KiB)               ] shared               */
+/*   0x162000  expansion reserve                                              */
+/*   0x1DE000  Sonic 4K reserve (136 KiB, through 0x1FFFFF)                   */
 /*                                                                            */
 /* Banks are 64 KiB for headroom; the standard config footprint ends near    */
 /* 0x00A170. In banks 1..4 GOGUFW maps its legacy 0x012000/0x013000 sectors   */
