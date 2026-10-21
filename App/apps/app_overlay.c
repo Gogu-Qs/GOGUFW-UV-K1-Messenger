@@ -50,6 +50,7 @@
 #include "ui/helper.h"
 #include "ui/main.h"
 #include "ui/status.h"
+#include "ui/ui.h"
 #include "board.h"
 #include "audio.h"
 #include "dcs.h"
@@ -121,13 +122,20 @@ static struct {
     bool screen_saver_wake;
 #ifdef ENABLE_FMRADIO
     bool fm_dirty;
+    bool fm_names_erase;
+    bool fm_name_pending;
+    bool fm_suspended;
+    uint8_t fm_resume_ticks;
+    uint8_t fm_name_channel;
+    char fm_name[16];
 #endif
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_BEAM
     bool beam_dirty;
 #endif
     bool shortcuts_cached;
     uint8_t shortcut_mask;
-    uint8_t shortcut_slots[4];
+    uint8_t shortcut_found;
+    uint8_t shortcut_slots[7];
     uint8_t launch_shortcut;
     uint8_t chain_target;
     uint8_t slot_revision;
@@ -749,6 +757,88 @@ static void app_fm_names_commit(void)
 }
 #endif
 
+#define APP_FM_NAMES_ADDR 0x00013000u
+#define APP_FM_NAMES_MAGIC 0x4747464Du
+#define APP_FM_NAME_LEN 16u
+
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint8_t version;
+    uint8_t count;
+    uint8_t reserved[10];
+} app_fm_names_store_t;
+
+static bool app_fm_names_valid(void)
+{
+    app_fm_names_store_t h;
+    PY25Q16_ReadBuffer(APP_FM_NAMES_ADDR, &h, sizeof(h));
+    return h.magic == APP_FM_NAMES_MAGIC && h.version == 1u &&
+           h.count == APP_FM_CH_MAX;
+}
+
+static uint8_t app_fm_rssi_raw(void)
+{
+    return (uint8_t)BK1080_REG_10_GET_RSSI(BK1080_ReadRegister(BK1080_REG_10));
+}
+
+static void app_fm_name_load(uint8_t channel, char *name, uint8_t len)
+{
+    if (name == NULL || len == 0u)
+        return;
+    name[0] = '\0';
+    if (channel >= APP_FM_CH_MAX)
+        return;
+
+    const uint8_t n = len < APP_FM_NAME_LEN ? len : APP_FM_NAME_LEN;
+    if (app_state.fm_name_pending && app_state.fm_name_channel == channel) {
+        memcpy(name, app_state.fm_name, n);
+    } else if (!app_state.fm_names_erase && app_fm_names_valid()) {
+        PY25Q16_ReadBuffer(APP_FM_NAMES_ADDR + sizeof(app_fm_names_store_t) +
+                           (uint32_t)channel * APP_FM_NAME_LEN, name, n);
+        if ((uint8_t)name[0] == 0xFFu)
+            name[0] = '\0';
+    }
+    name[n - 1u] = '\0';
+}
+
+static void app_fm_name_save(uint8_t channel, const char *name, uint8_t len)
+{
+    if (channel >= APP_FM_CH_MAX || name == NULL)
+        return;
+    memset(app_state.fm_name, 0, APP_FM_NAME_LEN);
+    if (len >= APP_FM_NAME_LEN)
+        len = APP_FM_NAME_LEN - 1u;
+    memcpy(app_state.fm_name, name, len);
+    app_state.fm_name_channel = channel;
+    app_state.fm_name_pending = true;
+}
+
+static void app_fm_names_erase(void)
+{
+    app_state.fm_names_erase = true;
+    app_state.fm_name_pending = false;
+}
+
+static void app_fm_names_commit(void)
+{
+    if (!app_state.fm_names_erase && !app_state.fm_name_pending)
+        return;
+
+    if (app_state.fm_names_erase || !app_fm_names_valid()) {
+        const app_fm_names_store_t h = {
+            APP_FM_NAMES_MAGIC, 1u, APP_FM_CH_MAX, {0}
+        };
+        PY25Q16_SectorErase(APP_FM_NAMES_ADDR);
+        PY25Q16_WriteBuffer(APP_FM_NAMES_ADDR, &h, sizeof(h), false);
+    }
+    if (app_state.fm_name_pending)
+        PY25Q16_WriteBuffer(APP_FM_NAMES_ADDR + sizeof(app_fm_names_store_t) +
+                           (uint32_t)app_state.fm_name_channel * APP_FM_NAME_LEN,
+                           app_state.fm_name, APP_FM_NAME_LEN, false);
+    app_state.fm_names_erase = false;
+    app_state.fm_name_pending = false;
+}
+
 static void app_fm_enter(uint16_t f, uint8_t b)
 {
     BK1080_Init(f, b);
@@ -768,6 +858,63 @@ static void app_fm_exit(void)
 static int8_t app_fm_valid(uint16_t f, uint16_t lo)
 {
     return (int8_t)FM_CheckFrequencyLock(f, lo);
+}
+
+static void app_fm_live_rssi(bool *enabled, bool write)
+{
+    if (enabled == NULL)
+        return;
+    if (write) {
+        FM_SetLiveRssiEnabled(*enabled);
+        app_state.fm_dirty = true;
+    } else {
+        *enabled = FM_IsLiveRssiEnabled();
+    }
+}
+
+static bool app_fm_radio_service(uint16_t fm_freq, uint8_t fm_band, bool fm_scanning)
+{
+    /* Match the resident FM priority rule: an FM band scan is sovereign, but
+     * otherwise the selected transceiver channel may interrupt Broadcast FM. */
+    if (fm_scanning) {
+        APP_OverlayRadioService();
+        return false;
+    }
+
+    APP_ModalRadioService();
+    if (FUNCTION_IsRx()) {
+        app_state.fm_resume_ticks = 100u; /* 100 x 50 ms = resident 5 s hold */
+        bool redraw = gUpdateDisplay;
+        if (!app_state.fm_suspended) {
+            app_fm_exit();
+            app_state.fm_suspended = true;
+            GUI_SelectNextDisplay(DISPLAY_MAIN);
+            redraw = true;
+        }
+        if (redraw) {
+            UI_DisplayMain();
+            ST7565_BlitFullScreen();
+            gUpdateDisplay = false;
+        }
+        return true;
+    }
+
+    if (!app_state.fm_suspended)
+        return false;
+
+    if (app_state.fm_resume_ticks > 0u) {
+        app_state.fm_resume_ticks--;
+        if (gUpdateDisplay) {
+            UI_DisplayMain();
+            ST7565_BlitFullScreen();
+            gUpdateDisplay = false;
+        }
+        return true;
+    }
+
+    app_fm_enter(fm_freq, fm_band);
+    app_state.fm_suspended = false;
+    return false;
 }
 
 static void app_fm_state(app_fm_state_t *s, bool write)
@@ -1034,10 +1181,13 @@ void APP_NotifySlotChanged(void)
 
 static int8_t app_shortcut_index(uint8_t shortcut)
 {
-    if (shortcut == APP_SHORTCUT_FM)      return 0;
+    if (shortcut == APP_SHORTCUT_SEARCH_FREQ) return 0;
     if (shortcut == APP_SHORTCUT_FOXHUNT) return 1;
     if (shortcut == APP_SHORTCUT_BEACON)  return 2;
-    if (shortcut == APP_SHORTCUT_BEAM)    return 3;
+    if (shortcut == APP_SHORTCUT_SEARCH_TONE) return 3;
+    if (shortcut == APP_SHORTCUT_FM)      return 4;
+    if (shortcut == APP_SHORTCUT_BEAM)    return 5;
+    if (shortcut == APP_SHORTCUT_FM_MEMORY) return 6;
     return -1;
 }
 
@@ -1047,6 +1197,7 @@ static void app_cache_shortcuts(void)
         return;
 
     app_state.shortcut_mask = 0;
+    app_state.shortcut_found = 0;
     const uint32_t overlay_vma = (uint32_t)PY25Q16_OverlayBuffer();
 
     for (uint8_t slot = 0; slot < APP_SLOT_COUNT; slot++) {
@@ -1057,7 +1208,9 @@ static void app_cache_shortcuts(void)
         const uint8_t shortcuts = (uint8_t)((h.flags & APP_FLAG_SHORTCUT_MASK) >>
                                             APP_FLAG_SHORTCUT_SHIFT);
         const uint8_t known[] = { APP_SHORTCUT_SEARCH_FREQ, APP_SHORTCUT_FOXHUNT,
-                                  APP_SHORTCUT_BEACON, APP_SHORTCUT_SEARCH_TONE };
+                                  APP_SHORTCUT_BEACON, APP_SHORTCUT_SEARCH_TONE,
+                                  APP_SHORTCUT_FM, APP_SHORTCUT_BEAM,
+                                  APP_SHORTCUT_FM_MEMORY };
         for (uint8_t i = 0; i < sizeof(known); i++) {
             const uint8_t shortcut = known[i];
             const int8_t index = app_shortcut_index(shortcut);
@@ -1069,9 +1222,15 @@ static void app_cache_shortcuts(void)
                                  (shortcuts == APP_SHORTCUT_SEARCH &&
                                   (shortcut == APP_SHORTCUT_SEARCH_FREQ ||
                                    shortcut == APP_SHORTCUT_SEARCH_TONE));
-            if (matches && (!(app_state.shortcut_mask & shortcut) ||
+            const uint8_t found = (uint8_t)(1u << index);
+            if (matches && (!(app_state.shortcut_found & found) ||
                             shortcuts == APP_SHORTCUT_SEARCH)) {
-                app_state.shortcut_mask |= shortcut;
+                app_state.shortcut_found |= found;
+                if (shortcut == APP_SHORTCUT_SEARCH_FREQ ||
+                    shortcut == APP_SHORTCUT_FOXHUNT ||
+                    shortcut == APP_SHORTCUT_BEACON ||
+                    shortcut == APP_SHORTCUT_SEARCH_TONE)
+                    app_state.shortcut_mask |= shortcut;
                 app_state.shortcut_slots[index] = slot;
             }
         }
@@ -1093,7 +1252,7 @@ uint8_t APP_LaunchOverlayShortcut(uint8_t shortcut)
         return APP_ERR_MAGIC;
 
     app_cache_shortcuts();
-    if (!(app_state.shortcut_mask & shortcut))
+    if (!(app_state.shortcut_found & (uint8_t)(1u << index)))
         return APP_ERR_MAGIC;
     app_state.launch_shortcut = shortcut;
     const uint8_t rc = APP_LaunchOverlay(app_state.shortcut_slots[index]);
@@ -1104,7 +1263,8 @@ uint8_t APP_LaunchOverlayShortcut(uint8_t shortcut)
 static uint8_t app_launch_shortcut(void) { return app_state.launch_shortcut; }
 static void app_chain_app(uint8_t target)
 {
-    if (target == APP_CHAIN_APRS_EDIT || target == APP_CHAIN_APRS_TX)
+    if (target == APP_CHAIN_APRS_EDIT || target == APP_CHAIN_APRS_TX ||
+        target == APP_CHAIN_FM_VFO || target == APP_CHAIN_FM_MEMORY)
         app_state.chain_target = target;
 }
 
@@ -1211,6 +1371,18 @@ static const app_api_t app_api = {
     .chain_app        = app_chain_app,
     .radio_tune_power = app_radio_tune_power,
     .radio_tune_aprs  = app_radio_tune_aprs,
+#ifdef ENABLE_FMRADIO
+    .fm_rssi_raw      = app_fm_rssi_raw,
+    .fm_name_load     = app_fm_name_load,
+    .fm_name_save     = app_fm_name_save,
+    .fm_names_erase   = app_fm_names_erase,
+    .fm_live_rssi     = app_fm_live_rssi,
+    .draw_header      = UI_GOGU_DrawHeader,
+    .draw_dotted      = UI_GOGU_DrawDottedSeparator,
+    .draw_footer      = UI_GOGU_DrawFooter,
+    .draw_text_editor = UI_GOGU_DrawTextEditor,
+    .fm_radio_service = app_fm_radio_service,
+#endif
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_INFO
     .sys_edition         = Edition,
     .sys_version         = Version,
@@ -1292,6 +1464,10 @@ static uint8_t app_prepare_overlay(uint8_t slot)
     app_rng_mix();
 #ifdef ENABLE_FMRADIO
     app_state.fm_dirty = false;
+    app_state.fm_names_erase = false;
+    app_state.fm_name_pending = false;
+    app_state.fm_suspended = false;
+    app_state.fm_resume_ticks = 0u;
 #endif
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_BEAM
     app_state.beam_dirty = false;
@@ -1406,6 +1582,7 @@ static void app_finish_overlay(uint8_t slot)
         PY25Q16_InvalidateCache();
     }
 #ifdef ENABLE_FMRADIO
+    app_fm_names_commit();
     if (app_state.fm_dirty) {
         app_state.fm_dirty = false;
         SETTINGS_SaveFM();
@@ -1448,8 +1625,12 @@ uint8_t APP_LaunchOverlay(uint8_t slot)
         if (rc != APP_OK || target == APP_CHAIN_NONE)
             break;
 
-        const char *name = target == APP_CHAIN_APRS_EDIT ? "APRS Edit" : "APRS TX";
-        const uint8_t len = target == APP_CHAIN_APRS_EDIT ? 9u : 7u;
+        const char *name;
+        uint8_t len;
+        if (target == APP_CHAIN_APRS_EDIT) { name = "APRS Edit"; len = 9u; }
+        else if (target == APP_CHAIN_APRS_TX) { name = "APRS TX"; len = 7u; }
+        else if (target == APP_CHAIN_FM_VFO) { name = "FM VFO"; len = 6u; }
+        else { name = "FM Memory"; len = 9u; }
         if (!app_find_named_slot(name, len, &slot))
             break;
         app_state.launch_shortcut = target == APP_CHAIN_APRS_EDIT

@@ -976,20 +976,8 @@ static void MSG_RF_FinishRxAttempt(bool parsed)
     }
 }
 
-void MSG_RF_Tick10ms(void)
+void MSG_RF_ServiceSquelchClose(void)
 {
-    if (s_scan_carrier_hold_ticks)
-        --s_scan_carrier_hold_ticks;
-    if (s_last_range_ping_age_ticks < MSG_RF_RANGE_PING_DUP_WINDOW_TICKS) ++s_last_range_ping_age_ticks;
-    MSG_RF_EnsureStoreInitialized();
-
-    if (!gMessengerConfig.msg_rx && (s_sidecar_armed || s_rx_capture_active)) {
-        /* MsgRx OFF must also stop an already-armed modem. Restore the stock
-         * radio once, then leave re-arm disabled until the setting is enabled. */
-        MSG_RF_HardRestoreVoicePath();
-        s_rearm_delay_ticks = 0u;
-    }
-
     /* The FSK sidecar can occasionally leave the stock SQL_FOUND interrupt
      * unseen after an analog/repeater tail.  REG_0C still reports that the
      * channel is idle.  Confirm that state for 30 ms, outside an FSK capture,
@@ -1008,6 +996,23 @@ void MSG_RF_Tick10ms(void)
     } else {
         s_sql_close_confirm_ticks = 0u;
     }
+}
+
+void MSG_RF_Tick10ms(void)
+{
+    if (s_scan_carrier_hold_ticks)
+        --s_scan_carrier_hold_ticks;
+    if (s_last_range_ping_age_ticks < MSG_RF_RANGE_PING_DUP_WINDOW_TICKS) ++s_last_range_ping_age_ticks;
+    MSG_RF_EnsureStoreInitialized();
+
+    if (!gMessengerConfig.msg_rx && (s_sidecar_armed || s_rx_capture_active)) {
+        /* MsgRx OFF must also stop an already-armed modem. Restore the stock
+         * radio once, then leave re-arm disabled until the setting is enabled. */
+        MSG_RF_HardRestoreVoicePath();
+        s_rearm_delay_ticks = 0u;
+    }
+
+    MSG_RF_ServiceSquelchClose();
 
     MSG_RF_RxChannelLockTick();
     MSG_RF_RangeBeepTick();

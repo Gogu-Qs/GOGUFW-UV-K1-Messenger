@@ -36,7 +36,7 @@
 #ifdef ENABLE_FLASHLIGHT
     #include "app/flashlight.h"
 #endif
-#ifdef ENABLE_FMRADIO_EMBEDDED
+#ifdef ENABLE_FMRADIO
     #include "app/fm.h"
 #endif
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
@@ -584,6 +584,7 @@ void ACTION_Handle(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 #ifdef ENABLE_FMRADIO
 void ACTION_FM(void)
 {
+#ifdef ENABLE_FMRADIO_EMBEDDED
     if (gCurrentFunction != FUNCTION_TRANSMIT && gCurrentFunction != FUNCTION_MONITOR)
     {
         gInputBoxIndex = 0;
@@ -614,6 +615,29 @@ void ACTION_FM(void)
 
         gRequestDisplayScreen = DISPLAY_FM;
     }
+#elif defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS)
+    if (gCurrentFunction == FUNCTION_TRANSMIT || gCurrentFunction == FUNCTION_MONITOR)
+        return;
+
+    const GUI_DisplayType_t return_screen = gScreenToDisplay;
+    gInputBoxIndex = 0;
+    gMonitor = false;
+    if (gScanStateDir != SCAN_OFF) {
+        gScanKeepResult = false;
+        CHFRSCANNER_Stop();
+    }
+
+    if (APP_LaunchOverlayShortcut(gEeprom.FM_IsMrMode
+                                  ? APP_SHORTCUT_FM_MEMORY
+                                  : APP_SHORTCUT_FM) != APP_OK)
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+    gFlagReconfigureVfos = true;
+    /* The overlay is modal: EXIT/F+0 must return to the screen which opened
+     * FM. APP_LaunchOverlay also restores the exact RX/TX/current VFO set. */
+    gRequestDisplayScreen = return_screen;
+#else
+    gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+#endif
 }
 
 #ifdef ENABLE_FMRADIO_EMBEDDED

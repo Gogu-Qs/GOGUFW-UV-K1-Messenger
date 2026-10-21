@@ -56,7 +56,11 @@ ENTRY(Reset_Handler)
 _estack = ORIGIN(RAM) + LENGTH(RAM);    /* end of RAM */
 /* Generate a link error if heap and stack don't fit into RAM */
 _Min_Heap_Size = 0x000;      /* no dynamic allocation is used */
-_Min_Stack_Size = 0x400; /* required amount of stack */
+/* APRS RX deliberately keeps its five decoded frames and three demodulator
+ * slicers on the runtime stack while the 4 KiB overlay contains its code.
+ * Keep a full 4 KiB below _estack available: otherwise an innocent resident
+ * BSS increase can corrupt the app's screen/key state at runtime. */
+_Min_Stack_Size = 0x1000;
 
 /* Specify the memory areas */
 MEMORY

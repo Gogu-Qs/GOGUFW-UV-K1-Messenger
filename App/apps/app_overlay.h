@@ -96,9 +96,10 @@
 #define APP_SHORTCUT_BEACON   0x04u
 #define APP_SHORTCUT_SEARCH_TONE 0x08u
 #define APP_SHORTCUT_SEARCH   0x09u
-/* Compatibility aliases for existing packages/tools. */
-#define APP_SHORTCUT_FM       0x01u
-#define APP_SHORTCUT_BEAM     0x08u
+/* Dedicated IDs: FM/BEAM must not steal Search Freq/Tone's quick keys. */
+#define APP_SHORTCUT_FM       0x0Au
+#define APP_SHORTCUT_BEAM     0x0Bu
+#define APP_SHORTCUT_FM_MEMORY 0x0Cu
 
 /* Optional resident facilities an app may require.  Requirements live in the
  * previously reserved header bytes, so app_header_t remains 64 bytes. */

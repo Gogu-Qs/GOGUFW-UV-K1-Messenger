@@ -65,10 +65,11 @@ const t_menu_item MenuList[] =
     {"TxODir",      MENU_SFT_D         }, // was "SFT_D"
     {"TxOffs",      MENU_OFFSET        }, // was "OFFSET"
     {"W/N",         MENU_W_N           },
-#ifndef ENABLE_FEAT_F4HWN
+#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
     {"Scramb",      MENU_SCR           }, // was "SCR"
 #endif
     {"BusyCL",      MENU_BCL           }, // was "BCL"
+    {"Compnd",      MENU_COMPAND       },
     {"Mode",        MENU_AM            }, // was "AM"
 #ifdef ENABLE_FEAT_F4HWN
     {"TXLock",      MENU_TX_LOCK       }, 
@@ -222,6 +223,11 @@ const t_menu_item MenuList[] =
 
     {"",                              0xff               }  // end of list - DO NOT delete or move this this
 };
+
+#if defined(ENABLE_FEAT_F4HWN) && defined(ENABLE_GOGUFW_SCRAMBLER) && defined(ENABLE_MESSENGER)
+_Static_assert(MENU_SCR == MENU_RNG_RSP + 1,
+               "GOGUFW Scrambler must not renumber existing menu IDs");
+#endif
 
 const uint8_t FIRST_HIDDEN_MENU_ITEM = MENU_F_LOCK;
 
@@ -397,7 +403,7 @@ const char gSubMenu_SET_NAV[][17] =
     "UP\nDOWN\nUV-K5(8)",
 };
 
-#ifndef ENABLE_FEAT_F4HWN
+#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
 const char gSubMenu_SCRAMBLER[][7] =
 {
     "OFF",
@@ -908,7 +914,7 @@ void UI_DisplayMenu(void)
             strcpy(String, gSubMenu_W_N[gSubMenuSelection]);
             break;
 
-#ifndef ENABLE_FEAT_F4HWN
+#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
         case MENU_SCR:
             strcpy(String, gSubMenu_SCRAMBLER[gSubMenuSelection]);
             #if 1
@@ -982,6 +988,7 @@ void UI_DisplayMenu(void)
             }
             break;
 
+        case MENU_COMPAND:
         case MENU_ABR_ON_TX_RX:
             strcpy(String, gSubMenu_RX_TX[gSubMenuSelection]);
             break;

@@ -1,24 +1,27 @@
-# GOGUFW 3.1.1
+# GOGUFW 3.2.0
 
-GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3 based on **F4HWN 6.0.0 (Multiboot)** with Full Watch ported from **F4HWN 6.1.0**. It keeps the F4HWN radio feature set and adds an integrated radio-to-radio Messenger, HEARD list, multi-radio Range Check, CALLTX melodies, RF Log Lite, named FM memories and a multiboot environment.
+GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3 based on
+**F4HWN 6.2.0**. It keeps the F4HWN radio feature set and adds an integrated
+radio-to-radio Messenger, HEARD list, multi-radio Range Check, CALLTX melodies,
+RF Log Lite, named FM memories and a multiboot environment.
 
 ## Firmware at a glance
 
 | Statistic | Project status |
 | --- | --- |
-| 📦 **Current stable release** | GOGUFW 3.1.1 |
+| 📦 **Current stable release** | GOGUFW 3.2.0 |
 | 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
 | ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
 | ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
 | 🍴 **GitHub forks** | [![GitHub forks](https://img.shields.io/github/forks/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=forks&color=orange)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/forks) |
-| 🧩 **Firmware base** | **F4HWN 6.0.0 (Multiboot)** + Full Watch from 6.1.0 |
+| 🧩 **Firmware base** | **F4HWN 6.2.0** |
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **Multiboot image** | 120,828 / 120,832 bytes · **100.00%** · 4 bytes free |
-| 🧠 **RAM usage** | 13,288 / 16,384 bytes · **81.10%** · 3,096 bytes free after the linker reservation |
+| 💾 **Multiboot image** | 114,940 / 120,832 bytes · **95.12%** · 5,892 bytes free |
+| 🧠 **Runtime stack** | 4,148 bytes available · 4,096-byte minimum enforced by the linker |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · RF Log Lite · Full Watch · FM names/RSSI |
-| 🔌 **CHIRP support** | Matching 3.1.1 module with 1024 memories, Messenger settings, FM names and channel policies |
+| 🔌 **CHIRP support** | Matching 3.2.0 module with 1024 memories, Messenger settings, FM names and all channel policies |
 
 ## Compatibility and downloads
 
@@ -26,25 +29,38 @@ GOGUFW is intended only for Quansheng **UV-K1 / UV-K5 V3** radios built around t
 
 The current release contains:
 
-- `f4hwn.gogufw.v3.1.1.bin` — the multiboot-compatible firmware image;
-- `Gogufw_3.1.1_chirp_module.py` — the matching custom CHIRP module.
+- `f4hwn.gogufw.v3.2.0.bin` — the multiboot-compatible firmware image;
+- `Gogufw_3.2.0_chirp_module.py` — the matching custom CHIRP module;
+- `FMVFO.app` and `FMMemory.app` — the two required Broadcast FM overlays;
+- `Search.app` — the matching Frequency/Tone Search overlay.
 
-Overlay-app packages are not included in this release.
+**Broadcast FM is no longer a resident screen in the firmware. Install both FM
+apps after flashing 3.2.0; installing only one leaves mode switching incomplete.**
 
 [Download GOGUFW releases](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases)
 
 Back up the radio with CHIRP before updating and keep a known-good DFU recovery image available.
 
-## What's new in 3.1.1
+## What's new in 3.2.0
 
-- Fixed Main Only RX clearing the middle display row; the pre-RSSI cleanup now runs only in Full Watch where the Triple/Quad Watch indicator occupies that row.
-- Fixed Full Watch VFO/MR switching while priority channel C or D is selected; temporary channel state now follows the displayed priority target instead of jumping to physical B.
-- Expanded external-Flash capacity to 48 app slots and restored the resident services required by current upstream overlay apps. Beam remains unsupported because its dedicated FSK bridge is not built.
-- Reworked overlay launch preparation and cleanup so app execution no longer retains a large caller frame or risks overwriting suspended stack data. Invalid persisted `BLMax=0` is repaired automatically.
-- Moved Spectrum's large work arrays to its foreground stack, returning 576 bytes of runtime headroom to overlay apps while Spectrum is closed.
-- Fixed a false main-channel RX transition that could occur after manually changing a Broadcast FM station with frequency-sensitive VFO combinations such as 439.400 MHz.
-- Verified that the upstream erased packed-settings-byte fix is already present and that erased FM/AM audio-profile data safely falls back to profile 0.
-- Ported applicable F4HWN 6.2.0 reliability fixes, removed Rescue Ops and the 1750 Hz call tone, and retained Screenshot support.
+- Moved the complete GOGUFW Broadcast FM interface into paired `FMVFO.app` and
+  `FMMemory.app` overlays while preserving F+0, saved stations, names, Live RSSI,
+  scanning, channel save/delete and the existing EEPROM/external-Flash layout.
+- Freed 5,888 bytes of internal firmware Flash compared with 3.1.1. The final
+  firmware uses 114,020 / 120,832 bytes before the multiboot stub.
+- Fixed held-key leakage during FM VFO/Memory switching, initial RSSI display,
+  scan/menu/save navigation, empty-band behavior and channel-name input mode.
+- Selected-channel RX temporarily returns to the radio screen, then resumes the
+  same FM mode and station five seconds after RX ends. EXIT remains available
+  even if a noisy or digital signal holds squelch open.
+- Restored Scrambler and Compander in the firmware and in the matching CHIRP
+  memory columns without changing the EEPROM layout. No FSK TX and No Roger are
+  preserved alongside them.
+- Fixed the modal missed-squelch-close path that could leave RX audio latched in
+  the Apps menu or an FM editor, and restored the stack headroom needed by APRS RX.
+- Includes all fixes and features from GOGUFW 3.1.1.
+- Includes Search v1.5 with vertically centred Frequency and Tone result/save
+  rows; install it to enable the F+4 and F+STAR Search shortcuts.
 
 ### Also included from 3.1.0
 
@@ -144,7 +160,24 @@ CALLTX transmits one of five selectable alert melodies using the existing radio 
 
 ### FM broadcast radio
 
-The FM radio includes named station memories, rename/delete controls and a signal-strength display. **LIVE RSSI** is the first menu item in both VFO and memory modes: ON updates the meter continuously and shows `LIVE`; OFF samples once after tuning and keeps the meter fixed to avoid periodic clicking on quiet broadcasts. Occupied save targets show their channel number and station name before confirmation.
+GOGUFW 3.2.0 keeps the BK1080 driver and storage bridge resident, but runs the
+interface from two required overlays. Install both `FMVFO.app` and
+`FMMemory.app` from UV Studio's **Apps** page. The split is transparent during
+normal use and makes room in the firmware without changing saved FM data.
+
+- **F + 0** opens the last-used FM mode from the normal radio screen.
+- Hold **3** to switch between FM VFO and FM Memory.
+- **EXIT** or **F + 0** closes FM and returns to the radio screen and VFO/MR
+  state from which it was opened.
+- If the selected radio channel receives a signal, FM temporarily yields to the
+  normal RX screen and audio. Five seconds after RX ends, the same FM mode,
+  band and frequency/channel resume automatically.
+- **MENU** opens the GOGUFW FM menu. **STAR** starts manual scan and
+  **F + STAR** starts confirmed automatic scan. During manual scan, UP/DOWN
+  continues in either direction and EXIT returns to normal VFO operation.
+- The radio retains 48 named FM memories, rename/delete controls, channel save,
+  four configurable bands and **LIVE RSSI**. Existing settings, memories and
+  names are reused without conversion.
 
 | Saved broadcast station | Manual FM tuning |
 | --- | --- |
@@ -154,7 +187,10 @@ The FM radio includes named station memories, rename/delete controls and a signa
 
 Open **Search Frequency** with **F + 4**, or **Search Tone** with **F + STAR**. Both screens use the same header, status, frequency/tone rows and footer controls as the other GOGUFW tools.
 
-The optional Search overlay is not distributed as a 3.1.1 release asset. A compatible build uses the corrected append-only overlay API and follows the displayed Full Watch A/B/C/D channel after watch rotations.
+Install the release's `Search.app` to use these shortcuts. Search v1.5 uses the
+corrected append-only overlay API, follows the displayed Full Watch A/B/C/D
+channel after watch rotations, and centres the status, frequency and tone rows
+between the dotted separators.
 
 After a result is found, press **MENU / SAVE**, choose a destination memory with **UP/DOWN** or the number keys, then press **MENU** and confirm `SAVE?`. Empty targets are marked `CH-xxxx`; occupied targets show the channel number and name, shortened with `..` when necessary. A saved result opens directly in MR mode without also opening the main menu.
 
@@ -171,9 +207,9 @@ GOGUFW provides 48 external-Flash app slots. Empty slots are hidden; hold UP/DOW
 Armel's original v6.1.0 and v6.2.0 overlay packages remain ABI-compatible. All
 of the archived apps pass the GOGUFW loader and have their required resident
 services except **Beam**, whose dedicated FSK bridge is intentionally not built.
-Broadcast FM and ToneCall can be opened from Apps. Optional GOGUFW-modified
-overlay packages are personal development builds and are not included in the
-public 3.1.1 release.
+Broadcast FM and ToneCall can be opened from Apps. The 3.2.0 release includes
+Search plus the matching FM VFO and FM Memory apps. Install Search for F+4 and
+F+STAR; both FM apps are required for complete FM use.
 
 ### Channel policies and main-screen indicators
 
@@ -217,8 +253,9 @@ Hold **MENU while powering on** to open the firmware-slot selector.
 | Messenger | **F + MENU** |
 | HEARD / Range Check | **F + 7** |
 | CALLTX | **F + 9** |
-| Search Frequency | **F + 4** with a compatible optional Search overlay |
-| Search Tone | **F + STAR** with a compatible optional Search overlay |
+| Broadcast FM | **F + 0**; requires both `FMVFO.app` and `FMMemory.app` |
+| Search Frequency | **F + 4**; requires the release's `Search.app` |
+| Search Tone | **F + STAR**; requires the release's `Search.app` |
 | Spectrum | **F + 5** |
 | Backlight override cycle | **F + 8**: always on → always off → saved strategy |
 | Keypad lock | Hold **F** |
@@ -227,12 +264,13 @@ Hold **MENU while powering on** to open the firmware-slot selector.
 
 ## CHIRP
 
-Use the module that matches the firmware release. For GOGUFW 3.1.1:
+Use the module that matches the firmware release. For GOGUFW 3.2.0:
 
 1. Start CHIRP and choose **File → Load Module**.
-2. Select `Gogufw_3.1.1_chirp_module.py`.
+2. Select `Gogufw_3.2.0_chirp_module.py`.
 3. Download the radio using **Quansheng → UV-K1 / UV-K5 V3 GOGUFW Messenger**.
-4. Edit channels, side-key actions, Messenger/Call settings, FM names, `No FSK TX` and `No Roger` as required.
+4. Edit channels, side-key actions, Messenger/Call settings, FM names,
+   `No FSK TX`, `No Roger`, `Scrambler` and `Compander` as required.
 5. Upload the completed image to the radio.
 
 The firmware and module support the radio's 1024 memory-channel layout. Do not use an older GOGUFW module with this release: an older module may not understand newer key-action or channel fields and can overwrite them.
@@ -246,7 +284,11 @@ cmake --preset Fusion --fresh
 cmake --build --preset Fusion
 ```
 
-The build emits the normal `gogufw.bin` and the canonical multiboot filename `f4hwn.gogufw.v3.1.1.bin`. See `BUILD_VSCODE_MAC.md` or `BUILD_WITH_VSCODE.md` for environment setup.
+The build emits the normal `gogufw.bin` and the canonical multiboot filename
+`f4hwn.gogufw.v3.2.0.bin`. Build the paired FM apps by running `build.sh` in
+`App/apps/fm` and `App/apps/fmmemory`; they produce `FMVFO.app` and
+`FMMemory.app` respectively. See `BUILD_VSCODE_MAC.md` or
+`BUILD_WITH_VSCODE.md` for environment setup.
 
 ## Credits and license
 

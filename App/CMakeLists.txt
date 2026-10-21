@@ -124,14 +124,13 @@ endif()
 
 # ---- STOCK QUANSHENG FEATURES ----
 
-# GOGUFW keeps its customised FM radio resident. Search Freq/Tone are the
-# features moved into the 4 KiB overlay instead.
+# Keep only the BK1080 driver and the small shared persistence/validation
+# bridge resident.  The complete FM UI and state machine live in BroadcastFM.
 enable_feature(ENABLE_FMRADIO
     driver/bk1080.c
 )
 if(ENABLE_FMRADIO)
-    target_compile_definitions(App INTERFACE ENABLE_FMRADIO_EMBEDDED)
-    target_sources(App INTERFACE app/fm_embedded.c ui/fmradio.c)
+    target_sources(App INTERFACE app/fm.c)
 endif()
 enable_feature(ENABLE_AIRCOPY
     app/aircopy.c
@@ -265,6 +264,7 @@ enable_feature(ENABLE_FEAT_F4HWN_RESET_VFO)
 enable_feature(ENABLE_FEAT_F4HWN_PMR)
 enable_feature(ENABLE_FEAT_F4HWN_GMRS_FRS_MURS)
 enable_feature(ENABLE_FEAT_F4HWN_CA)
+enable_feature(ENABLE_GOGUFW_SCRAMBLER)
 enable_feature(ENABLE_FEAT_F4HWN_DEBUG)
 enable_feature(ENABLE_FEAT_F4HWN_MEM)
 enable_feature(ENABLE_FEAT_F4HWN_ACTION_PICKER)

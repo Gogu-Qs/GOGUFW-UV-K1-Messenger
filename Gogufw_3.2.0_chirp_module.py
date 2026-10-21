@@ -1,9 +1,11 @@
-# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v3.1.1
+# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v3.2.0
+# Release build: 2026-10-21
 # Based on F4HWN Fusion CHIRP 5.5.0 support.
 # Matches the GOGUFW external-flash EEPROM aliases:
 #   FM names: 0x00D000 alias -> firmware flash 0x013000
 #   Messenger/Call config: 0x00E000 alias -> firmware flash 0x012000
-# Includes GGFW settings: MsgRx, MsgAck, MsgBeep, MsgLed, CllTon, CllVol, RngRsp, Callsign, Drafts, FM names.
+# Includes GGFW settings: MsgRx, MsgAck, MsgBeep, MsgLed, CllTon, CllVol,
+# RngRsp, Callsign, Drafts, FM names, No FSK TX, No Roger, Scrambler and Compander.
 
 # Quansheng UV-K5 driver (c) 2023 Jacek Lipkowski <sq5bpf@lipkowski.org>
 # Adapted For UV-K5 EGZUMER custom software By EGZUMER, JOC2
@@ -61,11 +63,11 @@ DEBUG_SHOW_OBFUSCATED_COMMANDS = False
 DEBUG_SHOW_MEMORY_ACTIONS = False
 
 # TODO: remove the driver version when it's in mainline chirp
-DRIVER_VERSION = "GOGUFW UV-K1 / UV-K5 V3 CHIRP driver v3.1.1"
+DRIVER_VERSION = "GOGUFW UV-K1 / UV-K5 V3 CHIRP driver v3.2.0 (2026-10-21)"
 FIRMWARE_VERSION_UPDATE = "https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases"
 CHIRP_DRIVER_VERSION_UPDATE = "https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases"
 
-CHAINE_F4HWN = "https://www.youtube.com/@f4hwn"
+GOGUFW_PROJECT_URL = "https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger"
 
 VALEUR_COMPILER = "ENABLE"
 
@@ -106,7 +108,7 @@ struct {
   u8 noFskTx:1,
      noRoger:1,
      step:6;
-  u8 unused_scrambler;
+  u8 scrambler;
 
 } channel[1024];
 
@@ -171,7 +173,7 @@ struct {
   u8 noFskTx:1,
      noRoger:1,
      step:6;
-  u8 unused_scrambler;
+  u8 scrambler;
 
 } vfo_channel[14];
 
@@ -540,6 +542,8 @@ SET_OFF_ON_LIST = ["OFF", "ON"]
 
 # Per-channel BK4819 voice inversion frequency.  The firmware stores OFF as
 # zero and 2600..3500 Hz as values 1..10 in the final channel-record byte.
+SCRAMBLER_LIST = ["OFF", "2600Hz", "2700Hz", "2800Hz", "2900Hz", "3000Hz",
+                  "3100Hz", "3200Hz", "3300Hz", "3400Hz", "3500Hz"]
 
 # SET_lck f4hwn
 SET_LCK_LIST = ["KEYS", "KEYS+PTT"]
@@ -560,6 +564,8 @@ UVK5_POWER_LEVELS = [chirp_common.PowerLevel("USER = < 20mW to 5W", watts=0.000)
                      chirp_common.PowerLevel("MID = 2W",  watts=2.00),
                      chirp_common.PowerLevel("HIGH = 5W", watts=5.00),
                      ]
+
+COMPANDER_LIST = ["OFF", "TX", "RX", "TX/RX"]
 
 # rx mode
 RXMODE_LIST = ["MAIN ONLY", "DUAL RX RESPOND", "CROSS BAND", "MAIN TX DUAL RX"]
@@ -1282,10 +1288,10 @@ def _ggfw_msg_config_ensure(_mem):
 
 @directory.register
 class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
-    """Quansheng UV-K5 (egzumer + f4hwn)"""
+    """Quansheng UV-K1 / UV-K5 V3 running GOGUFW."""
     VENDOR = "Quansheng"
     MODEL = "UV-K1 / UV-K5 V3 GOGUFW Messenger"
-    VARIANT = "3.1.1"
+    VARIANT = "3.2.0"
     BAUD_RATE = 38400
     NEEDS_COMPAT_SERIAL = False
     FIRMWARE_VERSION = ""
@@ -1600,13 +1606,16 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
 
         # We'll also look at the channel attributes if a memory has them
         tmpscn = 0
+        tmp_comp = 0
         if ch_num < MR_CHANNELS_MAX:
             _mem3 = self._memobj.ch_attr[ch_num]
             # scanlists - use new 5-bit scanlist field
             tmpscn = _mem3.scanlist
+            tmp_comp = list_def(_mem3.compander, COMPANDER_LIST, 0)
         elif ch_num < MR_CHANNELS_MAX + 14:
             att_num = MR_CHANNELS_MAX + int((ch_num - MR_CHANNELS_MAX) / 2)
             _mem3 = self._memobj.ch_attr[att_num]
+            tmp_comp = list_def(_mem3.compander, COMPANDER_LIST, 0)
 
         # Firmware validity is carried by the channel-attribute band.  A
         # delete marks an MR channel as band 7 and intentionally leaves the
@@ -1634,6 +1643,10 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
             rs = RadioSetting("noRoger", "No Roger", val)
             mem.extra.append(rs)
 
+            val = RadioSettingValueList(SCRAMBLER_LIST)
+            rs = RadioSetting("scrambler", "Scrambler", val)
+            mem.extra.append(rs)
+
             val = RadioSettingValueBoolean(False)
             rs = RadioSetting("busyChLockout", "BusyCL", val)
             mem.extra.append(rs)
@@ -1650,6 +1663,10 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
             rs = RadioSetting("dtmfdecode", "DTMF decode", val)
 #            if self._memobj.BUILD_OPTIONS.ENABLE_DTMF_CALLING:
 #                mem.extra.append(rs)
+
+            val = RadioSettingValueList(COMPANDER_LIST)
+            rs = RadioSetting("compander", "Compander", val)
+            mem.extra.append(rs)
 
             val = RadioSettingValueList(SCANLIST_LIST)
             rs = RadioSetting("scanlists", "Scanlists", val)
@@ -1770,6 +1787,14 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         rs.set_doc('Suppresses the Roger beep or MDC burst on this channel even when Roger is enabled in the radio menu.')
         mem.extra.append(rs)
 
+        # The last channel-record byte is the firmware's 0..10 voice-inversion
+        # value. Erased or otherwise invalid values are presented as OFF.
+        scrambler = list_def(_mem.scrambler, SCRAMBLER_LIST, 0)
+        val = RadioSettingValueList(SCRAMBLER_LIST, None, scrambler)
+        rs = RadioSetting("scrambler", "Scrambler", val)
+        rs.set_doc('Selects the per-channel voice inversion frequency.')
+        mem.extra.append(rs)
+
         # BusyCL
         val = RadioSettingValueBoolean(_mem.busyChLockout)
         rs = RadioSetting("busyChLockout", "Busy Ch Lockout (BusyCL)", val)
@@ -1800,6 +1825,11 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         rs = RadioSetting("dtmfdecode", "DTMF decode (D Decd)", val)
 #        if self._memobj.BUILD_OPTIONS.ENABLE_DTMF_CALLING:
 #            mem.extra.append(rs)
+
+        val = RadioSettingValueList(COMPANDER_LIST, None, tmp_comp)
+        rs = RadioSetting("compander", "Compander (Compnd)", val)
+        rs.set_doc('Selects transmit, receive or two-way audio companding for this channel.')
+        mem.extra.append(rs)
 
         val = RadioSettingValueList(SCANLIST_LIST, None, tmpscn)
         rs = RadioSetting("scanlists", "Scanlists (SList)", val)
@@ -2267,7 +2297,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
 
 # add menu firmware with version and option display if version 3.0 and up
         ValFirm = "Firmware : " + self.FIRMWARE_VERSION
-        Compair1 = "GOGUFW v3.1.1"
+        Compair1 = "GOGUFW v3.2.0"
 
         if self.FIRMWARE_VERSION == "":
             ValFirm = "Firmware : Only when read from the radio "
@@ -3738,9 +3768,8 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
 
         _mem_attr = self._memobj.ch_attr[att_num]
 
-        # Initialize the visible scan-list field. Preserve the hidden legacy
-        # compander bits on existing channels, but clear them when reviving a
-        # deleted/erased slot so the removed feature cannot turn on by chance.
+        # Initialize the visible scan-list field. Clear an erased slot's
+        # attribute bits before applying the values supplied by CHIRP.
         attr_was_empty = int(_mem_attr.band) > 6
         _mem_attr.scanlist = 0
         if attr_was_empty:
@@ -3826,10 +3855,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         _mem_chan.txLock = get_setting("txLock", 0)
         _mem_chan.noFskTx = get_setting("noFskTx", False)
         _mem_chan.noRoger = get_setting("noRoger", False)
-        # Do not use a double-underscore bitwise field here: Python name
-        # mangling turns it into _UVK5RadioEgzumer__..., which the CHIRP
-        # bitwise object does not contain and every edit then fails.
-        _mem_chan.unused_scrambler = 0
+        _mem_chan.scrambler = get_setting("scrambler", 0)
         _mem_chan.busyChLockout = get_setting("busyChLockout", False)
         _mem_chan.dtmf_pttid = get_setting("pttid", 0)
         _mem_chan.freq_reverse = get_setting("frev", False)
@@ -3837,5 +3863,6 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
         if number < MR_CHANNELS_MAX:
             tmp_val = get_setting("scanlists", 0)
             _mem_attr.scanlist = tmp_val
+        _mem_attr.compander = get_setting("compander", 0)
 
         return memory

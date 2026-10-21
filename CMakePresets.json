@@ -74,6 +74,7 @@
                 "ENABLE_GOGUFW_DTMF_LIVE": false,
                 "ENABLE_GOGUFW_CALLTX": false,
                 "ENABLE_GOGUFW_RF_LOG": false,
+                "ENABLE_GOGUFW_SCRAMBLER": false,
                 "ENABLE_FEAT_F4HWN_SCAN_PROGRESS": false,
                 "ENABLE_FEAT_F4HWN_SCAN_FASTER": false,
                 "ENABLE_FEAT_F4HWN_BEAM": false,
@@ -83,7 +84,7 @@
                 "ENABLE_RDS_PROBE": false,
                 "ENABLE_SWD": false,
                 "VERSION_STRING_1": "v0.22",
-                "VERSION_STRING_2": "v3.1.1"
+                "VERSION_STRING_2": "v3.2.0"
             }
         },
         {
@@ -119,6 +120,7 @@
                 "ENABLE_FEAT_F4HWN_LOGO_SAV": false,
                 "ENABLE_GOGUFW_CALLTX": true,
                 "ENABLE_GOGUFW_RF_LOG": true,
+                "ENABLE_GOGUFW_SCRAMBLER": true,
                 "ENABLE_SWD": true,
                 "EDITION_STRING": "GGFW",
                 "TARGET": "gogufw"

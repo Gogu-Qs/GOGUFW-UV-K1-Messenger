@@ -45,6 +45,7 @@ FLAG_SHORTCUT_SHIFT = cdefine("app_overlay.h", "APP_FLAG_SHORTCUT_SHIFT")
 SHORTCUTS = {
     "none": 0,
     "fm": cdefine("app_overlay.h", "APP_SHORTCUT_FM"),
+    "fm-memory": cdefine("app_overlay.h", "APP_SHORTCUT_FM_MEMORY"),
     "foxhunt": cdefine("app_overlay.h", "APP_SHORTCUT_FOXHUNT"),
     "beacon": cdefine("app_overlay.h", "APP_SHORTCUT_BEACON"),
     "beam": cdefine("app_overlay.h", "APP_SHORTCUT_BEAM"),

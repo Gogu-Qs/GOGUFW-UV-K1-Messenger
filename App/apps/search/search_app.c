@@ -179,9 +179,11 @@ static void draw(void)
     A->display_clear();
     A->print_bold(mode == SC_FREQ ? "SEARCH FREQ" : "SEARCH TONE", 0, 127, 0);
     draw_dots(9);
-    small_y(found ? "SCAN COMPLETE" : "SCANNING", 0, 12);
-    frequency_text(f); small_y(f, 0, 23);
-    tone_text(t); small_y(t, 0, 34);
+    /* Vertically balance the three seven-pixel rows between the dotted
+     * separators at y=9 and y=46. */
+    small_y(found ? "SCAN COMPLETE" : "SCANNING", 0, 13);
+    frequency_text(f); small_y(f, 0, 24);
+    tone_text(t); small_y(t, 0, 35);
     draw_dots(46); A->print_tiny(found ? "SAVE" : "SCANNING", 1, 49, false, true);
     A->print_tiny("EXIT", 112, 49, false, true);
     A->blit_full();
@@ -261,9 +263,9 @@ static void draw_save(uint16_t channel, bool confirm,
     A->display_clear();
     A->print_bold(mode == SC_FREQ ? "SEARCH FREQ" : "SEARCH TONE", 0, 127, 0);
     draw_dots(9);
-    save_status(s, channel, confirm, digits, digit_count); small_y(s, 0, 12);
-    frequency_text(f); small_y(f, 0, 23);
-    tone_text(t); small_y(t, 0, 34);
+    save_status(s, channel, confirm, digits, digit_count); small_y(s, 0, 13);
+    frequency_text(f); small_y(f, 0, 24);
+    tone_text(t); small_y(t, 0, 35);
     draw_dots(46); A->print_tiny("SAVE", 1, 49, false, true);
     A->print_tiny("EXIT", 112, 49, false, true);
     A->blit_full();

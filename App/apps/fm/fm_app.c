@@ -15,8 +15,8 @@
  */
 
 /*
- * Broadcast FM — overlay app. Sovereign: drives the BK1080 directly and owns the
- * radio while running (NO BK4819 dual-watch, unlike the resident FM). Reimplements
+ * Broadcast FM — overlay app. Drives the BK1080 directly while retaining the
+ * resident selected-channel RX priority/restore behavior. Reimplements
  * the full resident FM (fm.c / UI_DisplayFM) - VFO + 48 memories - sharing the
  * resident channel table (gFM_Channels) and config (gEeprom.FM_*), committed to
  * EEPROM on exit. The BK1080 audio is a hardware path, so playback needs no CPU loop.
@@ -37,6 +37,10 @@
 #define CHMAX       APP_FM_CH_MAX
 #define NAME_LEN    16u
 
+#if defined(FM_VFO_ONLY) == defined(FM_MEMORY_ONLY)
+#error "Build exactly one FM overlay mode"
+#endif
+
 enum { MENU_NONE, MENU_DELETE, MENU_NAME, MENU_LIVE, MENU_SAVE };
 
 /* All the state in one struct: Thumb-1 code then reaches every field from a
@@ -45,12 +49,18 @@ enum { MENU_NONE, MENU_DELETE, MENU_NAME, MENU_LIVE, MENU_SAVE };
  * immediate. The overlay is zeroed by the loader at each launch. */
 struct globals {
     app_fm_state_t st;       /* freq_playing, sel_freq, band, is_mr, sel_ch */
-    uint8_t  chPos, savePos, inIdx;
+    uint8_t  chPos, inIdx;
+#ifdef FM_VFO_ONLY
+    uint8_t  savePos;
+#endif
     int8_t   scanState;      /* 0 = off, +1 up, -1 down (non-blocking) */
-    bool     autoScan, foundFreq, askSave, askDelete, fArm, running;
-    bool     liveRssi, liveEdit, liveChoice, nameEdit, autoConfirm, upper;
+    bool     autoScan, scanFound, fArm, running;
+#ifdef FM_VFO_ONLY
+    bool     askSave;
+#endif
+    bool     liveRssi, liveEdit, liveChoice, nameEdit, autoConfirm;
     uint8_t  inBox[4];
-    uint8_t  menuMode, rssiLevel, namePos, nameKey, nameTap;
+    uint8_t  menuMode, rssiLevel, namePos, nameKey, nameTap, nameMode;
     char     name[NAME_LEN];
     uint16_t lo, hi;
     uint16_t scanTimer;      /* ms until the next scan step */
@@ -60,6 +70,11 @@ struct globals {
 };
 static struct globals g;
 #define A (g.api)
+
+/* Keep Cortex-M0 division out of the 4 KiB blob; firmware already exports the
+ * ABI-correct helpers through the overlay table. */
+uint64_t __aeabi_uidivmod(uint32_t n,uint32_t d){return A->uidivmod(n,d);}
+uint32_t __aeabi_uidiv(uint32_t n,uint32_t d){return (uint32_t)A->uidivmod(n,d);}
 
 _Static_assert(offsetof(struct globals, inBox) + 4u <= 32u, "byte fields out of ldrb range");
 
@@ -87,6 +102,7 @@ static char *put_t(char *o, uint16_t off){ A->asset_read(off,o,TEXT_MAX); while(
 static void bandLimits(void){ g.lo=A->fm_lo(g.st.band); g.hi=A->fm_hi(g.st.band); }
 static uint16_t wrap(uint16_t f){ if(f<g.lo)return g.hi; if(f>g.hi)return g.lo; return f; }
 static void tune(void){ A->fm_set_freq(g.st.freq_playing, g.st.band); }
+#ifdef FM_MEMORY_ONLY
 static void loadName(uint8_t channel)
 {
     A->fm_name_load(channel,g.name,NAME_LEN);
@@ -95,6 +111,7 @@ static void loadName(uint8_t channel)
         *o++=(char)('0'+n/10u); *o++=(char)('0'+n%10u); *o='\0';
     }
 }
+#endif
 
 static void invalidateRssi(void){ g.rssiLevel=0xFFu; }
 static void sampleRssi(void)
@@ -134,26 +151,147 @@ static int configChannel(void)
 /* append a zero-padded 2-digit number (1..99), return the end pointer */
 static char *num2(char *o, uint8_t n){ if(n<10)*o++='0'; return putu(o,n); }
 
+static uint8_t slen(const char *s){ uint8_t n=0; while(s&&s[n])n++; return n; }
+static uint8_t tinyX(const char *s){ uint8_t w=(uint8_t)(slen(s)*4u); return w>=128u?0u:(uint8_t)((128u-w)/2u); }
+static uint8_t bigX(const char *s)
+{
+    uint8_t w=0; bool started=false;
+    while(*s){ char c=*s++; if(!started&&c==' ')continue; started=true; w=(uint8_t)(w+(c=='.'?3u:13u)); }
+    return w>=128u?0u:(uint8_t)((128u-w)/2u);
+}
+static char *freqText(char *o,uint16_t f)
+{
+    o=putu(o,f); o[0]=o[-1]; o[-1]='.'; o[1]='\0';
+    return o+1;
+}
+static void menuArrows(void)
+{
+    for(uint8_t d=0;d<5u;d++){
+        A->draw_line(A->fb,(int16_t)(10u+d),(int16_t)(36u-d),(int16_t)(10u+d),(int16_t)(36u+d),true);
+        A->draw_line(A->fb,(int16_t)(117u-d),(int16_t)(36u-d),(int16_t)(117u-d),(int16_t)(36u+d),true);
+    }
+}
+static void rssiBars(void)
+{
+    for(uint8_t i=0;i<5u;i++){
+        uint8_t h=(uint8_t)(2u+i),x=(uint8_t)(1u+i*4u),top=(uint8_t)(6u-h);
+        if(g.rssiLevel>i)for(uint8_t xx=x;xx<=(uint8_t)(x+2u);xx++)A->draw_line(A->fb,xx,top,xx,6u,true);
+        else A->draw_line(A->fb,x,6u,(int16_t)(x+2u),6u,true);
+    }
+}
+#ifdef FM_VFO_ONLY
+static void scale(void)
+{
+    const uint8_t x1=12u,x2=116u,y=35u;
+    A->draw_line(A->fb,x1,y,x2,y,true);
+    for(uint8_t i=0;i<=6u;i++){
+        uint8_t x=(uint8_t)(x1+((uint16_t)(x2-x1)*i)/6u);
+        A->draw_line(A->fb,x,(i==0u||i==6u)?(int16_t)(y-4u):(int16_t)(y-2u),x,(int16_t)(y+2u),true);
+    }
+    uint16_t f=g.st.freq_playing; if(f<g.lo)f=g.lo; if(f>g.hi)f=g.hi;
+    uint8_t x=g.hi>g.lo?(uint8_t)(x1+((uint32_t)(f-g.lo)*(x2-x1))/(g.hi-g.lo)):x1;
+    A->draw_line(A->fb,x,(int16_t)(y-6u),x,(int16_t)(y+5u),true);
+    if(x)A->draw_line(A->fb,(int16_t)(x-1u),(int16_t)(y-4u),(int16_t)(x-1u),(int16_t)(y-1u),true);
+    if(x<127u)A->draw_line(A->fb,(int16_t)(x+1u),(int16_t)(y-4u),(int16_t)(x+1u),(int16_t)(y-1u),true);
+    char b[8]; freqText(b,g.lo); A->print_tiny(b,x1,39u,false,true);
+    freqText(b,g.hi); uint8_t w=(uint8_t)(slen(b)*4u); A->print_tiny(b,w>=x2?0u:(uint8_t)(x2-w+2u),39u,false,true);
+}
+#endif
+#ifdef FM_MEMORY_ONLY
+static void drawEditor(void)
+{
+    char title[TEXT_MAX],mode[2]={'B','\0'},left[TEXT_MAX],mid[TEXT_MAX];
+    put_t(title,T_CH_NAME);
+    mode[0]=g.nameMode==2u?'2':(g.nameMode==1u?'b':'B');
+    put_t(left,T_SAVE); put_t(mid,T_F_DEL);
+    A->draw_text_editor(title,g.name,15u,left,mode,false,mid);
+}
+#endif
+
 static void draw(void)
 {
-    app_fm_view_t v;
-    v.freq_playing=g.st.freq_playing; v.band=g.st.band; v.is_mr=g.st.is_mr;
-    v.sel_ch=g.st.sel_ch; v.scan_state=g.scanState; v.auto_scan=g.autoScan;
-    v.ch_pos=g.chPos; v.save_pos=g.savePos; v.input_len=g.inIdx;
-    for(uint8_t i=0;i<4u;i++) v.input_digits[i]=g.inBox[i];
-    v.menu_mode=g.menuMode; v.rssi_level=g.rssiLevel; v.f_arm=g.fArm;
-    v.flags=0u; v.editor_mode=1u;
-    if(g.askSave) v.flags|=APP_FM_VIEW_ASK_SAVE;
-    if(g.askDelete) v.flags|=APP_FM_VIEW_ASK_DELETE;
-    if(g.nameEdit) v.flags|=APP_FM_VIEW_NAME_EDIT;
-    if(g.autoConfirm) v.flags|=APP_FM_VIEW_AUTO_CONFIRM;
-    if(g.liveEdit) v.flags|=APP_FM_VIEW_LIVE_EDIT;
-    if(g.liveRssi) v.flags|=APP_FM_VIEW_LIVE_RSSI;
-    if(g.liveChoice) v.flags|=APP_FM_VIEW_LIVE_CHOICE;
-    if(g.upper) v.flags|=APP_FM_VIEW_EDITOR_UPPER;
-    if(g.st.is_mr && !g.nameEdit) loadName(g.st.sel_ch);
-    for(uint8_t i=0;i<NAME_LEN;i++) v.name[i]=g.name[i];
-    A->fm_draw_gogu(&v);
+    char a[24],b[24],c[24],band[16],*o; const char *label;
+    A->display_clear(); A->status_clear(); A->draw_battery();
+    if(g.fArm)A->asset_read(BMP_F,A->status_line+70,BMP_F_LEN);
+#ifdef FM_MEMORY_ONLY
+    if(g.nameEdit){ drawEditor(); return; }
+#endif
+    if(g.autoConfirm){
+        put_t(a,T_AUTOSCAN); A->draw_header(a,0); A->draw_dotted(9u);
+        put_t(a,T_SAVED_CHANNELS); A->print_tiny(a,tinyX(a),17u,false,true);
+        put_t(a,T_WILL_BE_ERASED); A->print_tiny(a,tinyX(a),27u,false,true);
+        put_t(a,T_SURE); A->print_tiny(a,tinyX(a),37u,false,true);
+        put_t(a,T_SCAN); put_t(b,T_EXIT); A->draw_footer(a,0,b); return;
+    }
+    if(g.liveEdit){
+        put_t(a,T_LIVE_RSSI); A->draw_header(a,0); A->draw_dotted(9u); put_t(a,g.liveChoice?T_ON:T_OFF); A->print_string(a,0,127,3u,10u);
+        put_t(a,T_SAVE); put_t(b,T_UPDN); put_t(c,T_EXIT); A->draw_footer(a,b,c); return;
+    }
+#ifdef FM_MEMORY_ONLY
+    loadName(g.st.sel_ch);
+#endif
+#ifdef FM_VFO_ONLY
+    if(g.askSave){ put_t(b,T_SAVE); put_t(a,T_SAVE); label=a; }
+    else
+#endif
+    if(g.menuMode){
+#ifdef FM_MEMORY_ONLY
+        b[0]='C';b[1]='H';num2(b+2,(uint8_t)(g.st.sel_ch+1u))[0]='\0';
+        if(g.menuMode==MENU_LIVE)put_t(a,T_LIVE_RSSI); else if(g.menuMode==MENU_NAME)put_t(a,T_CH_NAME); else if(g.menuMode==MENU_DELETE)put_t(a,T_CH_DEL); else put_t(a,T_SAVE);
+#else
+        put_t(b,T_VFO); if(g.menuMode==MENU_LIVE)put_t(a,T_LIVE_RSSI);else put_t(a,T_SAVE);
+#endif
+        label=a;
+    }
+    else if(g.scanState){ put_t(b,T_SCAN); if(g.autoScan){ o=put_t(a,T_ASCAN); o=putu(o,g.chPos); *o='\0'; } else put_t(a,T_MSCAN); label=a; }
+#ifdef FM_MEMORY_ONLY
+    else { b[0]='C';b[1]='H';num2(b+2,(uint8_t)(g.st.sel_ch+1u))[0]='\0'; label=g.name[0]?g.name:b; }
+#else
+    else { put_t(b,T_VFO); put_t(a,T_VFO); label=a; }
+#endif
+    put_t(c,T_FM_RADIO); A->draw_header(c,b);
+
+#ifdef FM_VFO_ONLY
+    bool showSaveName=false;
+    if(g.askSave&&validCh(g.savePos)){
+        A->fm_name_load(g.savePos,c,NAME_LEN);
+        if(c[0]){ o=a; o=num2(o,(uint8_t)(g.savePos+1u)); *o++=' ';*o++='-';*o++=' '; for(uint8_t i=0;c[i]&&o<a+18;i++)*o++=c[i]; *o='\0'; showSaveName=true; }
+    }
+#else
+#define showSaveName false
+#endif
+    if(g.inIdx){
+#ifdef FM_MEMORY_ONLY
+        { o=put_t(c,T_CH); *o++=(char)('0'+g.inBox[0]); *o++=g.inIdx>1?(char)('0'+g.inBox[1]):'-'; *o='\0'; A->print_string(c,0,127,1u,10u); }
+#else
+        if(g.askSave){ o=put_t(c,T_CH); *o++=(char)('0'+g.inBox[0]); *o++=g.inIdx>1?(char)('0'+g.inBox[1]):'-'; *o='\0'; A->print_string(c,0,127,1u,10u); }
+        else { for(uint8_t i=0;i<4u;i++)c[i+(i==3u)]=i<g.inIdx?(char)('0'+g.inBox[i]):'-'; c[3]='.';c[5]='\0';A->display_freq(c,bigX(c),1u,false); }
+#endif
+#ifdef FM_VFO_ONLY
+    } else if(g.askSave&&!showSaveName){ o=put_t(c,T_CH);o=num2(o,(uint8_t)(g.savePos+1u));*o='\0';A->print_string(c,0,127,1u,10u); }
+#else
+    }
+#endif
+    else if(!showSaveName){ freqText(c,g.st.freq_playing);A->display_freq(c,bigX(c),1u,false); }
+    for(uint8_t x=0;x<128u;x++){ uint16_t bits=(uint16_t)A->fb[1][x]|((uint16_t)A->fb[2][x]<<8u);A->fb[1][x]=(uint8_t)(bits<<4u);A->fb[2][x]=(uint8_t)(bits>>4u);A->fb[3][x]=(uint8_t)(bits>>12u); }
+    if(showSaveName)A->print_small_y(a,(uint8_t)((128u-slen(a)*7u)/2u),17u,false);
+    if(
+#ifdef FM_MEMORY_ONLY
+       true||
+#endif
+       g.menuMode
+#ifdef FM_VFO_ONLY
+       ||g.askSave
+#endif
+       ||(g.scanState&&g.autoScan)){
+        A->draw_rect(A->fb,8,29,119,43,true); if(g.menuMode)menuArrows(); A->print_bold(label,10u,117u,4u); for(uint8_t x=10u;x<=117u;x++)A->fb[4][x]<<=1u;
+    }
+#ifdef FM_VFO_ONLY
+    else scale();
+#endif
+    o=freqText(band,g.lo);*o++='-';freqText(o,g.hi);
+    A->draw_dotted(9u); put_t(a,T_MENU);put_t(c,T_EXIT);A->draw_footer(a,band,c);rssiBars();
+    if(g.liveRssi){put_t(a,T_LIVE);A->print_tiny(a,1u,11u,false,true);}
 }
 static void show(void){ draw(); A->blit_status(); A->blit_full(); }
 
@@ -161,7 +299,6 @@ static void show(void){ draw(); A->blit_status(); A->blit_full(); }
 static void scanTuneNext(void)   /* FM_Tune(freq, scanState, false): step + mute + settle */
 {
     A->fm_mute(true);
-    g.foundFreq=false;
     g.st.freq_playing=wrap((uint16_t)(g.st.freq_playing+g.scanState));
     tune();
     invalidateRssi();
@@ -169,8 +306,14 @@ static void scanTuneNext(void)   /* FM_Tune(freq, scanState, false): step + mute
 }
 static void stopScan(void)       /* FM_PlayAndUpdate */
 {
-    if(g.autoScan){ g.st.is_mr=true; g.st.sel_ch=0; }
-    g.scanState=0; g.autoScan=false;
+    if(g.autoScan){
+        g.st.is_mr=true; g.st.sel_ch=0;
+#ifdef FM_VFO_ONLY
+        A->chain_app(APP_CHAIN_FM_MEMORY); g.running=false;
+#endif
+    }
+    if(!g.autoScan&&!g.st.is_mr) g.st.sel_freq=g.st.freq_playing;
+    g.scanState=0; g.autoScan=false; g.scanFound=false;
     configChannel();
     tune();
     A->fm_mute(false);
@@ -179,9 +322,10 @@ static void scanStep(void)       /* FM_Play: one step when the settle timer expi
 {
     if(A->fm_valid(g.st.freq_playing,g.lo)==0){      /* station locked */
         if(!g.autoScan){
-            g.scanState=0; g.foundFreq=true;
             if(!g.st.is_mr) g.st.sel_freq=g.st.freq_playing;
+            g.scanFound=true;
             A->fm_mute(false);                       /* audio on */
+            invalidateRssi(); g.rssiTick=A->ticks_ms();
             return;
         }
         if(g.chPos<CHMAX) g.ch[g.chPos++]=g.st.freq_playing;
@@ -193,13 +337,13 @@ static void scanStep(void)       /* FM_Play: one step when the settle timer expi
 static void startManual(int8_t dir)
 {
     if(g.scanState){ stopScan(); return; }           /* STAR toggles */
-    g.autoScan=false; g.chPos=0; g.scanState=dir;
+    g.autoScan=false; g.scanFound=false; g.chPos=0; g.scanState=dir;
     scanTuneNext();
 }
 static void startAuto(void)
 {
     if(g.scanState){ stopScan(); return; }
-    g.autoScan=true; g.chPos=0; g.scanState=+1;
+    g.autoScan=true; g.scanFound=false; g.chPos=0; g.scanState=+1;
     for(uint8_t i=0;i<CHMAX;i++) g.ch[i]=0xFFFF;
     A->fm_names_erase();
     g.st.freq_playing=g.lo;
@@ -211,13 +355,26 @@ static void startAuto(void)
 /* ---- digit entry ---- */
 static void digit(uint8_t d)
 {
-    if(g.askDelete||g.scanState) return;
-    if(g.askSave || g.st.is_mr){                     /* 2-digit channel */
+    if(g.menuMode==MENU_DELETE
+#ifdef FM_VFO_ONLY
+       ||(g.scanState&&!g.askSave)
+#else
+       ||g.scanState
+#endif
+      ) return;
+#ifdef FM_MEMORY_ONLY
+    {                                                /* 2-digit channel */
+#else
+    if(g.askSave){                                   /* save slot */
+#endif
         if(g.inIdx<2) g.inBox[g.inIdx++]=d;
         if(g.inIdx>=2){
             uint8_t c=(uint8_t)(g.inBox[0]*10+g.inBox[1]-1); g.inIdx=0;
+#ifdef FM_VFO_ONLY
             if(g.askSave){ if(c<CHMAX) g.savePos=c; }
-            else if(validCh(c)){ g.st.sel_ch=c; g.st.freq_playing=g.ch[c]; tune(); invalidateRssi(); }
+            else
+#endif
+            if(validCh(c)){ g.st.sel_ch=c; g.st.freq_playing=g.ch[c]; tune(); invalidateRssi(); }
         }
         return;
     }
@@ -232,102 +389,141 @@ static void digit(uint8_t d)
 
 static void menuMove(int8_t dir)
 {
-    if(!g.st.is_mr)
-        g.menuMode=(g.menuMode==MENU_LIVE)?MENU_SAVE:MENU_LIVE;
-    else if(dir>0)
+#ifdef FM_VFO_ONLY
+    (void)dir;
+    g.menuMode=(g.menuMode==MENU_LIVE)?MENU_SAVE:MENU_LIVE;
+#else
+    if(dir>0)
         g.menuMode=(g.menuMode==MENU_LIVE)?MENU_NAME:(g.menuMode==MENU_NAME)?MENU_DELETE:MENU_LIVE;
     else
         g.menuMode=(g.menuMode==MENU_LIVE)?MENU_DELETE:(g.menuMode==MENU_DELETE)?MENU_NAME:MENU_LIVE;
+#endif
 }
 
+#ifdef FM_MEMORY_ONLY
 static void startNameEdit(void)
 {
     loadName(g.st.sel_ch);
     g.namePos=0u; while(g.namePos<NAME_LEN-1u && g.name[g.namePos]) g.namePos++;
-    g.nameKey=0xFFu; g.nameTap=0u; g.upper=true; g.nameEdit=true; g.menuMode=MENU_NONE;
+    g.nameKey=0xFFu; g.nameTap=0u; g.nameMode=0u; g.nameEdit=true; g.menuMode=MENU_NONE;
 }
 
 static void finishNameEdit(bool save)
 {
-    if(save) A->fm_name_save(g.st.sel_ch,g.name,NAME_LEN);
+    if(save){
+        A->fm_name_save(g.st.sel_ch,g.name,NAME_LEN);
+        A->chain_app(APP_CHAIN_FM_MEMORY); g.running=false;
+    }
     g.nameEdit=false; g.nameKey=0xFFu;
 }
 
 static void nameDigit(uint8_t key, bool numeric)
 {
-    static const char map[10][5] = {" 0",".,1","ABC2","DEF3","GHI4","JKL5","MNO6","PQRS","TUV8","WXYZ"};
+    static const char map[10][5] = {" ",".,?!","ABC","DEF","GHI","JKL","MNO","PQRS","TUV","WXYZ"};
     uint32_t now=A->ticks_ms();
     uint8_t count=0u; while(count<5u && map[key][count]) count++;
-    if(numeric){
+    if(numeric||g.nameMode==2u){
         if(g.namePos<NAME_LEN-1u){ g.name[g.namePos++]=(char)('0'+key); g.name[g.namePos]='\0'; }
         g.nameKey=0xFFu; return;
     }
     if(g.nameKey==key && g.namePos>0u && now-g.nameTick<900u){
-        g.nameTap=(uint8_t)((g.nameTap+1u)%count);
+        if(++g.nameTap>=count)g.nameTap=0u;
         char c=map[key][g.nameTap];
-        if(!g.upper && c>='A'&&c<='Z') c=(char)(c+32);
+        if(g.nameMode==1u && c>='A'&&c<='Z') c=(char)(c+32);
         g.name[g.namePos-1u]=c;
     } else if(g.namePos<NAME_LEN-1u){
         g.nameKey=key; g.nameTap=0u;
-        char c=map[key][0]; if(!g.upper&&c>='A'&&c<='Z') c=(char)(c+32);
+        char c=map[key][0]; if(g.nameMode==1u&&c>='A'&&c<='Z') c=(char)(c+32);
         g.name[g.namePos++]=c; g.name[g.namePos]='\0';
     }
     g.nameTick=now;
 }
+#endif
 
 /* ---- MENU: GOGUFW Live RSSI / save / name / delete ---- */
 static void menu(void)
 {
     g.inIdx=0;
+    /* Match the resident FM flow: the menu is available after a manual scan
+     * has stopped on a station, not while the tuner is still stepping. */
+    if(g.scanState&&!g.scanFound) return;
+#ifdef FM_VFO_ONLY
     if(g.askSave){
         g.ch[g.savePos]=g.st.freq_playing;
         char n[NAME_LEN],*o=n; o=put_t(o,T_CH); o=num2(o,(uint8_t)(g.savePos+1u)); *o='\0';
-        A->fm_name_save(g.savePos,n,NAME_LEN); g.askSave=false; return;
+        A->fm_name_save(g.savePos,n,NAME_LEN); g.askSave=false;
+        A->chain_app(APP_CHAIN_FM_VFO); g.running=false; return;
     }
+#endif
     if(g.menuMode==MENU_NONE){ g.menuMode=MENU_LIVE; return; }
     if(g.menuMode==MENU_LIVE){ g.liveChoice=g.liveRssi; g.liveEdit=true; g.menuMode=MENU_NONE; return; }
+#ifdef FM_VFO_ONLY
     if(g.menuMode==MENU_SAVE){ g.askSave=true; g.menuMode=MENU_NONE; return; }
+#else
     if(g.menuMode==MENU_NAME){ startNameEdit(); return; }
     if(g.menuMode==MENU_DELETE){
         A->fm_name_save(g.st.sel_ch,"",1u); g.ch[g.st.sel_ch]=0xFFFF;
-        g.menuMode=MENU_NONE; configChannel(); tune(); invalidateRssi();
+        g.menuMode=MENU_NONE; A->chain_app(APP_CHAIN_FM_MEMORY); g.running=false;
     }
+#endif
 }
 
 /* ---- UP/DOWN: tune (VFO) or channel step (MR) ---- */
 static void upDown(int8_t step)
 {
-    if(g.scanState){ g.scanState=step; scanTuneNext(); return; }   /* continue scan, new direction */
+    /* An open menu owns navigation even when manual-scan direction is retained
+     * behind a found station. Closing the menu restores scan navigation. */
+    if(g.menuMode!=MENU_NONE){ menuMove(step); return; }
+#ifdef FM_VFO_ONLY
     if(g.askSave){
         if(step>0){ if(++g.savePos>=CHMAX) g.savePos=0; }
         else g.savePos=g.savePos?(uint8_t)(g.savePos-1u):(uint8_t)(CHMAX-1u);
         return;
     }
-    if(g.menuMode!=MENU_NONE){ menuMove(step); return; }
-    if(g.st.is_mr){
+#endif
+    if(g.scanState){ g.scanState=step; g.scanFound=false; scanTuneNext(); return; } /* continue scan, new direction */
+#ifdef FM_MEMORY_ONLY
+    {
         uint8_t c=findNext((uint8_t)(g.st.sel_ch+step),step);
         if(c!=0xFF && c!=g.st.sel_ch){ g.st.sel_ch=c; g.st.freq_playing=g.ch[c]; tune(); invalidateRssi(); }
-    } else {
+    }
+#else
+    {
         g.st.sel_freq=wrap((uint16_t)(g.st.sel_freq+step));
         g.st.freq_playing=g.st.sel_freq; tune(); invalidateRssi();
     }
+#endif
 }
 
 static void toggleMr(void)
 {
-    g.st.is_mr=!g.st.is_mr;
-    if(configChannel()!=0){ /* no valid channel: stayed VFO */ }
-    tune();
-    invalidateRssi();
-    g.askSave=g.askDelete=false; g.inIdx=0;
+#ifdef FM_VFO_ONLY
+    g.st.is_mr=true; A->chain_app(APP_CHAIN_FM_MEMORY);
+#else
+    g.st.is_mr=false; g.st.freq_playing=g.st.sel_freq;
+    A->chain_app(APP_CHAIN_FM_VFO);
+#endif
+    g.running=false;
 }
 
 static void cycleBand(void)
 {
+#ifdef FM_MEMORY_ONLY
+    const uint8_t oldBand=g.st.band,oldCh=g.st.sel_ch;
+    const uint16_t oldFreq=g.st.freq_playing;
+    for(uint8_t i=0;i<4u;i++){
+        g.st.band=(uint8_t)((g.st.band+1u)&3u); bandLimits();
+        uint8_t c=findNext(oldCh,+1);
+        if(c!=0xFF){ g.st.sel_ch=c; g.st.freq_playing=g.ch[c]; tune(); invalidateRssi(); return; }
+    }
+    g.st.band=oldBand; g.st.sel_ch=oldCh; g.st.freq_playing=oldFreq; bandLimits();
+    return;
+#else
     g.st.band=(uint8_t)((g.st.band+1)&3u); bandLimits();
     if(g.st.freq_playing<g.lo||g.st.freq_playing>g.hi){ g.st.freq_playing=g.lo; g.st.sel_freq=g.lo; }
     tune();
     invalidateRssi();
+#endif
 }
 /* F+key and long-press functions (band / VFO<->MR / auto-scan / quit). */
 static void func(uint8_t key)
@@ -342,14 +538,27 @@ static void func(uint8_t key)
 }
 static void onShort(uint8_t key)
 {
+#ifdef FM_MEMORY_ONLY
     if(g.nameEdit){
         if(key<=APP_KEY_9) nameDigit(key,false);
         else if(key==APP_KEY_MENU) finishNameEdit(true);
         else if(key==APP_KEY_EXIT) finishNameEdit(false);
-        else if(key==APP_KEY_STAR && g.namePos<NAME_LEN-1u){ g.name[g.namePos++]=' '; g.name[g.namePos]='\0'; }
-        else if(key==APP_KEY_F) g.upper=!g.upper;
+        else if(key==APP_KEY_STAR){ if(++g.nameMode>=3u)g.nameMode=0u;g.nameKey=0xFFu; }
+        else if(key==APP_KEY_F){ if(g.namePos)g.name[--g.namePos]='\0';g.nameKey=0xFFu; }
         return;
     }
+#endif
+#ifdef FM_VFO_ONLY
+    /* Ch Save is modal. Never let its keys fall through to VFO tuning or a
+     * retained manual-scan direction, regardless of how saving was entered. */
+    if(g.askSave){
+        if(key<=APP_KEY_9) digit(key);
+        else if(key==APP_KEY_UP||key==APP_KEY_DOWN) upDown(A->nav_dir(key));
+        else if(key==APP_KEY_MENU) menu();
+        else if(key==APP_KEY_EXIT){ if(g.inIdx)g.inIdx--;else g.askSave=false; }
+        return;
+    }
+#endif
     if(g.liveEdit){
         if(key==APP_KEY_UP||key==APP_KEY_DOWN) g.liveChoice=!g.liveChoice;
         else if(key==APP_KEY_MENU){ g.liveRssi=g.liveChoice; A->fm_live_rssi(&g.liveRssi,true); g.liveEdit=false; invalidateRssi(); }
@@ -371,7 +580,16 @@ static void onShort(uint8_t key)
         case APP_KEY_MENU: menu(); break;
         case APP_KEY_EXIT:
             if(g.inIdx) g.inIdx--;
-            else if(g.askSave||g.askDelete||g.menuMode!=MENU_NONE) g.askSave=g.askDelete=false,g.menuMode=MENU_NONE;
+            else if(
+#ifdef FM_VFO_ONLY
+                    g.askSave||
+#endif
+                    g.menuMode!=MENU_NONE)
+#ifdef FM_VFO_ONLY
+                g.askSave=false,
+#endif
+                g.menuMode=MENU_NONE;
+            else if(g.scanState) stopScan();
             else g.running=false;
             break;
         default: break;
@@ -379,7 +597,9 @@ static void onShort(uint8_t key)
 }
 static void onLong(uint8_t key)
 {
+#ifdef FM_MEMORY_ONLY
     if(g.nameEdit && key<=APP_KEY_9){ nameDigit(key,true); return; }
+#endif
     g.fArm=false; func(key);
 }
 
@@ -395,12 +615,20 @@ void app_main(const app_api_t *api)
     bandLimits();
     if(g.st.freq_playing<g.lo||g.st.freq_playing>g.hi) g.st.freq_playing=g.lo;
     if(g.st.sel_freq<g.lo||g.st.sel_freq>g.hi) g.st.sel_freq=g.st.freq_playing;
-    if(g.st.is_mr) configChannel();
+#ifdef FM_MEMORY_ONLY
+    g.st.is_mr=true;
+    if(configChannel()!=0){
+        A->fm_state(&g.st,true);
+        A->chain_app(APP_CHAIN_FM_VFO);
+        return;
+    }
+#else
+    g.st.is_mr=false; g.st.freq_playing=g.st.sel_freq;
+#endif
     /* askSave, askDelete, fArm, inIdx and savePos start zeroed (.bss) */
 
     A->fm_enter(g.st.freq_playing,g.st.band);
     invalidateRssi();
-    sampleRssi();
     g.rssiTick=A->ticks_ms();
 
     /* short = on release (held < ~0.5 s) · long = at the 0.5 s threshold ·
@@ -409,10 +637,32 @@ void app_main(const app_api_t *api)
     uint8_t  held=APP_KEY_INVALID;
     uint16_t heldMs=0;
     bool     firedLong=false;
+    bool     waitRelease=true;                         /* do not inherit launcher/chaining key */
     bool     dirty=true;                               /* redraw only on change */
 
     while(g.running){
+        /* Selected radio-channel RX temporarily owns audio and the LCD. The
+         * resident callback restores this exact FM frequency/mode after RX. */
+        if(A->fm_radio_service(g.st.freq_playing,g.st.band,g.scanState!=0)){
+            /* RX may remain open indefinitely on noise or a digital signal.
+             * Keep EXIT available so the modal overlay can never trap the
+             * user, and require a clean release before normal FM keys resume. */
+            if(A->get_key()==APP_KEY_EXIT) g.running=false;
+            held=APP_KEY_INVALID; heldMs=0; firedLong=false; dirty=true;
+            waitRelease=true;
+            invalidateRssi(); g.rssiTick=A->ticks_ms();
+            for(uint8_t i=0;i<5u;i++){ A->delay_ms(10); A->backlight_update(); }
+            continue;
+        }
         uint8_t key=A->get_key();
+        if(waitRelease){
+            if(key==APP_KEY_INVALID){
+                heldMs=(uint16_t)(heldMs+50u);
+                if(heldMs>=100u) waitRelease=false;
+            } else heldMs=0;
+            A->delay_ms(10); A->backlight_update();
+            continue;
+        }
         bool rep=(key==APP_KEY_UP||key==APP_KEY_DOWN);
 
         if(key==APP_KEY_SAVER){
@@ -441,7 +691,7 @@ void app_main(const app_api_t *api)
         }
 
         /* non-blocking scan: one step each time the settle timer expires */
-        if(g.scanState){
+        if(g.scanState&&!g.scanFound){
             /* Match resident FM: an active scan keeps the display awake. */
             A->backlight_on();
             if(g.scanTimer<=50) scanStep();
@@ -449,7 +699,7 @@ void app_main(const app_api_t *api)
             dirty=true;
         }
 
-        if(!g.scanState && (g.liveRssi || g.rssiLevel==0xFFu) &&
+        if((!g.scanState||g.scanFound) && (g.liveRssi || g.rssiLevel==0xFFu) &&
            A->ticks_ms()-g.rssiTick>=250u){
             uint8_t old=g.rssiLevel; sampleRssi(); g.rssiTick=A->ticks_ms();
             if(old!=g.rssiLevel) dirty=true;

@@ -1,5 +1,45 @@
 # Changelog
 
+## GOGUFW 3.2.0 — 2026-10-21
+
+- Rebuilt Broadcast FM as two paired overlays, `FMVFO.app` and
+  `FMMemory.app`. Both are required. F+0 still opens the last-used FM mode and
+  EXIT/F+0 returns to the exact radio screen and VFO/MR state that launched it.
+- Preserved all GOGUFW FM features and visuals: four bands, manual and automatic
+  scan, 48 named memories, save/delete, name editor and Live RSSI. Existing FM
+  storage addresses and formats are unchanged.
+- Fixed the held-3 hand-off leak between FM Memory and VFO, RSSI initialization
+  after launch/mode change/RX resume, scan continuation, menu and Ch Save key
+  routing, empty-band selection and the name editor's `*:B`/`*:b`/`*:2` label.
+- During selected-channel RX, FM yields to the main screen and radio audio, then
+  restores the same FM mode and tuning five seconds after RX ends. EXIT remains
+  usable during continuous RX.
+- Fixed missed squelch-close recovery on modal screens, preventing RX and audio
+  from remaining latched while browsing Apps or editing FM data.
+- Removed the resident FM UI/state machine and replaced the 768-byte FM-name
+  staging table with a safe single deferred record. Firmware Flash use is
+  114,020 / 120,832 bytes, saving 5,888 bytes versus 3.1.1.
+- Enforced a 4 KiB minimum runtime stack at link time. The final image has a
+  4,148-byte stack gap, restoring APRS RX operation and preventing silent stack
+  overlap from future resident-RAM growth.
+- Restored the per-channel Scrambler and Compander firmware controls.
+- Added the matching `Gogufw_3.2.0_chirp_module.py`. It retains the 3.1.1
+  FrozenMemory/invalid-value regression fix and exposes Scrambler, Compander,
+  No FSK TX and No Roger using the unchanged EEPROM fields.
+- Published Search v1.5 with the release. Its Frequency and Tone status/result
+  rows are vertically centred between the dotted separators; install it to
+  enable the F+4 and F+STAR shortcuts.
+
+### Build information
+
+- Firmware: `f4hwn.gogufw.v3.2.0.bin`
+- Multiboot image: 114,940 bytes (5,892 bytes free)
+- Firmware Flash before multiboot stub: 114,020 / 120,832 bytes (6,812 bytes free)
+- Runtime stack gap: 4,148 bytes (4,096-byte minimum enforced)
+- FM VFO overlay: 4,092 / 4,096 bytes
+- FM Memory overlay: 4,072 / 4,096 bytes
+- Search overlay: 3,060 / 4,096 bytes
+
 ## GOGUFW 3.1.1 — 2026-10-17
 
 - Removed Rescue Ops and the 1750 Hz call tone from the Fusion build, retained Screenshot support, and switched LTO to a single optimization partition for lower Flash usage without changing runtime features.

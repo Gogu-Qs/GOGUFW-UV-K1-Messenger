@@ -1472,8 +1472,15 @@ static void APP_ModalRadioServiceInternal(bool updateFunction)
      * machine alive so an ended reception closes its timer/status indication.
      * RF overlay apps use the lighter service below because HandleReceive()
      * may retune the BK chip and would interrupt their own scan/modem setup. */
-    if (updateFunction && gCurrentFunction != FUNCTION_TRANSMIT)
+    if (updateFunction && gCurrentFunction != FUNCTION_TRANSMIT) {
+#ifdef ENABLE_MESSENGER
+        /* The normal 10 ms loop owns Messenger's missed-SQL_FOUND recovery.
+         * Modal screens bypass that loop, so service the same hardware-backed
+         * close check here before advancing the stock RX state machine. */
+        MSG_RF_ServiceSquelchClose();
+#endif
         HandleFunction();
+    }
 
     if (gUpdateStatus || ++status_divider >= 25u)
     {

@@ -48,9 +48,11 @@
  *   4  temporary private app frequency, restored automatically on exit
  *   5  deferred app-to-app chaining
  *   6  temporary private app frequency plus explicit output power
- *   7  tune RX to the persistent APRS Edit/TX profile frequency */
+ *   7  tune RX to the persistent APRS Edit/TX profile frequency
+ *   8  deferred GOGUFW Broadcast-FM names, RSSI and live-meter setting
+ *   9  selected-channel RX priority and post-RX Broadcast-FM resume */
 #define APP_ABI_MAJOR  1u
-#define APP_API_LEVEL  7u
+#define APP_API_LEVEL  9u
 
 /* Minimum API level of an app that ships read-only assets (pack_app.py). */
 #define APP_API_ASSETS 2u
@@ -84,6 +86,8 @@ enum {
     APP_CHAIN_NONE      = 0,
     APP_CHAIN_APRS_EDIT = 1,
     APP_CHAIN_APRS_TX   = 2,
+    APP_CHAIN_FM_VFO    = 3,
+    APP_CHAIN_FM_MEMORY = 4,
 };
 
 /* launch_shortcut() context used only for an app-to-app hand-off. */
@@ -219,7 +223,7 @@ typedef struct app_api {
     void     (*print_string)(const char *s, uint8_t start, uint8_t end,
                              uint8_t line, uint8_t width);   /* UI_PrintString (big font) */
 
-    /* ---- broadcast FM (BK1080), sovereign: no BK4819 dual-watch ---- */
+    /* ---- broadcast FM (BK1080) ---- */
     void     (*fm_enter)(uint16_t freq, uint8_t band);  /* BK1080_Init + antenna filter + audio on */
     void     (*fm_exit)(void);                          /* audio off + BK1080_Init0 + restore filter */
     void     (*fm_set_freq)(uint16_t freq, uint8_t band);/* BK1080_SetFrequency (freq in 0.1 MHz) */
@@ -326,9 +330,29 @@ typedef struct app_api {
      * falling back to 144.800 MHz if the profile is missing or invalid. */
     void (*radio_tune_aprs)(void);
 
+    /* ---- API level 8: GOGUFW Broadcast-FM extensions ----
+     * Name writes are staged in resident RAM and committed only after the
+     * overlay returns, because the app executes from the flash cache buffer. */
+    uint8_t (*fm_rssi_raw)(void);
+    void (*fm_name_load)(uint8_t channel, char *name, uint8_t len);
+    void (*fm_name_save)(uint8_t channel, const char *name, uint8_t len);
+    void (*fm_names_erase)(void);
+    void (*fm_live_rssi)(bool *enabled, bool write);
+    void (*draw_header)(const char *title, const char *badge);
+    void (*draw_dotted)(uint8_t y);
+    void (*draw_footer)(const char *left, const char *center, const char *right);
+    void (*draw_text_editor)(const char *title, const char *text, uint8_t max_len,
+                             const char *primary_action, const char *mode,
+                             bool multiline, const char *footer_center);
+
+    /* ---- API level 9: resident-channel priority while Broadcast FM runs ----
+     * Returns true while main-channel RX owns the audio/display, including the
+     * same five-second post-RX hold used by the former resident FM screen. */
+    bool (*fm_radio_service)(uint16_t fm_freq, uint8_t fm_band, bool fm_scanning);
+
 } app_api_t;
 
-_Static_assert(sizeof(app_api_t) == 368u,
+_Static_assert(sizeof(app_api_t) == 408u,
                "Labs information or launch context changed API layout");
 
 /* BK4819 AF modes for set_af (mirror driver/bk4819.h values). */

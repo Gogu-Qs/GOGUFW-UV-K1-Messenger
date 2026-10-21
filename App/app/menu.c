@@ -272,6 +272,7 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
             break;
 #endif
 
+        case MENU_COMPAND:
         case MENU_ABR_ON_TX_RX:
             //*pMin = 0;
             *pMax = ARRAY_SIZE(gSubMenu_RX_TX) - 1;
@@ -313,7 +314,7 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
             *pMax = ARRAY_SIZE(gModulationStr) - 1;
             break;
 
-#ifndef ENABLE_FEAT_F4HWN
+#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
         case MENU_SCR:
             //*pMin = 0;
             *pMax = ARRAY_SIZE(gSubMenu_SCRAMBLER) - 1;
@@ -630,7 +631,7 @@ void MENU_AcceptSetting(void)
             gRequestSaveChannel       = 1;
             return;
 
-#ifndef ENABLE_FEAT_F4HWN
+#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
         case MENU_SCR:
             gTxVfo->SCRAMBLING_TYPE = gSubMenuSelection;
             #if 0
@@ -761,6 +762,13 @@ void MENU_AcceptSetting(void)
             SETTINGS_LoadCalibration();
             gFlagReconfigureVfos = true;
             break;
+
+        case MENU_COMPAND:
+            gTxVfo->Compander = gSubMenuSelection;
+            SETTINGS_UpdateChannel(gTxVfo->CHANNEL_SAVE, gTxVfo, true);
+            gVfoConfigureMode = VFO_CONFIGURE;
+            gFlagResetVfos    = true;
+            return;
 
         case MENU_1_CALL:
             gEeprom.CHAN_1_CALL = gSubMenuSelection;
@@ -1122,7 +1130,7 @@ void MENU_ShowCurrentSetting(void)
             gSubMenuSelection = gTxVfo->CHANNEL_BANDWIDTH;
             break;
 
-#ifndef ENABLE_FEAT_F4HWN
+#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
         case MENU_SCR:
             gSubMenuSelection = gTxVfo->SCRAMBLING_TYPE;
             break;
@@ -1202,6 +1210,10 @@ void MENU_ShowCurrentSetting(void)
         case MENU_MIC:
             gSubMenuSelection = gEeprom.MIC_SENSITIVITY;
             break;
+
+        case MENU_COMPAND:
+            gSubMenuSelection = gTxVfo->Compander;
+            return;
 
         case MENU_1_CALL:
             gSubMenuSelection = gEeprom.CHAN_1_CALL;
