@@ -29,7 +29,7 @@ GOGUFW is intended only for Quansheng **UV-K1 / UV-K5 V3** radios built around t
 
 The current release contains:
 
-- `f4hwn.gogufw.v3.2.0.bin` — the multiboot-compatible firmware image;
+- `GOGUFW-v3.2.0-multiboot.bin` — the ready-to-flash multiboot firmware image;
 - `Gogufw_3.2.0_chirp_module.py` — the matching custom CHIRP module;
 - `FMVFO.app` and `FMMemory.app` — the two required Broadcast FM overlays;
 - `Search.app` — the matching Frequency/Tone Search overlay.
