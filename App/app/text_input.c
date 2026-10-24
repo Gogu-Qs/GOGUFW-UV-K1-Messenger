@@ -28,12 +28,23 @@ static char apply_case(char c, bool upper)
     return c;
 }
 
+/* Insert at the cursor, shifting the tail right; false when full. */
+static bool insert_at_cursor(TEXT_INPUT_Editor_t *ed, char c)
+{
+    if (ed->len >= ed->max_len) return false;
+    for (uint8_t i = ed->len; i > ed->cursor; i--) ed->buffer[i] = ed->buffer[i - 1U];
+    ed->buffer[ed->cursor++] = c;
+    ed->buffer[++ed->len] = 0;
+    return true;
+}
+
 void TEXT_INPUT_Start(TEXT_INPUT_Editor_t *ed, char *buf, uint8_t max_len)
 {
     ed->buffer = buf;
     ed->max_len = max_len;
     ed->len = strlen(buf);
     if (ed->len > max_len) ed->len = max_len;
+    ed->cursor = ed->len;   /* append at the end until UP/DOWN move it */
     ed->upper = true;
     ed->mode = 0;
     ed->pending_key = KEY_INVALID;
@@ -69,8 +80,21 @@ bool TEXT_INPUT_HandleKey(TEXT_INPUT_Editor_t *ed, KEY_Code_t key)
     }
 
     if (key == KEY_F || key == KEY_EXIT) {
-        if (ed->len > 0) ed->buffer[--ed->len] = 0;
+        /* Backspace at the cursor: the tail shifts left behind it. */
         TEXT_INPUT_Commit(ed);
+        if (ed->cursor > 0U) {
+            ed->cursor--;
+            for (uint8_t i = ed->cursor; i < ed->len; i++) ed->buffer[i] = ed->buffer[i + 1U];
+            ed->len--;
+            ed->buffer[ed->len] = 0;
+        }
+        return true;
+    }
+
+    if (key == KEY_UP || key == KEY_DOWN) {
+        TEXT_INPUT_Commit(ed);
+        if (key == KEY_UP) ed->cursor = ed->cursor ? (uint8_t)(ed->cursor - 1U) : ed->len;
+        else               ed->cursor = ed->cursor < ed->len ? (uint8_t)(ed->cursor + 1U) : 0U;
         return true;
     }
 
@@ -82,26 +106,20 @@ bool TEXT_INPUT_HandleKey(TEXT_INPUT_Editor_t *ed, KEY_Code_t key)
      * press inserts the digit immediately; no multi-tap pending state. */
     if (ed->mode == 2U) {
         TEXT_INPUT_Commit(ed);
-        if (ed->len >= ed->max_len) return true;
-        if (key >= KEY_0 && key <= KEY_9) {
-            ed->buffer[ed->len++] = (char)('0' + (uint8_t)key);
-            ed->buffer[ed->len] = 0;
-            return true;
-        }
-        return false;
+        if (key >= KEY_0 && key <= KEY_9)
+            insert_at_cursor(ed, (char)('0' + (uint8_t)key));
+        return true;
     }
 
     if (n == 1U) {
         TEXT_INPUT_Commit(ed);
-        if (ed->len >= ed->max_len) return true;
-        ed->buffer[ed->len++] = apply_case(chars[0], ed->upper);
-        ed->buffer[ed->len] = 0;
+        insert_at_cursor(ed, apply_case(chars[0], ed->upper));
         return true;
     }
 
     if (ed->has_pending && ed->pending_key == key && ed->len > 0) {
         ed->cycle_index = (uint8_t)((ed->cycle_index + 1U) % n);
-        ed->buffer[ed->len - 1U] = apply_case(chars[ed->cycle_index], ed->upper);
+        ed->buffer[ed->cursor - 1U] = apply_case(chars[ed->cycle_index], ed->upper);
         ed->pending_ticks = 0;
         return true;
     }
@@ -112,8 +130,7 @@ bool TEXT_INPUT_HandleKey(TEXT_INPUT_Editor_t *ed, KEY_Code_t key)
     ed->pending_key = key;
     ed->has_pending = true;
     ed->pending_ticks = 0;
-    ed->buffer[ed->len++] = apply_case(chars[0], ed->upper);
-    ed->buffer[ed->len] = 0;
+    insert_at_cursor(ed, apply_case(chars[0], ed->upper));
     return true;
 }
 
@@ -126,8 +143,6 @@ bool TEXT_INPUT_HandleLongKey(TEXT_INPUT_Editor_t *ed, KEY_Code_t key)
      * digit directly.  This preserves the existing B/b/2 modes but removes
      * the need to switch to numeric mode just to type one number. */
     TEXT_INPUT_Commit(ed);
-    if (ed->len >= ed->max_len) return true;
-    ed->buffer[ed->len++] = (char)('0' + (uint8_t)key);
-    ed->buffer[ed->len] = 0;
+    insert_at_cursor(ed, (char)('0' + (uint8_t)key));
     return true;
 }

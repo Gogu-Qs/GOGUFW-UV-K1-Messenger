@@ -50,6 +50,7 @@ void UI_GOGU_InvertBand(uint8_t y, uint8_t height);
 void UI_GOGU_DrawTextEditor(const char *title, const char *text, uint8_t max_len,
                             const char *primary_action, const char *mode,
                             bool multiline, const char *footer_center);
+extern uint8_t UI_GOGU_TextEditorCursor;
 
 void UI_DrawPixelBuffer(uint8_t (*buffer)[128], uint8_t x, uint8_t y, bool black);
 #ifdef ENABLE_FEAT_F4HWN

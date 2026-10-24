@@ -8,6 +8,7 @@ typedef struct {
     char *buffer;
     uint8_t max_len;
     uint8_t len;
+    uint8_t cursor;
     bool upper;
     uint8_t mode; /* 0=upper(B), 1=lower(b), 2=numeric(2) */
     KEY_Code_t pending_key;
