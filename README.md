@@ -18,7 +18,7 @@ RF Log Lite, named FM memories and a multiboot environment.
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **Firmware image** | 117,236 / 120,832 bytes · **96.99%** · 3,596 bytes free |
+| 💾 **Firmware image** | 116,316 / 120,832 bytes · **96.26%** · 4,516 bytes free |
 | 🧠 **Runtime stack** | 4,096-byte linker reservation · live/current and high-water values reported by `SystemInfo.app` |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Range Check · CALLTX · RF Log Lite · Full Watch · FM names/RSSI |
 | 🔌 **CHIRP support** | Matching 3.3.1 module with 1024 memories, Messenger settings, FM names and all channel policies |
@@ -67,7 +67,7 @@ Back up the radio with CHIRP before updating and keep a known-good DFU recovery 
 - Removed the resident SysInfo menu screen; diagnostics remain in the
   `SystemInfo.app` overlay, including real current-stack and high-water values.
 - Updated the paired FM VFO/Memory and Search overlays for the new API layout.
-  Firmware uses 117,236 of 120,832 bytes, leaving 3,596 bytes free.
+  Firmware uses 116,316 of 120,832 bytes, leaving 4,516 bytes free.
 
 ### Included since 3.2.0
 
