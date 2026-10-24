@@ -423,7 +423,7 @@ static void draw_read(void)
 static void draw_compose(void)
 {
     UI_GOGU_DrawTextEditor("COMPOSE", gMsgComposeBuf, MSG_TEXT_LEN, "SEND",
-                           (gMsgEditor.mode == 2U) ? "2" : (gMsgEditor.upper ? "B" : "b"),
+                           (gMsgEditor.mode == 2U) ? "123" : (gMsgEditor.upper ? "ABC" : "abc"),
                            true, msg_footer_target());
 }
 
