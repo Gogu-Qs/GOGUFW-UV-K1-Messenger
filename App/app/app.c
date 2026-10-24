@@ -48,6 +48,9 @@
     #include "app/rf_log.h"
 #endif
 #include "app/scanner.h"
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+    #include "apps/app_overlay.h"
+#endif
 #if defined(ENABLE_UART) || defined(ENABLE_USB)
     #include "app/uart.h"
     #include "scheduler.h"
@@ -59,7 +62,8 @@
     // #include "bsp/dp32g030/pwmplus.h"
 #endif
 #include "driver/backlight.h"
-#ifdef ENABLE_FMRADIO_EMBEDDED
+#if defined(ENABLE_FMRADIO_EMBEDDED) || \
+    (defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS) && defined(ENABLE_FMRADIO))
     #include "driver/bk1080.h"
 #endif
 #include "driver/bk4819.h"
@@ -90,6 +94,9 @@
 
 #ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
     #include "screenshot.h"
+#endif
+#ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+    #include "k5viewer.h"
 #endif
 
 #ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
@@ -252,8 +259,8 @@ static void ScreenSaverRenderLogoPlus(bool reset)
 
 static void ScreenSaverUpdateViewer(void)
 {
-#ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
-    SCREENSHOT_Update(false);
+#ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+    K5VIEWER_Update(false);
 #endif
 }
 
@@ -795,8 +802,16 @@ void APP_StartListening(FUNCTION_Type_t function)
         return;
 #endif
 
+#if defined(ENABLE_FMRADIO_EMBEDDED) || \
+    (defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS) && defined(ENABLE_FMRADIO))
+    bool stopBroadcastFm = false;
 #ifdef ENABLE_FMRADIO_EMBEDDED
-    if (gFmRadioMode)
+    stopBroadcastFm = gFmRadioMode;
+#endif
+#if defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS) && defined(ENABLE_FMRADIO)
+    stopBroadcastFm = stopBroadcastFm || APP_FmOverlayActive();
+#endif
+    if (stopBroadcastFm)
         BK1080_Init0();
 #endif
 
@@ -864,11 +879,14 @@ void APP_StartListening(FUNCTION_Type_t function)
 
     FUNCTION_Select(function);
 
+    bool selectMain = function == FUNCTION_MONITOR;
 #ifdef ENABLE_FMRADIO_EMBEDDED
-    if (function == FUNCTION_MONITOR || gFmRadioMode)
-#else
-    if (function == FUNCTION_MONITOR)
+    selectMain = selectMain || gFmRadioMode;
 #endif
+#if defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS) && defined(ENABLE_FMRADIO)
+    selectMain = selectMain || APP_FmOverlayActive();
+#endif
+    if (selectMain)
     {   // squelch is disabled
         if (gScreenToDisplay != DISPLAY_MENU)     // 1of11 .. don't close the menu
             GUI_SelectNextDisplay(DISPLAY_MAIN);
@@ -1591,6 +1609,9 @@ static void HandleVox(void)
 
 void APP_Update(void)
 {
+#ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+    K5VIEWER_ParseInput();
+#endif
 #ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
     // Parse incoming packets on every tick so serial keys are never missed,
     // regardless of whether the screen needs redrawing.
@@ -1722,9 +1743,6 @@ void APP_Update(void)
         && !UI_MAIN_ShouldHoldScanResume())
 #endif
     {   // scanning
-#ifdef ENABLE_MESSENGER
-        if (!MSG_RF_TransactionActive())
-#endif
         CHFRSCANNER_ContinueScanning();
     }
 
@@ -1915,6 +1933,7 @@ void StopTransmitting(void) {
         ST7565_ContrastAndInv();
         #endif
     #endif
+
 }
 
 // called every 10ms
@@ -2182,6 +2201,18 @@ void APP_TimeSlice10ms(void)
         SCREENSHOT_Update(false);
     } else if (SCREENSHOT_HasPendingStateChange()) {
         SCREENSHOT_Update(false);
+    }
+    #endif
+
+    #ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+    if (gUpdateDisplayCurrent || gUpdateStatusCurrent
+#ifdef ENABLE_FEAT_F4HWN_LOGO_SAV
+        || screenSaverRendered
+#endif
+        ) {
+        K5VIEWER_Update(false);
+    } else if (K5VIEWER_HasPendingStateChange()) {
+        K5VIEWER_Update(false);
     }
     #endif
 

@@ -218,6 +218,24 @@ volatile bool     gTxTimeoutReached;
         volatile uint8_t  gUART_LockScreenshot = 0; // lock screenshot if Chirp is used
         bool gUSB_ScreenshotEnabled = false;
     #endif
+    #ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+        volatile uint8_t gUART_LockK5Viewer = 0;
+        bool gUSB_K5ViewerEnabled = false;
+    #endif
+#endif
+
+#ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+bool K5VIEWER_IsLocked(void)
+{
+    if (gUART_LockK5Viewer > 0) {
+#if defined(ENABLE_USB) && defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS)
+        if (gUART_LockK5Viewer != K5VIEWER_LOCK_HELD)
+#endif
+            gUART_LockK5Viewer--;
+        return true;
+    }
+    return false;
+}
 #endif
 
 volatile uint16_t gTailNoteEliminationCountdown_10ms;

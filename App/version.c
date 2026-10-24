@@ -9,9 +9,10 @@
     const char Version[]      = AUTHOR_STRING_2 " " VERSION_STRING_2;
     /* The CHIRP/UART handshake reserves 16 bytes including the terminator. */
     _Static_assert(sizeof(Version) <= 16u, "firmware identity exceeds UART version field");
-    /* UV Studio uses the first semantic version in this host-only identity to
-       choose between its legacy 16-slot and current 48-slot app layouts. */
-    const char HostVersion[]  = "v6.2.0 " VERSION_STRING_2;
+    /* UV Studio 2.1 uses the compact v7 service generation to probe Apps and
+       raw-flash support independently. Keep the dotted catalog identity at
+       v6.3.0 so it selects the matching official API-3 application catalog. */
+    const char HostVersion[]  = "v7 GGFW v6.3.0";
     _Static_assert(sizeof(HostVersion) <= 16u, "host identity exceeds UART version field");
     const char Edition[]      = EDITION_STRING;
     const char BuildDate[]    = __DATE__;

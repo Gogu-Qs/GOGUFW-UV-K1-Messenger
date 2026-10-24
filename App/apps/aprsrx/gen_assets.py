@@ -73,9 +73,11 @@ for i in range(8):
     tail += [(u if i & 2 else 0) | (d if i & 4 else 0) for u, d in zip(UP, DN)]
 a.u8("BMP_TAIL", tail)
 a.const("TAIL_W", len(tail) // 8)
+# Perfect hash of (table, code) over 128 slots, as drawSymbol() computes it: the
+# multiplier is the smallest one without a collision for the current CODES.
 symbol_map = bytearray(128 * 3)
 for index, code in enumerate(CODES):
-    slot = (2 * ord(code[0]) + 13 * ord(code[1])) & 127
+    slot = (ord(code[0]) + 59 * ord(code[1])) & 127
     if symbol_map[slot * 3]:
         raise ValueError("APRS symbol hash collision")
     symbol_map[slot * 3:slot * 3 + 3] = bytes((index + 1, ord(code[0]), ord(code[1])))

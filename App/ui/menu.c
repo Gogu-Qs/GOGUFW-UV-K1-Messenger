@@ -39,10 +39,6 @@
     #include "app/calltx_store.h"
 #endif
 
-#ifdef ENABLE_FEAT_F4HWN
-    #include "../version.h"
-#endif
-
 #include "helper.h"
 #include "inputbox.h"
 #include "menu.h"
@@ -143,9 +139,7 @@ const t_menu_item MenuList[] =
     #endif
 #endif
     {"VOX",         MENU_VOX           },
-#ifdef ENABLE_FEAT_F4HWN
-    {"SysInf",      MENU_VOL           }, // was "VOL"
-#else
+#ifndef ENABLE_FEAT_F4HWN
     {"BatVol",      MENU_VOL           }, // was "VOL"
 #endif
     {"RxMode",      MENU_TDR           },
@@ -1348,98 +1342,13 @@ void UI_DisplayMenu(void)
             strcpy(String, gSubMenu_ROGER[gSubMenuSelection]);
             break;
 
-        case MENU_VOL: {
-            // SysInf is paginated. Pages appear in this order, only when their
-            // feature flag is enabled:
-            //   0          -> identity
-            //   next       -> Build date/time         (ENABLE_FEAT_F4HWN)
-            //   next       -> Battery                 (ENABLE_FEAT_F4HWN)
-            //   next       -> Flash / SRAM usage      (ENABLE_FEAT_F4HWN_MEM)
-            //   next, +1   -> CODE / WIKI QR codes    (ENABLE_FEAT_F4HWN_QRCODE)
-            // In non-F4HWN builds, page 0 keeps the old battery-voltage display.
-            const uint8_t page = (uint8_t)gSubMenuSelection;
-            uint8_t       p    = 0;
-
-            if (page == p++) {
-                // Page 0: firmware identity.
-#ifdef ENABLE_FEAT_F4HWN
-                sprintf(String, "%s\n%s", AUTHOR_STRING_2, VERSION_STRING_2);
-                UI_PrintStringSmallNormal(Edition, menu_item_x1 - 1, menu_item_x2, 6);
-#else
+#ifndef ENABLE_FEAT_F4HWN
+        case MENU_VOL:
                 sprintf(String, "%u.%02uV\n%u%%",
                     gBatteryVoltageAverage / 100, gBatteryVoltageAverage % 100,
                     BATTERY_VoltsToPercent(gBatteryVoltageAverage));
-#endif
-                break;
-            }
-#ifdef ENABLE_FEAT_F4HWN
-            if (page == p++) {
-                strcpy(top_right_badge, "BUILD");
-                UI_PrintStringSmallNormal(BuildDate, menu_item_x1 - 1, menu_item_x2, 3);
-                UI_PrintStringSmallNormal(BuildTime, menu_item_x1 - 1, menu_item_x2, 4);
-                UI_PrintStringSmallNormal(BuildCommit, menu_item_x1 - 1, menu_item_x2, 6);
-
-                already_printed = true;
-                break;
-            }
-
-            if (page == p++) {
-                char val[16];
-
-                strcpy(top_right_badge, "BATTERY");
-
-                sprintf(val, "%u.%02uV %u%%",
-                    gBatteryVoltageAverage / 100, gBatteryVoltageAverage % 100,
-                    BATTERY_VoltsToPercent(gBatteryVoltageAverage));
-                UI_PrintStringSmallNormal(val, menu_item_x1 - 1, menu_item_x2, 3);
-
-                UI_PrintStringSmallNormal(gSubMenu_BATTYP[gEeprom.BATTERY_TYPE], menu_item_x1 - 1, menu_item_x2, 5);
-
-                already_printed = true;
-                break;
-            }
-#endif
-#ifdef ENABLE_FEAT_F4HWN_MEM
-            if (page == p++) {
-                uint16_t flash_pct = 0;
-                uint16_t ram_pct   = 0;
-                UI_GetMemPercents(&flash_pct, &ram_pct);
-
-                char val[16];
-
-                // MEMORY title capsule centered in right zone, fb line 1.
-                strcpy(top_right_badge, "MEMORY");
-
-                // Flash + SRAM values stacked below, normal small font, with a fb-line of breathing space.
-                sprintf(val, "FLASH %u.%u%%",
-                        (unsigned)(flash_pct / 100), (unsigned)((flash_pct / 10) % 10));
-                UI_PrintStringSmallNormal(val, menu_item_x1 - 1, menu_item_x2, 3);
-
-                sprintf(val, "SRAM  %u.%u%%",
-                        (unsigned)(ram_pct / 100), (unsigned)((ram_pct / 10) % 10));
-                UI_PrintStringSmallNormal(val, menu_item_x1 - 1, menu_item_x2, 5);
-
-                already_printed = true;
-                break;
-            }
-#endif
-#ifdef ENABLE_FEAT_F4HWN_QRCODE
-            // Right zone: x=49..127 (79 px). QR centered at x=72..104.
-            // Capsule label above QR (small-font Inverse style at fb line 1).
-            if (page == p || page == p + 1) {
-                const bool is_wiki = (page == (p + 1));
-
-                strcpy(top_right_badge, is_wiki ? "TELEGRAM" : "CODE");
-                UI_DrawQRCode(is_wiki, 72, 28);
-                
-                already_printed = true;
-                break;
-            }
-
-            p += 2; 
-#endif
             break;
-        }
+#endif
 
         case MENU_RESET:
             strcpy(String, gSubMenu_RESET[gSubMenuSelection]);

@@ -91,6 +91,12 @@
 #define APP_NAME_LEN      16
 #define APP_VERSION_LEN   16
 
+#if defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS) && defined(ENABLE_FMRADIO)
+/* True while a Broadcast FM overlay owns BK1080/audio.  The resident receive
+ * path uses this to give the selected transceiver channel priority. */
+bool APP_FmOverlayActive(void);
+#endif
+
 #define APP_SHORTCUT_SEARCH_FREQ 0x01u
 #define APP_SHORTCUT_FOXHUNT  0x02u
 #define APP_SHORTCUT_BEACON   0x04u
@@ -113,6 +119,15 @@
 #define APP_CAP_BEAM2         0x00000010u
 /* Declarative cross-app configuration bridge used by current APRS Edit/TX. */
 #define APP_CAP_CFG_PROXY     0x00000020u
+#define APP_CAP_SERIAL        0x00000040u
+/* GOGUFW's separately versioned extension table. It is discovered through the
+ * official asset_read service and never occupies future F4HWN API offsets. */
+#define APP_CAP_GOGU_EXT      0x80000000u
+
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+bool APP_AfCaptureYieldAdc(void);
+void APP_AfCaptureResumeAdc(void);
+#endif
 
 /* Aligned RAM objects; app_overlay.c pins every serialized field offset. */
 typedef struct {

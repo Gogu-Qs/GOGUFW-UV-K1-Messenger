@@ -536,6 +536,20 @@ int usbd_ep_start_write(const uint8_t ep, const uint8_t *data, uint32_t data_len
   return 0;
 }
 
+/* Drop a pending CDC IN transfer so an overlay may safely reuse its buffer. */
+void usbd_ep_cancel_write(const uint8_t ep)
+{
+  uint8_t ep_idx = USB_EP_GET_IDX(ep);
+  uint8_t old_ep_idx = pyusb_get_active_ep();
+
+  pyusb_set_active_ep(ep_idx);
+  g_pyusb_udc.in_ep[ep_idx].xfer_len = 0;
+  g_pyusb_udc.in_ep[ep_idx].actual_xfer_len = 0;
+  if (USB->IN_CSR1 & (USB_INCSR_IPR | USB_INCSR_FifoNotEmpty))
+    USB->IN_CSR1 = USB_INCSR_FF;
+  pyusb_set_active_ep(old_ep_idx);
+}
+
 int usbd_ep_start_read(const uint8_t ep, uint8_t *data, uint32_t data_len)
 {
   uint8_t ep_idx = USB_EP_GET_IDX(ep);

@@ -18,19 +18,19 @@
 
 #define RFLOG_CAPACITY       20u
 #define RFLOG_VISIBLE_ROWS UI_GOGU_CONTENT_ROWS
-#define RFLOG_CHANNEL_NONE 0xFFFFu
-#define RFLOG_FLAG_TX       (1u << 0)
+#define RFLOG_CHANNEL_NONE 0x7FFFu
+#define RFLOG_CHANNEL_MASK 0x7FFFu
+#define RFLOG_FLAG_TX      0x8000u
+#define RFLOG_SESSION_TX   (1u << 0)
 
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint32_t frequency;
     uint16_t duration_seconds;
     uint16_t age_seconds;
-    uint16_t channel;
-    uint8_t  flags;
-    uint8_t  reserved;
+    uint16_t channel_flags;
 } RFLOG_Entry_t;
 
-_Static_assert(sizeof(RFLOG_Entry_t) == 12u, "unexpected RF log entry layout");
+_Static_assert(sizeof(RFLOG_Entry_t) == 10u, "unexpected RF log entry layout");
 
 static RFLOG_Entry_t gEntries[RFLOG_CAPACITY];
 static uint8_t gCount;
@@ -73,7 +73,7 @@ void GOGU_RFLOG_BeginRx(const VFO_Info_t *vfo, FUNCTION_Type_t function)
 
 void GOGU_RFLOG_BeginTx(const VFO_Info_t *vfo)
 {
-    RFLOG_Begin(RFLOG_FLAG_TX, vfo, true);
+    RFLOG_Begin(RFLOG_SESSION_TX, vfo, true);
 }
 
 void GOGU_RFLOG_EndActive(void)
@@ -92,9 +92,8 @@ void GOGU_RFLOG_EndActive(void)
     if (gEntries[0].duration_seconds == 0u)
         gEntries[0].duration_seconds = 1u;
     gEntries[0].age_seconds = 0u;
-    gEntries[0].channel = gSessionChannel;
-    gEntries[0].flags = gSessionFlags;
-    gEntries[0].reserved = 0u;
+    gEntries[0].channel_flags = (uint16_t)(gSessionChannel |
+        (gSessionFlags == RFLOG_SESSION_TX ? RFLOG_FLAG_TX : 0u));
 
     if (gCount < RFLOG_CAPACITY)
         gCount++;
@@ -156,13 +155,14 @@ static void RFLOG_SelectEntry(void)
     const RFLOG_Entry_t *entry = &gEntries[gCursor];
     const uint8_t targetVfo = gEeprom.TX_VFO;
 
-    if (entry->channel != RFLOG_CHANNEL_NONE) {
-        if (!RADIO_CheckValidChannel(entry->channel, false, targetVfo)) {
+    const uint16_t channel = entry->channel_flags & RFLOG_CHANNEL_MASK;
+    if (channel != RFLOG_CHANNEL_NONE) {
+        if (!RADIO_CheckValidChannel(channel, false, targetVfo)) {
             gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
             return;
         }
-        gEeprom.MrChannel[targetVfo] = entry->channel;
-        gEeprom.ScreenChannel[targetVfo] = entry->channel;
+        gEeprom.MrChannel[targetVfo] = channel;
+        gEeprom.ScreenChannel[targetVfo] = channel;
         gVfoConfigureMode = VFO_CONFIGURE_RELOAD;
     } else {
         const uint16_t channel = (uint16_t)(FREQ_CHANNEL_FIRST + FREQUENCY_GetBand(entry->frequency));
@@ -242,10 +242,11 @@ static void RFLOG_FormatFrequency(uint32_t frequency, char *buffer)
 static void RFLOG_FormatTitle(const RFLOG_Entry_t *entry, char *buffer)
 {
     buffer[0] = 0;
-    if (entry->channel != RFLOG_CHANNEL_NONE) {
-        SETTINGS_FetchChannelName(buffer, entry->channel);
+    const uint16_t channel = entry->channel_flags & RFLOG_CHANNEL_MASK;
+    if (channel != RFLOG_CHANNEL_NONE) {
+        SETTINGS_FetchChannelName(buffer, channel);
         if (buffer[0] == 0)
-            sprintf(buffer, "CH-%u", entry->channel + 1u);
+            sprintf(buffer, "CH-%u", channel + 1u);
     } else {
         RFLOG_FormatFrequency(entry->frequency, buffer);
     }
@@ -300,7 +301,7 @@ void UI_DisplayGoguRfLog(void)
         RFLOG_FormatAge(entry->age_seconds, age);
 
         const uint8_t y = UI_GOGU_CONTENT_ROW_Y(row);
-        GUI_DisplaySmallest((entry->flags & RFLOG_FLAG_TX) ? "TX" : "RX",
+        GUI_DisplaySmallest((entry->channel_flags & RFLOG_FLAG_TX) ? "TX" : "RX",
                             1u, (uint8_t)(y + 1u), false, true);
         UI_GOGU_PrintSmallAtY(title, 11u, y, false);
         GUI_DisplaySmallest(duration, 91u, (uint8_t)(y + 1u), false, true);

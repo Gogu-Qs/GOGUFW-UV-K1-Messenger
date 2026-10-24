@@ -38,6 +38,10 @@
 /* Private function prototypes -----------------------------------------------*/
 static void APP_SystemClockConfig(void);
 
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_INFO
+extern void APP_StackWatermarkInit(void);
+#endif
+
 /**
   * @brief  Main program.
   * @param  None
@@ -45,10 +49,17 @@ static void APP_SystemClockConfig(void);
   */
 int main(void)
 {
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_INFO
+  /* Mark the currently unused main-stack area before normal firmware work
+   * starts. SystemInfo later scans this pattern to report the real
+   * minimum-since-boot free stack instead of the linker's fixed reservation. */
+  APP_StackWatermarkInit();
+#endif
+
   /* Enable SYSCFG and PWR clock */
   LL_APB1_GRP2_EnableClock(LL_APB1_GRP2_PERIPH_SYSCFG);
   LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_PWR);
-  
+
   /* System clock configuration */
   APP_SystemClockConfig();
 

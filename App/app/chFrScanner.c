@@ -863,11 +863,6 @@ void CHFRSCANNER_ContinueScanning(void)
 
 void CHFRSCANNER_ContinueScanning(void)
 {
-    /* Retain the resume request and current channel until ACK/PONG has
-     * finished. This also covers callers other than the main app tick. */
-#ifdef ENABLE_MESSENGER
-    if (MSG_RF_TransactionActive()) return;
-#endif
 #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
     if (scanFastLastFullTuneCandidate &&
         gCurrentFunction != FUNCTION_INCOMING &&
@@ -887,6 +882,16 @@ void CHFRSCANNER_ContinueScanning(void)
     }
     else
     {
+#ifdef ENABLE_MESSENGER
+        /* A bare carrier is included in MSG_RF_TransactionActive() so the
+         * Messenger modem gets time to recognise its preamble.  Do not test
+         * it before the INCOMING branch above: doing so prevents the stock
+         * scanner from ever calling APP_StartListening() for every ordinary
+         * analog carrier.  Once reception has ended, this hold still keeps
+         * the scanner on-channel long enough to finish ACK/PONG work. */
+        if (MSG_RF_TransactionActive())
+            return;
+#endif
 #ifdef ENABLE_FEAT_F4HWN_SCAN_RSSI
 #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
         if (!ScanFastEnabled())

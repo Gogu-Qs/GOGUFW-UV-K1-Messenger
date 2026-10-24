@@ -21,6 +21,9 @@
     #include "app/fm.h"
 #endif
 #include "board.h"
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+#include "apps/app_overlay.h"
+#endif
 #include "py32f071_ll_bus.h"
 #include "py32f071_ll_gpio.h"
 #include "py32f071_ll_rcc.h"
@@ -168,6 +171,9 @@ void BOARD_ADC_Init(void)
 
 void BOARD_ADC_GetBatteryInfo(uint16_t *pVoltage, uint16_t *pCurrent)
 {
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+    const bool app_capture = APP_AfCaptureYieldAdc();
+#endif
 #ifdef ENABLE_RDS_PROBE
     static uint16_t lastVoltage;
     /* ADC1 belongs to the 64 ksample/s PB1 stream while the RDS experiment
@@ -188,6 +194,9 @@ void BOARD_ADC_GetBatteryInfo(uint16_t *pVoltage, uint16_t *pCurrent)
     lastVoltage = *pVoltage;
 #endif
     *pCurrent = 0;
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+    if (app_capture) APP_AfCaptureResumeAdc();
+#endif
 }
 
 void BOARD_Init(void)

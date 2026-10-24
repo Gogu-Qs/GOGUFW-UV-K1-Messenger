@@ -24,7 +24,12 @@
 #include "driver/st7565.h"
 #include "driver/system.h"
 #include "misc.h"
+#ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
 #include "screenshot.h"
+#endif
+#ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+#include "k5viewer.h"
+#endif
 #include <string.h>
 
 #define SPIx SPI1
@@ -134,7 +139,10 @@ void ST7565_DrawLine(const unsigned int Column, const unsigned int Line, const u
     // ST7565_BlitScreen(8) = ST7565_BlitFullScreen()
     //
 
-    static void ST7565_BlitScreen(uint8_t line)
+#ifndef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+    static
+#endif
+    void ST7565_BlitScreen(uint8_t line)
     {
         CS_Assert();
         ST7565_WriteByte(0x40);
@@ -168,12 +176,31 @@ void ST7565_DrawLine(const unsigned int Column, const unsigned int Line, const u
         #ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
             SCREENSHOT_Update(true);  // Force immediate capture
         #endif
+        #ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+            K5VIEWER_Update(true);
+        #endif
     }
 
     void ST7565_BlitStatusLine(void)
     {
         ST7565_BlitScreen(0);
     }
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
+    static uint8_t feedPage = FRAME_LINES + 1, feedCol;
+    bool ST7565_Feed(unsigned count)
+    {
+        unsigned page=feedPage,col=feedCol;
+        if(count==0){CS_Assert();ST7565_WriteByte(0x40);page=col=0;}
+        for(;count && page<=FRAME_LINES;count--){
+            uint8_t value;
+            if(col<3){A0_Reset();value=col==0?(uint8_t)(0xB0|page):col==1?0x10:0x04;}
+            else {A0_Set();value=(page?gFrameBuffer[page-1]:gStatusLine)[col-3];}
+            SPI_WriteByte(value);
+            if(++col==3+LCD_WIDTH){col=0;if(++page>FRAME_LINES)CS_Release();}
+        }
+        feedPage=page;feedCol=col;return page<=FRAME_LINES;
+    }
+#endif
 #else
     void ST7565_BlitFullScreen(void)
     {

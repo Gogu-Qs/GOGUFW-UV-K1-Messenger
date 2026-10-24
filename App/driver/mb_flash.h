@@ -135,6 +135,7 @@ uint8_t MB_SlotWrite(uint8_t slot, uint32_t offset, const uint8_t *data, uint32_
 /*   0x011000  boot logo (4 KiB)                       ] shared               */
 /*   0x012000  GOGUFW Messenger settings/drafts        ] bank 0 legacy        */
 /*   0x013000  GOGUFW FM station names                 ] bank 0 legacy        */
+/*   0x018000  Armel RX/TX log (32 KiB, ends 0x020000) ] shared               */
 /*   0x020000  slot 0 firmware  (BACKUP, 128 KiB)      ] firmware-managed     */
 /*   0x040000  slot 1 firmware  (128 KiB)              ]                      */
 /*   0x060000  slot 2 firmware                         ] user (UV Studio)     */

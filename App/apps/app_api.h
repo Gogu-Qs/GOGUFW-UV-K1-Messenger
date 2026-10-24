@@ -35,6 +35,7 @@
 #ifndef APPS_APP_API_H
 #define APPS_APP_API_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -44,15 +45,17 @@
  *   2  ticks_ms, rand32, asset_read (+ app_header_t asset_size / asset_crc),
  *      idivmod, uidivmod (the resident division helpers), Labs system info,
  *      current and minimum-since-boot free stack/RAM margin
- *   3  launch_shortcut, pixel-positioned small text, modal radio service
- *   4  temporary private app frequency, restored automatically on exit
- *   5  deferred app-to-app chaining
- *   6  temporary private app frequency plus explicit output power
- *   7  tune RX to the persistent APRS Edit/TX profile frequency
- *   8  deferred GOGUFW Broadcast-FM names, RSSI and live-meter setting
- *   9  selected-channel RX priority and post-RX Broadcast-FM resume */
+ *   3  official F4HWN v6.3.0 services: number formatting, direct RX-audio
+ *      capture, 48 MHz timing, frequency drawing, app hand-off, quiet TX
+ *      preparation, USB serial, paced LCD output and deferred VFO staging.
+ *
+ * GOGUFW-specific services are capability-gated extensions after the official
+ * level-3 prefix. They do not consume private API-level numbers. */
 #define APP_ABI_MAJOR  1u
-#define APP_API_LEVEL  9u
+#define APP_API_LEVEL  3u
+
+#define APP_NAME_LEN    16
+#define APP_HANDOFF_MAX 32u
 
 /* Minimum API level of an app that ships read-only assets (pack_app.py). */
 #define APP_API_ASSETS 2u
@@ -298,10 +301,51 @@ typedef struct app_api {
     uint32_t (*sys_stack_free_now)(void);
     uint32_t (*sys_stack_free_min)(void);
 
-    /* ---- API level 3: launch context ----
-     * Level-2 SystemInfo fields stay before these entries unconditionally.
-     * That preserves the published v6.1.0 offsets in every firmware edition,
-     * even when the resident SysInfo capability itself is not compiled. */
+    /* ---- official F4HWN API level 3 (v6.3.0; offsets 328..395) ---- */
+    char *(*append_i32)(char *dst, int32_t v);
+    void     (*af_capture_open)(void);
+    uint16_t (*af_capture_sample)(void);
+    void     (*af_capture_close)(void);
+    uint32_t (*cycles_48mhz)(void);
+    void (*draw_frequency)(uint32_t f_10hz, uint8_t x, uint8_t line);
+    char *(*append_u32)(char *dst, uint32_t u);
+    bool    (*handoff)(const char *name, const void *msg, uint8_t len);
+    int16_t (*handoff_read)(void *buf, uint8_t max, char *from);
+    void    (*tx_prepare)(void);
+    uint16_t (*serial_read)(uint8_t port, void *buf, uint16_t len);
+    bool     (*serial_write)(uint8_t port, const void *buf, uint16_t len);
+    uint8_t  (*serial_ctl)(uint8_t port, uint32_t baud);
+    void     (*blit_page)(uint8_t page);
+    bool     (*lcd_feed)(unsigned n);
+    void     (*viewer_update)(void);
+    bool     (*vfo_stage)(const app_beam_channel_t *ch);
+
+} app_api_t;
+
+_Static_assert(offsetof(app_api_t, sys_edition) == 276u &&
+               offsetof(app_api_t, append_i32) == 328u &&
+               offsetof(app_api_t, handoff) == 356u &&
+               offsetof(app_api_t, tx_prepare) == 364u &&
+               offsetof(app_api_t, serial_read) == 368u &&
+               offsetof(app_api_t, blit_page) == 380u &&
+               offsetof(app_api_t, vfo_stage) == 392u &&
+               sizeof(app_api_t) == 396u,
+               "official F4HWN API-3 layout changed");
+
+/* GOGUFW services deliberately live outside app_api_t.  APP_GoguApi() discovers
+ * this table through asset_read's otherwise-invalid 0xffff offset, so future
+ * official API levels remain free to append fields after byte 396 forever. */
+#define APP_GOGU_API_MAGIC 0x55474F47u /* "GOGU" little-endian */
+#define APP_GOGU_API_MAJOR 1u
+#define APP_GOGU_API_LEVEL 1u
+#define APP_GOGU_API_QUERY 0xFFFFu
+
+typedef struct gogu_api {
+    uint32_t magic;
+    uint8_t  major;
+    uint8_t  level;
+    uint16_t size;
+
     uint8_t (*launch_shortcut)(void);
     void (*print_small_y)(const char *text, uint8_t x, uint8_t y, bool inverted);
     void (*radio_service)(void);
@@ -310,27 +354,27 @@ typedef struct app_api {
     bool (*search_save)(uint32_t frequency, uint16_t tone,
                         uint8_t tone_type, bool single_frequency, uint16_t channel);
 
-    /* ---- API level 4: temporary private RF target ----
+    /* Temporary private RF target.
      * Builds a non-persistent FM VFO at frequency (x10 Hz). The loader restores
      * the user's selected Full Watch/A/B target when the app returns. */
     void (*radio_tune)(uint32_t frequency);
 
-    /* ---- API level 5: deferred app-to-app chaining ----
+    /* Legacy numeric deferred app-to-app chaining.
      * The request is acted on only after the current overlay has returned and
      * its staged configuration has been committed. */
     void (*chain_app)(uint8_t target);
 
-    /* ---- API level 6: private RF target with explicit output power ----
+    /* Private RF target with explicit output power.
      * Power is APP_RADIO_POWER_LOW1..HIGH. Like radio_tune(), the user's VFO
      * is restored automatically when the app returns. */
     void (*radio_tune_power)(uint32_t frequency, uint8_t power);
 
-    /* ---- API level 7: shared APRS profile receive target ----
+    /* Shared APRS profile receive target.
      * Tunes the private app VFO to APRS TX's persistent profile frequency,
      * falling back to 144.800 MHz if the profile is missing or invalid. */
     void (*radio_tune_aprs)(void);
 
-    /* ---- API level 8: GOGUFW Broadcast-FM extensions ----
+    /* GOGUFW Broadcast-FM extensions.
      * Name writes are staged in resident RAM and committed only after the
      * overlay returns, because the app executes from the flash cache buffer. */
     uint8_t (*fm_rssi_raw)(void);
@@ -345,15 +389,42 @@ typedef struct app_api {
                              const char *primary_action, const char *mode,
                              bool multiline, const char *footer_center);
 
-    /* ---- API level 9: resident-channel priority while Broadcast FM runs ----
+    /* Resident-channel priority while Broadcast FM runs.
      * Returns true while main-channel RX owns the audio/display, including the
      * same five-second post-RX hold used by the former resident FM screen. */
     bool (*fm_radio_service)(uint16_t fm_freq, uint8_t fm_band, bool fm_scanning);
 
-} app_api_t;
+} gogu_api_t;
 
-_Static_assert(sizeof(app_api_t) == 408u,
-               "Labs information or launch context changed API layout");
+_Static_assert(sizeof(gogu_api_t) == 88u,
+               "GOGUFW extension ABI changed");
+
+static inline const gogu_api_t *APP_GoguApi(const app_api_t *api)
+{
+    const gogu_api_t *gogu = NULL;
+    /* APP_CAP_GOGU_EXT made the loader validate this provider before launch;
+     * keep the app-side discovery tiny enough for the 4 KiB overlay. */
+    if (api->asset_read(APP_GOGU_API_QUERY, &gogu, sizeof(gogu)) != sizeof(gogu))
+        return NULL;
+    return gogu;
+}
+
+enum { APP_SERIAL_USB = 0, APP_SERIAL_KPLUG = 1 };
+#define APP_SERIAL_OK      0x01u
+#define APP_SERIAL_HOST    0x02u
+#define APP_SERIAL_LOST    0x04u
+#define APP_SERIAL_TIMEOUT 0x08u
+#define APP_SERIAL_ENUM    0x10u
+
+static inline bool app_cycles_before(uint32_t now, uint32_t deadline)
+{
+    return (int32_t)(now - deadline) < 0;
+}
+
+static inline bool app_cycles_reached(uint32_t now, uint32_t deadline)
+{
+    return !app_cycles_before(now, deadline);
+}
 
 /* BK4819 AF modes for set_af (mirror driver/bk4819.h values). */
 enum { APP_AF_MUTE = 0, APP_AF_FM = 1, APP_AF_AM = 7 };

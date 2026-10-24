@@ -18,7 +18,7 @@
 #include "usb_config.h"
 #include "py32f071_ll_bus.h"
 
-#ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
+#ifdef ENABLE_FEAT_F4HWN_K5VIEWER
 #include "driver/keyboard.h"
 #endif
 
@@ -42,13 +42,24 @@ void VCP_Init()
     NVIC_EnableIRQ(USBD_IRQn);
 }
 
-#ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
-bool VCP_ScreenshotPing(void)
+#ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+static uint8_t      k5v_read_ptr = 0;
+static ParseState_t k5v_state    = STATE_IDLE;
+
+/* Skip what arrived while an overlay app owned the port (its serial data is
+ * no K5Viewer traffic) and restart the parser from a clean state. */
+void VCP_K5ViewerSync(void)
 {
-    // State machine for parsing incoming packets:
-    //   Keepalive:       0x55 0xAA 0x00 0x00  → viewer alive
-    //   Short key press: 0xAA 0x55 0x03 <key> → inject short press
-    //   Long key press:  0xAA 0x55 0x04 <key> → inject long press
+    k5v_read_ptr = (uint8_t)VCP_RxBufPointer;
+    k5v_state    = STATE_IDLE;
+}
+
+bool VCP_K5ViewerPing(void)
+{
+    // State machine for K5Viewer keepalive and remote-key packets:
+    //   Keepalive:       0x55 0xAA 0x00 0x00
+    //   Short key press: 0xAA 0x55 0x03 <key>   → inject short press
+    //   Long key press:  0xAA 0x55 0x04 <key>   → inject long press
     //
     // State transitions:
     //   IDLE  → 0x55 → KA_1
@@ -63,9 +74,7 @@ bool VCP_ScreenshotPing(void)
     //   KEY_3  → <b>  → KEYBOARD_InjectKey(b, false), IDLE
     //   KEY_3L → <b>  → KEYBOARD_InjectKey(b, true), IDLE
 
-    static uint8_t      read_ptr = 0;
-    static ParseState_t state    = STATE_IDLE;
-
+    uint8_t  read_ptr  = k5v_read_ptr;
     bool     connected = false;
     uint8_t  write_ptr = VCP_RxBufPointer;  // snapshot once — ISR may update concurrently
 
@@ -83,10 +92,11 @@ bool VCP_ScreenshotPing(void)
             read_ptr = 0;
         processed++;
 
-        if(KEYBOARD_ProcessProtocolByte(&state, b))
+        if(KEYBOARD_ProcessProtocolByte(&k5v_state, b))
             connected = true;
     }
 
+    k5v_read_ptr = read_ptr;
     return connected;
 }
-#endif // ENABLE_FEAT_F4HWN_SCREENSHOT
+#endif // ENABLE_FEAT_F4HWN_K5VIEWER

@@ -245,6 +245,9 @@ endif()
 enable_feature(ENABLE_FEAT_F4HWN_SCREENSHOT 
     screenshot.c
 )
+enable_feature(ENABLE_FEAT_F4HWN_K5VIEWER
+    k5viewer.c
+)
 enable_feature(ENABLE_FEAT_F4HWN_SPECTRUM)
 enable_feature(ENABLE_FEAT_F4HWN_RX_TX_TIMER)
 enable_feature(ENABLE_FEAT_F4HWN_CHARGING_C)

@@ -50,7 +50,8 @@
                 "ENABLE_FEAT_F4HWN_FULL_WATCH": false,
                 "ENABLE_FEAT_F4HWN_GAME": false,
                 "ENABLE_FEAT_F4HWN_OVERLAY_APPS": false,
-                "ENABLE_FEAT_F4HWN_SCREENSHOT": true,
+                "ENABLE_FEAT_F4HWN_SCREENSHOT": false,
+                "ENABLE_FEAT_F4HWN_K5VIEWER": false,
                 "ENABLE_FEAT_F4HWN_SPECTRUM": true,
                 "ENABLE_FEAT_F4HWN_RX_TX_TIMER": true,
                 "ENABLE_FEAT_F4HWN_CHARGING_C": false,
@@ -84,7 +85,7 @@
                 "ENABLE_RDS_PROBE": false,
                 "ENABLE_SWD": false,
                 "VERSION_STRING_1": "v0.22",
-                "VERSION_STRING_2": "v3.2.0"
+                "VERSION_STRING_2": "v3.3.1"
             }
         },
         {
@@ -96,7 +97,8 @@
                 "ENABLE_MESSENGER": true,
                 "ENABLE_VOX": true,
                 "ENABLE_AIRCOPY": false,
-                "ENABLE_FEAT_F4HWN_SCREENSHOT": true,
+                "ENABLE_FEAT_F4HWN_SCREENSHOT": false,
+                "ENABLE_FEAT_F4HWN_K5VIEWER": true,
                 "ENABLE_FEAT_F4HWN_GAME": true,
                 "ENABLE_FEAT_F4HWN_OVERLAY_APPS": true,
                 "ENABLE_FEAT_F4HWN_OVERLAY_INFO": true,

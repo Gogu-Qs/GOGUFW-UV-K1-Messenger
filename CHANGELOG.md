@@ -1,5 +1,58 @@
 # Changelog
 
+## GOGUFW 3.3.1 — 2026-10-25
+
+### Breaking overlay API change
+
+- Replaced GOGUFW's experimental public API levels 4–9 with the exact F4HWN
+  6.3.0 ABI 1 / API 3 prefix. The official layout now includes number helpers,
+  direct RX-audio capture, 48 MHz timing, app hand-off, quiet TX preparation,
+  USB serial, paced LCD output and deferred VFO staging.
+- Moved GOGU-only services into the separately versioned `APP_CAP_GOGU_EXT`
+  table discovered through the official API-2 asset service. This leaves room
+  for future F4HWN API levels without forcing another rewrite of every GOGU app.
+- **Old GOGUFW overlay binaries built for experimental API levels 4–9 do not
+  work with 3.3.1.** The loader deliberately reports them as incompatible.
+  Reinstall `Search.app`, `FMVFO.app` and `FMMemory.app` from this release after
+  flashing the firmware. Other custom GOGU apps also require their API-3 builds.
+
+### Firmware and radio fixes
+
+- Ported F4HWN 6.3.0 application services and added the serial capability used
+  by the official KISS TNC app. KISS temporarily owns USB while running, then
+  cleanly resynchronizes K5Viewer; CHIRP and Live Viewer remain available after
+  exit. KISS starts on the frequency saved by APRS Edit/APRS TX and falls back
+  to 144.800 MHz when the shared profile is absent or invalid.
+- Fixed range scanning stopping on a detected carrier without opening audio
+  when Messenger was enabled. The normal scan state machine now continues
+  independently while Messenger still receives its radio interrupts.
+- Compared the normal analog receive path with F4HWN 6.3.0. Restored the
+  missing RX expander/TX compressor setup and limited the AM weak-signal filter
+  behavior to AM instead of forcing it on normal FM channels. The upstream
+  CTCSS/DCS found/lost and squelch state machine is retained.
+- Restored GOGUFW's compact 20-entry RAM-only RF Log Lite. Removed the larger
+  F4HWN RX/TX log, its external-Flash history and its UV Studio export protocol;
+  generic K5Viewer/Live Viewer screen capture and CHIRP USB handling stay.
+- Removed the resident SysInfo menu screen because diagnostics are supplied by
+  `SystemInfo.app`. Its current stack value now follows the real stack pointer,
+  and its minimum value uses a boot-time high-water pattern rather than the old
+  fixed `_estack - _ebss` calculation.
+- Preserved the 48-slot F4HWN 6.3.0 Labs identity used by UV Studio. APRS Edit
+  and APRS RX use catalog-matching version metadata to avoid false warnings.
+- Added ACARS RX fixed at 131.725 MHz and APRS-profile tuning for KISS TNC in
+  source; the public release assets below remain limited to the requested core
+  firmware, Search and paired Broadcast FM apps.
+
+### Release files and build information
+
+- Firmware: `GOGUFW-v3.3.1.bin`
+- Multiboot firmware: `GOGUFW-v3.3.1-multiboot.bin`
+- Required overlay updates: `Search.app`, `FMVFO.app`, `FMMemory.app`
+- CHIRP module: `Gogufw_3.3.1_chirp_module.py`
+- Internal Flash image: 117,236 / 120,832 bytes (3,596 bytes free)
+- RAM/linker reservation: 16,360 / 16,384 bytes; 4,096-byte runtime stack
+  reservation retained and multiboot RAM-stub isolation verified
+
 ## GOGUFW 3.2.0 — 2026-10-21
 
 - Rebuilt Broadcast FM as two paired overlays, `FMVFO.app` and

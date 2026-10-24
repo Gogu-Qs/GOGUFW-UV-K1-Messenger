@@ -22,6 +22,9 @@
 
 void PY25Q16_Init();
 void PY25Q16_ReadBuffer(uint32_t Address, void *pBuffer, uint32_t Size);
+#if defined(ENABLE_FEAT_F4HWN_EXT_FLASH_RW) || defined(ENABLE_FEAT_F4HWN_MULTIBOOT)
+void PY25Q16_ReadBufferPhysical(uint32_t Address, void *pBuffer, uint32_t Size);
+#endif
 void PY25Q16_WriteBuffer(uint32_t Address, const void *pBuffer, uint32_t Size, bool Append);
 void PY25Q16_SectorErase(uint32_t Address);
 void PY25Q16_InvalidateCache(void);

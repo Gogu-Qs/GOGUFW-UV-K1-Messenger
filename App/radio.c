@@ -792,12 +792,12 @@ void RADIO_SetupRegisters(bool switchToForeground)
             case BK4819_FILTER_BW_WIDE:
             case BK4819_FILTER_BW_NARROW:
             case BK4819_FILTER_BW_NARROWER:
-                #ifdef ENABLE_AM_FIX
-    //              BK4819_SetFilterBandwidth(Bandwidth, gRxVfo->Modulation == MODULATION_AM && gSetting_AM_fix);
-                    BK4819_SetFilterBandwidth(Bandwidth, true);
-                #else
-                    BK4819_SetFilterBandwidth(Bandwidth, false);
-                #endif
+#ifdef ENABLE_AM_FIX
+                BK4819_SetFilterBandwidth(Bandwidth,
+                    gRxVfo->Modulation == MODULATION_AM && gSetting_AM_fix);
+#else
+                BK4819_SetFilterBandwidth(Bandwidth, false);
+#endif
                 break;
         }
     }
@@ -932,6 +932,10 @@ void RADIO_SetupRegisters(bool switchToForeground)
         BK4819_DisableVox();
     }
 
+    // RX expander (F4HWN 6.3.0 analog receive behavior).
+    BK4819_SetCompander((gRxVfo->Modulation == MODULATION_FM &&
+                         gRxVfo->Compander >= 2) ? gRxVfo->Compander : 0);
+
     BK4819_EnableDTMF();
     InterruptMask |= BK4819_REG_3F_DTMF_5TONE_FOUND;
 
@@ -996,7 +1000,7 @@ void RADIO_SetupRegisters(bool switchToForeground)
     }
 #endif
 
-void RADIO_SetTxParameters(void)
+static void RADIO_SetTxParametersEx(bool fm)
 {
     BK4819_FilterBandwidth_t Bandwidth = gCurrentVfo->CHANNEL_BANDWIDTH;
 
@@ -1021,30 +1025,35 @@ void RADIO_SetTxParameters(void)
         case BK4819_FILTER_BW_WIDE:
         case BK4819_FILTER_BW_NARROW:
         case BK4819_FILTER_BW_NARROWER:
-            #ifdef ENABLE_AM_FIX
-//              BK4819_SetFilterBandwidth(Bandwidth, gCurrentVfo->Modulation == MODULATION_AM && gSetting_AM_fix);
-                BK4819_SetFilterBandwidth(Bandwidth, true);
-            #else
-                BK4819_SetFilterBandwidth(Bandwidth, false);
-            #endif
+#ifdef ENABLE_AM_FIX
+            BK4819_SetFilterBandwidth(Bandwidth,
+                gCurrentVfo->Modulation == MODULATION_AM && gSetting_AM_fix);
+#else
+            BK4819_SetFilterBandwidth(Bandwidth, false);
+#endif
             break;
     }
 
     BK4819_SetFrequency(gCurrentVfo->pTX->Frequency);
 
+    // TX compressor (F4HWN 6.3.0 analog transmit behavior).
+    BK4819_SetCompander((gRxVfo->Modulation == MODULATION_FM &&
+                        (gRxVfo->Compander == 1 || gRxVfo->Compander >= 3))
+                       ? gRxVfo->Compander : 0);
+
     BK4819_PrepareTransmit();
 
-    SYSTEM_DelayMs(10);
+    SYSTEM_DelayMs(fm ? 10u : 0u);
 
     BK4819_PickRXFilterPathBasedOnFrequency(gCurrentVfo->pTX->Frequency);
 
-    BK4819_ToggleGpioOut(BK4819_GPIO1_PIN29_PA_ENABLE, true);
+    BK4819_ToggleGpioOut(BK4819_GPIO1_PIN29_PA_ENABLE, fm);
 
-    SYSTEM_DelayMs(5);
+    SYSTEM_DelayMs(fm ? 5u : 0u);
 
     BK4819_SetupPowerAmplifier(gCurrentVfo->TXP_CalculatedSetting, gCurrentVfo->pTX->Frequency);
 
-    SYSTEM_DelayMs(10);
+    SYSTEM_DelayMs(fm ? 10u : 0u);
 
     switch (gCurrentVfo->pTX->CodeType)
     {
@@ -1063,6 +1072,9 @@ void RADIO_SetTxParameters(void)
             break;
     }
 }
+
+void RADIO_SetTxParameters(void) { RADIO_SetTxParametersEx(true); }
+void RADIO_PrepareTx(void) { RADIO_SetTxParametersEx(false); }
 
 void RADIO_SetModulation(ModulationMode_t modulation)
 {

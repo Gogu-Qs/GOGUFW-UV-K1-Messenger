@@ -302,6 +302,13 @@ void PY25Q16_ReadBuffer(uint32_t Address, void *pBuffer, uint32_t Size)
     ReadBufferRaw(BankMap(Address), pBuffer, Size);
 }
 
+#if defined(ENABLE_FEAT_F4HWN_EXT_FLASH_RW) || defined(ENABLE_FEAT_F4HWN_MULTIBOOT)
+void PY25Q16_ReadBufferPhysical(uint32_t Address, void *pBuffer, uint32_t Size)
+{
+    ReadBufferRaw(Address, pBuffer, Size);
+}
+#endif
+
 void PY25Q16_WriteBuffer(uint32_t Address, const void *pBuffer, uint32_t Size, bool Append)
 {
     Address = BankMap(Address);

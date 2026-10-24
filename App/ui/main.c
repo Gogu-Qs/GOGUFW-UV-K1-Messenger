@@ -40,6 +40,9 @@
 #include "font.h"
 #include "functions.h"
 #include "helper/battery.h"
+#ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+    #include "k5viewer.h"
+#endif
 #include "misc.h"
 #include "radio.h"
 #include "settings.h"

@@ -191,7 +191,11 @@ typedef union
 #if defined(ENABLE_USB)
     static uint32_t VCP_Timestamp;
     static UART_Command_t VCP_Command;
+#if defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS)
+    uint16_t VCP_ReadIndex;
+#else
     static uint16_t VCP_ReadIndex;
+#endif
 #endif
 
 // static bool     bIsEncrypted = true;
@@ -1115,6 +1119,9 @@ void UART_HandleCommand(uint32_t Port)
 
     #ifdef ENABLE_FEAT_F4HWN_SCREENSHOT
         gUART_LockScreenshot = 20; // lock screenshot
+    #endif
+    #ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+        gUART_LockK5Viewer = 20;
     #endif
 }
 

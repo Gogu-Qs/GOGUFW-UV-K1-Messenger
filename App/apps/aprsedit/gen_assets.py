@@ -38,7 +38,7 @@ UI = [
 
 MENU = ["Call", "SSID", "Lat", "Lon", "Path", "Symbol", "Comm.", "Freq", "Power"]
 POWER_NAMES = ["LOW1", "LOW2", "LOW3", "LOW4", "LOW5", "MID", "HIGH"]
-PATHS = ["DIRECT", "WIDE1-1", "WIDE1-1,WIDE2-1"]
+PATHS = ["DIRECT", "WIDE1-1", "WIDE1-1,WIDE2-1", "ARISS"]
 PRESETS = [
     ("PORTABLE", "Portable, UV-K5/K1 F4HWN firmware (github.com/armel)"),
     ("MOBILE", "Mobile, UV-K5/K1 F4HWN firmware (github.com/armel)"),

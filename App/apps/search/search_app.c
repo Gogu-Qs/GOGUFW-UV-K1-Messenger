@@ -17,6 +17,7 @@
 #define REG_DCS_L  0x6au
 
 static const app_api_t *A;
+static const gogu_api_t *G;
 static uint8_t mode;
 static uint32_t freq;
 static uint16_t tone;
@@ -138,10 +139,8 @@ static void draw_menu(void)
 
 static void small_y(const char *text, uint8_t x, uint8_t y)
 {
-    if (A->api_level >= 3u &&
-        A->api_size >= offsetof(app_api_t, print_small_y) + sizeof(A->print_small_y) &&
-        A->print_small_y) {
-        A->print_small_y(text, x, y, false);
+    if (G->print_small_y) {
+        G->print_small_y(text, x, y, false);
     } else {
         A->print_normal(text, x, 127u, (uint8_t)((y + 4u) / 8u));
     }
@@ -202,17 +201,13 @@ static void tune_css(uint32_t f)
 
 static void service_radio(void)
 {
-    if (A->api_level >= 3u &&
-        A->api_size >= offsetof(app_api_t, radio_service) + sizeof(A->radio_service) &&
-        A->radio_service)
-        A->radio_service();
+    if (G->radio_service)
+        G->radio_service();
 }
 
 static bool save_api(void)
 {
-    if (A->api_level < 3u ||
-        A->api_size < offsetof(app_api_t, search_save) + sizeof(A->search_save) ||
-        !A->search_default_channel || !A->search_channel_info || !A->search_save)
+    if (!G->search_default_channel || !G->search_channel_info || !G->search_save)
         return false;
     return true;
 }
@@ -245,7 +240,7 @@ static void save_status(char out[20], uint16_t channel, bool confirm,
         return;
     }
     char name[11];
-    const bool used = A->search_channel_info(channel, name, sizeof(name));
+    const bool used = G->search_channel_info(channel, name, sizeof(name));
     if (!used) p = append_text(p, "CH-");
     u32(p, (uint32_t)channel + 1u, 4u); p += 4;
     if (used) {
@@ -274,7 +269,7 @@ static void draw_save(uint16_t channel, bool confirm,
 static bool save_dialog(void)
 {
     if (!save_api()) return false;
-    uint16_t channel = A->search_default_channel();
+    uint16_t channel = G->search_default_channel();
     uint8_t digits[4] = {0};
     uint8_t digit_count = 0u;
     bool confirm = false;
@@ -302,7 +297,7 @@ static bool save_dialog(void)
             else if (direction < 0) channel = channel == 0u ? 1023u : (uint16_t)(channel - 1u);
         } else if (k == APP_KEY_MENU && !digit_count) {
             if (!confirm) confirm = true;
-            else if (A->search_save(freq, tone, found, mode == SC_TONE, channel)) return true;
+            else if (G->search_save(freq, tone, found, mode == SC_TONE, channel)) return true;
         }
         A->delay_ms(20);
     }
@@ -357,14 +352,15 @@ static void poll(void)
 
 static uint8_t launch_mode(void)
 {
-    if (A->api_level >= 3u && A->api_size >= offsetof(app_api_t, launch_shortcut) + sizeof(A->launch_shortcut) && A->launch_shortcut)
-        return A->launch_shortcut();
+    if (G->launch_shortcut)
+        return G->launch_shortcut();
     return 0u;
 }
 
 __attribute__((section(".text.entry"))) void app_main(const app_api_t *api)
 {
     A = api;
+    G = APP_GoguApi(api); if (!G) return;
     mode = launch_mode();
     const bool launched_from_menu = mode != SC_FREQ && mode != SC_TONE;
     if (launched_from_menu)

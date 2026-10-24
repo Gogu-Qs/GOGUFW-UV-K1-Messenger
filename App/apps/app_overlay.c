@@ -44,9 +44,6 @@
 #ifdef ENABLE_MESSENGER
 #include "app/messenger_store.h"
 #endif
-#ifdef ENABLE_FEAT_F4HWN_RXTX_LOG
-#include "app/rxtx_log.h"
-#endif
 #include "ui/helper.h"
 #include "ui/main.h"
 #include "ui/status.h"
@@ -63,6 +60,11 @@
 #include "misc.h"   /* dBmCorrTable */
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_INFO
 #include "version.h"
+#endif
+#ifdef ENABLE_USB
+#define APP_SERIAL 1
+#include "app/uart.h"
+#include "driver/vcp.h"
 #endif
 
 _Static_assert(sizeof(app_header_t) == 64u && _Alignof(app_header_t) == 4u,
@@ -92,6 +94,7 @@ _Static_assert(APP_SLOT_BASE(APP_SLOT_COUNT) <= 0x001DE000u,
 
 enum {
     APP_AVAILABLE_CAPS = APP_CAP_CFG_PROXY
+                       | APP_CAP_GOGU_EXT
 #ifdef ENABLE_FMRADIO
                        | APP_CAP_FM
 #endif
@@ -100,6 +103,9 @@ enum {
 #endif
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_INFO
                        | APP_CAP_SYSINFO
+#endif
+#ifdef APP_SERIAL
+                       | APP_CAP_SERIAL
 #endif
 };
 
@@ -125,7 +131,10 @@ static struct {
     bool fm_names_erase;
     bool fm_name_pending;
     bool fm_suspended;
+    bool fm_host_active;
+    bool fm_saved_dual_watch_active;
     uint8_t fm_resume_ticks;
+    uint8_t fm_tune_guard_ticks;
     uint8_t fm_name_channel;
     char fm_name[16];
 #endif
@@ -142,13 +151,29 @@ static struct {
     uint8_t cfg_target;
     uint8_t cfg_proxy_len;
     bool cfg_proxy;
+    bool gogu_ext_allowed;
+    uint8_t handoff_next;
+    uint8_t handoff_from;
+    uint8_t handoff_len;
+    bool handoff_unread;
+#ifdef APP_SERIAL
+    uint32_t serial_read_total;
+    uint8_t serial_evt;
+    uint8_t serial_enum;
+    bool serial_used;
+#endif
     uint8_t saved_rx_vfo;
-    char loaded_name[APP_NAME_LEN];
     uint8_t cfg_buf[APP_CONFIG_PROXY_MAX];
 } app_state;
 
+static const gogu_api_t gogu_api;
+extern uint64_t __aeabi_idivmod(int32_t n, int32_t d);
+extern uint64_t __aeabi_uidivmod(uint32_t n, uint32_t d);
+
 static uint8_t app_read_validated_header(uint8_t slot, app_header_t *h);
 static bool app_find_named_slot(const char *name, uint8_t name_len, uint8_t *slot_out);
+static bool app_handoff(const char *name, const void *msg, uint8_t len);
+static int16_t app_handoff_read(void *buf, uint8_t max, char *from);
 
 /* ---- ABI wrappers: the few resident calls that are not a direct signature match ---- */
 
@@ -207,6 +232,13 @@ static void app_blit_full(void)
 }
 #endif
 
+static void app_viewer_update(void)
+{
+#ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+    K5VIEWER_Update(false);
+#endif
+}
+
 static int8_t  app_nav_dir(uint8_t key)
 {
     int8_t direction;
@@ -225,9 +257,49 @@ static int8_t  app_nav_dir(uint8_t key)
 extern uint8_t _eflash_used;
 extern uint8_t _ebss;
 extern uint8_t _estack;
+
+#define APP_STACK_WATERMARK 0xA5A5A5A5u
+
+static uintptr_t app_stack_watermark_end;
+
+/* Called as the first operation in main(), after startup has initialized RAM.
+ * Stop at the live MSP so the reset/main frames above it are never touched. */
+__attribute__((noinline))
+void APP_StackWatermarkInit(void)
+{
+    uintptr_t p = (uintptr_t)&_ebss;
+    const uintptr_t sp = __get_MSP();
+
+    while (p < sp) {
+        *(volatile uint32_t *)p = APP_STACK_WATERMARK;
+        p += sizeof(uint32_t);
+    }
+
+    /* Bound later scans to bytes that were actually initialized. Active reset
+     * and main frames above this address may coincidentally contain the marker. */
+    app_stack_watermark_end = sp;
+}
+
 static uint32_t app_stack_free_now(void)
 {
-    return (uint32_t)((uintptr_t)&_estack - (uintptr_t)&_ebss);
+    const uintptr_t bottom = (uintptr_t)&_ebss;
+    const uintptr_t sp = __get_MSP();
+    return sp > bottom ? (uint32_t)(sp - bottom) : 0u;
+}
+
+static uint32_t app_stack_free_min(void)
+{
+    const uintptr_t bottom = (uintptr_t)&_ebss;
+    uintptr_t p = bottom;
+    const uintptr_t end = app_stack_watermark_end;
+
+    if (end < bottom || end > (uintptr_t)&_estack)
+        return 0u;
+
+    while (p < end && *(const volatile uint32_t *)p == APP_STACK_WATERMARK)
+        p += sizeof(uint32_t);
+
+    return (uint32_t)(p - bottom);
 }
 #endif
 static void    app_led(bool on)        { BK4819_ToggleGpioOut(BK4819_GPIO6_PIN2_GREEN, on); }
@@ -579,6 +651,13 @@ static void app_rng_mix(void)
 
 static uint16_t app_asset_read(uint16_t offset, void *buf, uint16_t len)
 {
+    if (offset == APP_GOGU_API_QUERY) {
+        if (!app_state.gogu_ext_allowed || buf == NULL || len < sizeof(&gogu_api))
+            return 0;
+        const gogu_api_t *p = &gogu_api;
+        memcpy(buf, &p, sizeof(p));
+        return sizeof(p);
+    }
     if (offset >= app_state.asset_size)
         return 0;
     if (len > app_state.asset_size - offset)
@@ -586,6 +665,167 @@ static uint16_t app_asset_read(uint16_t offset, void *buf, uint16_t len)
     PY25Q16_ReadBuffer(APP_SLOT_BASE(app_state.run_slot) + APP_ASSET_OFFSET + offset, buf, len);
     return len;
 }
+
+/* Official F4HWN API 3 services. */
+static char *app_append_u32(char *dst, uint32_t u)
+{
+    char digits[10], *p = digits + sizeof(digits);
+    do {
+        const uint64_t qr = __aeabi_uidivmod(u, 10u);
+        *--p = (char)('0' + (uint32_t)(qr >> 32));
+        u = (uint32_t)qr;
+    } while (u);
+    while (p < digits + sizeof(digits)) *dst++ = *p++;
+    return dst;
+}
+
+static char *app_append_i32(char *dst, int32_t v)
+{
+    uint32_t u = (uint32_t)v;
+    if (v < 0) { *dst++ = '-'; u = 0u - u; }
+    return app_append_u32(dst, u);
+}
+
+static void app_draw_frequency(uint32_t f, uint8_t x, uint8_t line)
+{
+    char s[16];
+    const uint64_t mhz = __aeabi_uidivmod(f, 100000u);
+    uint32_t rest = (uint32_t)(mhz >> 32);
+    char *o = app_append_u32(s, (uint32_t)mhz); *o++ = '.';
+    for (char *d = o + 5; d > o;) {
+        const uint64_t qr = __aeabi_uidivmod(rest, 10u);
+        *--d = (char)('0' + (uint32_t)(qr >> 32)); rest = (uint32_t)qr;
+    }
+    o[5] = '\0'; if (x > 33u) x = 33u;
+    if ((uint32_t)mhz >= 1000u) { UI_PrintString(s, x, 0, line, 8); return; }
+    o += 3; UI_PrintStringSmallNormal(o, (uint8_t)(x + (o - s - 1) * 13 + 3), 0, (uint8_t)(line + 1u));
+    *o = '\0'; UI_DisplayFrequency(s, x, line, false);
+}
+
+static union {
+    struct { uint32_t moder, rcc, dac, dhr, sqr3, smpr3; } afc;
+    uint8_t handoff_buf[APP_HANDOFF_MAX];
+} app_api3_scratch;
+static bool app_afc_open;
+#define app_afc app_api3_scratch.afc
+static void app_afc_pa4(void) { ADC1->SMPR3=(app_afc.smpr3&~(7u<<12))|(((app_afc.smpr3>>24)&7u)<<12); ADC1->SQR3=(app_afc.sqr3&~0x1fu)|4u; }
+static void app_afc_battery(void) { ADC1->SQR3=app_afc.sqr3; ADC1->SMPR3=app_afc.smpr3; }
+static void app_af_capture_open(void)
+{
+    if (app_afc_open) return;
+    app_afc.moder=GPIOA->MODER; app_afc.rcc=RCC->APBENR1; app_afc.dac=DAC1->CR; app_afc.dhr=DAC1->DHR12R1; app_afc.sqr3=ADC1->SQR3; app_afc.smpr3=ADC1->SMPR3; app_afc_open=true;
+    GPIOA->MODER=app_afc.moder|(3u<<8); RCC->APBENR1=app_afc.rcc|RCC_APBENR1_DACEN; DAC1->CR=(1u<<0)|(1u<<1)|(1u<<2)|(7u<<3); DAC1->DHR12R1=2048u; DAC1->SWTRIGR=1u; app_afc_pa4();
+}
+static uint16_t app_af_capture_sample(void) { ADC1->CR2|=ADC_CR2_SWSTART|ADC_CR2_EXTTRIG; for(uint16_t n=0;!(ADC1->SR&ADC_SR_EOC)&&n<2000u;n++){} return (uint16_t)(ADC1->DR&0xfffu); }
+static void app_af_capture_close(void) { if(!app_afc_open)return; app_afc_open=false; app_afc_battery(); DAC1->CR=app_afc.dac; DAC1->DHR12R1=app_afc.dhr; RCC->APBENR1=app_afc.rcc; GPIOA->MODER=app_afc.moder; }
+bool APP_AfCaptureYieldAdc(void) { if(!app_afc_open)return false; app_afc_battery(); return true; }
+void APP_AfCaptureResumeAdc(void) { app_afc_pa4(); }
+
+static uint32_t app_cycles_raw(void)
+{
+    uint32_t tick,val; do { tick=SCHEDULER_GetTick10ms(); val=SysTick->VAL; } while(tick!=SCHEDULER_GetTick10ms());
+    if(SCB->ICSR&SCB_ICSR_PENDSTSET_Msk){val=SysTick->VAL;tick++;}
+    return tick*(SysTick->LOAD+1u)+(SysTick->LOAD-val);
+}
+static uint32_t app_cycles_48mhz(void) { return app_cycles_raw(); }
+
+#ifdef APP_SERIAL
+#define APP_SERIAL_WRITE_CYC (48000000u / 20u)
+_Static_assert(sizeof(VCP_RxBuf) == 256u, "serial ring must use byte indexes");
+
+static void app_serial_flush(void)
+{
+    const uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    VCP_ReadIndex = (uint8_t)VCP_RxBufPointer;
+    app_state.serial_read_total = cdc_acm_rx_total;
+    __set_PRIMASK(primask);
+}
+
+static bool app_serial_claim(uint8_t port)
+{
+    if (port != APP_SERIAL_USB)
+        return false;
+    if (!app_state.serial_used) {
+        app_state.serial_used = true;
+        app_serial_flush();
+        app_state.serial_enum = cdc_acm_config_count;
+#ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+        gUART_LockK5Viewer = K5VIEWER_LOCK_HELD;
+#endif
+    }
+    return true;
+}
+
+static uint16_t app_serial_read(uint8_t port, void *buf, uint16_t len)
+{
+    if (!app_serial_claim(port))
+        return 0;
+    const uint32_t total = cdc_acm_rx_total;
+    if (total - app_state.serial_read_total >= sizeof(VCP_RxBuf)) {
+        app_serial_flush();
+        app_state.serial_evt |= APP_SERIAL_LOST;
+    }
+    const uint8_t w = (uint8_t)VCP_RxBufPointer;
+    uint8_t r = (uint8_t)VCP_ReadIndex;
+    uint8_t *p = buf;
+    uint16_t n = 0;
+    while (n < len && r != w)
+        p[n++] = VCP_RxBuf[r++];
+    VCP_ReadIndex = r;
+    app_state.serial_read_total += n;
+    return n;
+}
+
+static bool app_serial_write(uint8_t port, const void *buf, uint16_t len)
+{
+    if (!app_serial_claim(port) || !dtr_enable)
+        return false;
+    if (!len)
+        return true;
+    if (cdc_acm_start_send(buf, len)) {
+        const uint32_t t0 = app_cycles_raw();
+        while (ep_tx_busy_flag)
+            if (app_cycles_raw() - t0 >= APP_SERIAL_WRITE_CYC)
+                goto timeout;
+        return true;
+    }
+timeout:
+    cdc_acm_cancel_send();
+    app_state.serial_evt |= APP_SERIAL_TIMEOUT;
+    return false;
+}
+
+static uint8_t app_serial_ctl(uint8_t port, uint32_t baud)
+{
+    (void)baud;
+    if (!app_serial_claim(port))
+        return 0;
+    uint8_t st = APP_SERIAL_OK | app_state.serial_evt;
+    app_state.serial_evt = 0;
+    if (dtr_enable)
+        st |= APP_SERIAL_HOST;
+    const uint8_t count = cdc_acm_config_count;
+    if (count != app_state.serial_enum) {
+        app_state.serial_enum = count;
+        st |= APP_SERIAL_ENUM;
+    }
+    return st;
+}
+
+static void app_serial_release(void)
+{
+    if (!app_state.serial_used)
+        return;
+    app_state.serial_used = false;
+    app_state.serial_evt = 0;
+    app_serial_flush();
+#ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+    VCP_K5ViewerSync();
+    gUART_LockK5Viewer = 0;
+#endif
+}
+#endif
 
 /* ---- API level 2: integer division ----
  * The run-time helpers the firmware links anyway (App/compact_div.S over
@@ -841,6 +1081,19 @@ static void app_fm_names_commit(void)
 
 static void app_fm_enter(uint16_t f, uint8_t b)
 {
+    if (!app_state.fm_host_active) {
+        /* A modal FM overlay pins BK4819 to the selected VFO instead of
+         * running the resident dual-watch alternator.  Expose that hold in
+         * the status bar (><), exactly as the former resident FM screen did. */
+        app_state.fm_saved_dual_watch_active = gDualWatchActive;
+        gDualWatchActive = false;
+        app_state.fm_host_active = true;
+        gUpdateStatus = true;
+    }
+    /* BK1080 retuning can momentarily leave BK4819's squelch-open state set,
+     * notably with a 439.400 MHz transceiver VFO.  The service below bounds
+     * this guard to 1.5 s and releases it early once SQL is stably closed. */
+    app_state.fm_tune_guard_ticks = 30u;
     BK1080_Init(f, b);
     BK4819_PickRXFilterPathBasedOnFrequency(10320000u);
     AUDIO_AudioPathOn();
@@ -853,6 +1106,17 @@ static void app_fm_exit(void)
     gEnableSpeaker = false;
     BK1080_Init0();
     BK4819_PickRXFilterPathBasedOnFrequency(gRxVfo->pRX->Frequency);
+}
+
+bool APP_FmOverlayActive(void)
+{
+    return app_state.fm_host_active;
+}
+
+static void app_fm_set_freq(uint16_t f, uint8_t b)
+{
+    app_state.fm_tune_guard_ticks = 30u; /* 30 x 50 ms service periods */
+    BK1080_SetFrequency(f, b);
 }
 
 static int8_t app_fm_valid(uint16_t f, uint16_t lo)
@@ -878,6 +1142,17 @@ static bool app_fm_radio_service(uint16_t fm_freq, uint8_t fm_band, bool fm_scan
      * otherwise the selected transceiver channel may interrupt Broadcast FM. */
     if (fm_scanning) {
         APP_OverlayRadioService();
+        return false;
+    }
+
+    if (app_state.fm_tune_guard_ticks > 0u) {
+        APP_OverlayRadioService();
+        --app_state.fm_tune_guard_ticks;
+        /* Preserve at least 200 ms for a delayed false SQL edge.  Afterwards
+         * a closed squelch releases the guard immediately; a genuine carrier
+         * is delayed by no more than the original 1.5-second safety ceiling. */
+        if (!g_SquelchLost && app_state.fm_tune_guard_ticks < 26u)
+            app_state.fm_tune_guard_ticks = 0u;
         return false;
     }
 
@@ -1105,6 +1380,11 @@ static uint8_t app_read_validated_header(uint8_t slot, app_header_t *h)
         h->api_min > APP_API_LEVEL)           return APP_ERR_ABI;
     if (!(h->flags & APP_FLAG_COMMITTED))     return APP_ERR_NOT_COMMITTED;
     if (h->required_caps & ~APP_AVAILABLE_CAPS) return APP_ERR_CAP;
+    /* Pre-3.3 GOGU apps used private tail fields inside app_api_t. Refuse them
+     * explicitly: the official API-3 fields now occupy those offsets. */
+    if (!(h->required_caps & APP_CAP_GOGU_EXT))
+        for (uint8_t i = 0; i + 5u <= APP_VERSION_LEN; i++)
+            if (!memcmp(h->version + i, "-gogu", 5u)) return APP_ERR_ABI;
     if (h->code_size < 2u || h->code_size > APP_OVERLAY_MAX ||
         (uint32_t)h->entry_off > h->code_size - 2u ||   /* leave room for a 2-byte Thumb insn */
         (h->entry_off & 1u) != 0u ||                   /* entry must be Thumb-aligned (even) */
@@ -1338,7 +1618,7 @@ static const app_api_t app_api = {
 #ifdef ENABLE_FMRADIO
     .fm_enter         = app_fm_enter,
     .fm_exit          = app_fm_exit,
-    .fm_set_freq      = BK1080_SetFrequency,
+    .fm_set_freq      = app_fm_set_freq,
     .fm_lo            = BK1080_GetFreqLoLimit,
     .fm_hi            = BK1080_GetFreqHiLimit,
     .fm_mute          = BK1080_Mute,
@@ -1361,28 +1641,6 @@ static const app_api_t app_api = {
     .asset_read       = app_asset_read,
     .idivmod          = __aeabi_idivmod,
     .uidivmod         = __aeabi_uidivmod,
-    .launch_shortcut  = app_launch_shortcut,
-    .print_small_y    = UI_GOGU_PrintSmallAtY,
-    .radio_service    = APP_OverlayRadioService,
-    .search_default_channel = SCANNER_OverlayDefaultChannel,
-    .search_channel_info = SCANNER_OverlayChannelInfo,
-    .search_save      = SCANNER_OverlaySave,
-    .radio_tune       = app_radio_tune,
-    .chain_app        = app_chain_app,
-    .radio_tune_power = app_radio_tune_power,
-    .radio_tune_aprs  = app_radio_tune_aprs,
-#ifdef ENABLE_FMRADIO
-    .fm_rssi_raw      = app_fm_rssi_raw,
-    .fm_name_load     = app_fm_name_load,
-    .fm_name_save     = app_fm_name_save,
-    .fm_names_erase   = app_fm_names_erase,
-    .fm_live_rssi     = app_fm_live_rssi,
-    .draw_header      = UI_GOGU_DrawHeader,
-    .draw_dotted      = UI_GOGU_DrawDottedSeparator,
-    .draw_footer      = UI_GOGU_DrawFooter,
-    .draw_text_editor = UI_GOGU_DrawTextEditor,
-    .fm_radio_service = app_fm_radio_service,
-#endif
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_INFO
     .sys_edition         = Edition,
     .sys_version         = Version,
@@ -1396,7 +1654,43 @@ static const app_api_t app_api = {
     .sys_battery_percent = BATTERY_VoltsToPercent,
     .sys_storage_read    = PY25Q16_ReadBuffer,
     .sys_stack_free_now  = app_stack_free_now,
-    .sys_stack_free_min  = app_stack_free_now,
+    .sys_stack_free_min  = app_stack_free_min,
+#endif
+    .append_i32       = app_append_i32,
+    .af_capture_open  = app_af_capture_open,
+    .af_capture_sample= app_af_capture_sample,
+    .af_capture_close = app_af_capture_close,
+    .cycles_48mhz     = app_cycles_48mhz,
+    .draw_frequency   = app_draw_frequency,
+    .append_u32       = app_append_u32,
+    .handoff          = app_handoff,
+    .handoff_read     = app_handoff_read,
+    .tx_prepare       = RADIO_PrepareTx,
+#ifdef APP_SERIAL
+    .serial_read      = app_serial_read,
+    .serial_write     = app_serial_write,
+    .serial_ctl       = app_serial_ctl,
+#endif
+    .blit_page        = ST7565_BlitScreen,
+    .lcd_feed         = ST7565_Feed,
+    .viewer_update    = app_viewer_update,
+};
+
+static const gogu_api_t gogu_api = {
+    .magic=APP_GOGU_API_MAGIC, .major=APP_GOGU_API_MAJOR,
+    .level=APP_GOGU_API_LEVEL, .size=sizeof(gogu_api_t),
+    .launch_shortcut=app_launch_shortcut, .print_small_y=UI_GOGU_PrintSmallAtY,
+    .radio_service=APP_OverlayRadioService,
+    .search_default_channel=SCANNER_OverlayDefaultChannel,
+    .search_channel_info=SCANNER_OverlayChannelInfo, .search_save=SCANNER_OverlaySave,
+    .radio_tune=app_radio_tune, .chain_app=app_chain_app,
+    .radio_tune_power=app_radio_tune_power, .radio_tune_aprs=app_radio_tune_aprs,
+#ifdef ENABLE_FMRADIO
+    .fm_rssi_raw=app_fm_rssi_raw, .fm_name_load=app_fm_name_load,
+    .fm_name_save=app_fm_name_save, .fm_names_erase=app_fm_names_erase,
+    .fm_live_rssi=app_fm_live_rssi, .draw_header=UI_GOGU_DrawHeader,
+    .draw_dotted=UI_GOGU_DrawDottedSeparator, .draw_footer=UI_GOGU_DrawFooter,
+    .draw_text_editor=UI_GOGU_DrawTextEditor, .fm_radio_service=app_fm_radio_service,
 #endif
 };
 
@@ -1421,14 +1715,6 @@ static uint8_t app_prepare_overlay(uint8_t slot)
         return APP_ERR_VMA;
 
     app_state.loaded_entry_off = h.entry_off;
-    memcpy(app_state.loaded_name, h.name, APP_NAME_LEN);
-
-    /* Flush and suspend RF logging before the sector cache becomes executable
-     * app code. Both a pending RX and an app-owned TX could otherwise write a
-     * log entry through the same 4 KiB buffer and overwrite the running app. */
-#ifdef ENABLE_FEAT_F4HWN_RXTX_LOG
-    RXTX_LOG_Suspend();
-#endif
 
     /* Repurpose the sector cache: drop any cached config sector, load the code
      * straight in (ReadBuffer bypasses the cache), and verify it in RAM before
@@ -1447,9 +1733,6 @@ static uint8_t app_prepare_overlay(uint8_t slot)
 
     if (!assets_ok || MB_Crc32Bytes(ws, h.code_size) != h.code_crc32) {
         PY25Q16_InvalidateCache();
-#ifdef ENABLE_FEAT_F4HWN_RXTX_LOG
-        RXTX_LOG_Resume();
-#endif
         return APP_ERR_CRC;
     }
 
@@ -1459,6 +1742,7 @@ static uint8_t app_prepare_overlay(uint8_t slot)
 
     app_state.run_slot   = slot;   /* for cfg_load / cfg_save / asset_read */
     app_state.asset_size = h.asset_size;
+    app_state.gogu_ext_allowed = (h.required_caps & APP_CAP_GOGU_EXT) != 0u;
     app_state.cfg_len    = 0;
     app_config_proxy_resolve();
     app_rng_mix();
@@ -1467,7 +1751,9 @@ static uint8_t app_prepare_overlay(uint8_t slot)
     app_state.fm_names_erase = false;
     app_state.fm_name_pending = false;
     app_state.fm_suspended = false;
+    app_state.fm_host_active = false;
     app_state.fm_resume_ticks = 0u;
+    app_state.fm_tune_guard_ticks = 0u;
 #endif
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_BEAM
     app_state.beam_dirty = false;
@@ -1505,6 +1791,12 @@ static uint8_t app_prepare_overlay(uint8_t slot)
     gCurrentVfo    = gTxVfo;
     RADIO_SetupRegisters(true);
 
+    /* Keep Armel's official API-3 KISS TNC binary/catalog identity intact,
+     * but give it the same APRS Edit/TX shared receive target as APRS RX and
+     * APRS Digi. A missing/invalid profile falls back to 144.800 MHz. */
+    if (memcmp(h.name, "KISS TNC", 8u) == 0 && h.name[8] == '\0')
+        app_radio_tune_aprs();
+
     return APP_OK;
 }
 
@@ -1516,6 +1808,14 @@ static void app_finish_overlay(uint8_t slot)
     BACKLIGHT_TurnOn();
     app_state.allow_screen_saver = false;
     app_state.screen_saver_wake = false;
+
+#ifdef ENABLE_FMRADIO
+    if (app_state.fm_host_active) {
+        gDualWatchActive = app_state.fm_saved_dual_watch_active;
+        app_state.fm_host_active = false;
+        gUpdateStatus = true;
+    }
+#endif
 
     /* Restore the resident RX/dual-watch tuning the app ran on top of. */
     gEeprom.RX_VFO = app_state.saved_rx_vfo;
@@ -1577,8 +1877,10 @@ static void app_finish_overlay(uint8_t slot)
         }
     } else if (!app_state.cfg_proxy && app_state.cfg_len) {
         const uint32_t base = APP_SLOT_BASE(slot);
+        char owner[APP_NAME_LEN];
+        PY25Q16_ReadBuffer(base + offsetof(app_header_t, name), owner, sizeof(owner));
         PY25Q16_WriteBuffer(base + APP_CFG_OFFSET, app_state.cfg_buf, app_state.cfg_len, false);
-        PY25Q16_WriteBuffer(base + APP_CFG_OWNER, app_state.loaded_name, APP_NAME_LEN, false);
+        PY25Q16_WriteBuffer(base + APP_CFG_OWNER, owner, APP_NAME_LEN, false);
         PY25Q16_InvalidateCache();
     }
 #ifdef ENABLE_FMRADIO
@@ -1588,9 +1890,6 @@ static void app_finish_overlay(uint8_t slot)
         SETTINGS_SaveFM();
         PY25Q16_InvalidateCache();
     }
-#endif
-#ifdef ENABLE_FEAT_F4HWN_RXTX_LOG
-    RXTX_LOG_Resume();
 #endif
 }
 
@@ -1607,9 +1906,36 @@ static bool app_find_named_slot(const char *name, uint8_t name_len, uint8_t *slo
     return false;
 }
 
+static bool app_handoff(const char *name, const void *msg, uint8_t len)
+{
+    /* Capture and hand-off are sequential phases; closing here lets their
+     * snapshots share 32 bytes in this RAM-constrained target. */
+    app_af_capture_close();
+    app_state.handoff_next=0; app_state.handoff_len=0; app_state.handoff_unread=false;
+    uint8_t slot;
+    uint8_t n=0; while(n<APP_NAME_LEN && name[n]) n++;
+    if (n==APP_NAME_LEN || !app_find_named_slot(name,n,&slot)) return false;
+    if(len>APP_HANDOFF_MAX) len=APP_HANDOFF_MAX;
+    if(len && msg) memcpy(app_api3_scratch.handoff_buf,msg,len);
+    app_state.handoff_len=len; app_state.handoff_from=app_state.run_slot; app_state.handoff_next=slot+1u;
+    return true;
+}
+
+static int16_t app_handoff_read(void *buf, uint8_t max, char *from)
+{
+    if(!app_state.handoff_unread) return -1;
+    app_state.handoff_unread=false;
+    const uint8_t n=app_state.handoff_len<max?app_state.handoff_len:max;
+    if(n && buf) memcpy(buf,app_api3_scratch.handoff_buf,n);
+    if(from){ PY25Q16_ReadBuffer(APP_SLOT_BASE(app_state.handoff_from)+offsetof(app_header_t,name),from,APP_NAME_LEN); from[APP_NAME_LEN]='\0'; }
+    return app_state.handoff_len;
+}
+
 uint8_t APP_LaunchOverlay(uint8_t slot)
 {
     const uint8_t saved_context = app_state.launch_shortcut;
+    app_state.handoff_next = 0u;
+    app_state.handoff_unread = false;
     uint8_t rc;
     for (;;) {
         app_state.chain_target = APP_CHAIN_NONE;
@@ -1619,11 +1945,23 @@ uint8_t APP_LaunchOverlay(uint8_t slot)
             app_entry_t entry = (app_entry_t)(
                 ((uint32_t)ws + app_state.loaded_entry_off) | 1u);
             entry(&app_api);
+#ifdef APP_SERIAL
+            app_serial_release();
+#endif
+            app_af_capture_close();
             app_finish_overlay(slot);
         }
         const uint8_t target = app_state.chain_target;
-        if (rc != APP_OK || target == APP_CHAIN_NONE)
+        if (rc != APP_OK)
             break;
+
+        if (app_state.handoff_next) {
+            slot = app_state.handoff_next - 1u;
+            app_state.handoff_next = 0u;
+            app_state.handoff_unread = true;
+            continue;
+        }
+        if (target == APP_CHAIN_NONE) break;
 
         const char *name;
         uint8_t len;

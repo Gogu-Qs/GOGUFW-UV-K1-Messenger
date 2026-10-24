@@ -9,6 +9,11 @@
 #define APRS_POS_DIGITS           13u
 #define APRS_CALL_MAX             6u
 
+/* Official API-3 APRS TX/Edit handoff contract (F4HWN v6.3.0). */
+#define APRS_TX_APP_NAME          "APRS TX"
+#define APRS_EDIT_APP_NAME        "APRS Edit"
+#define APRS_HANDOFF_EDIT_RETURN  1u
+
 #define APRS_PROFILE_COMMENT_LEN  4u
 #define APRS_PROFILE_ROUTE        5u  /* path in bits 5:4, SSID in bits 3:0 */
 #define APRS_PROFILE_SYMBOL       6u

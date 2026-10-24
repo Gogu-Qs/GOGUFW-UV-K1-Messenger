@@ -455,27 +455,11 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
             break;
 #endif
 
-        case MENU_VOL: {
-            // SysInf paginates: 
-            // page 0 = identity, 
-            // page 1 = build date/time,
-            // page 2 = battery,
-            // +1 if F4HWN_MEM (Flash/SRAM), 
-            // +2 if F4HWN_QRCODE (Code QR + Wiki QR).
-            int32_t vol_max = 0;
-            #ifdef ENABLE_FEAT_F4HWN
-                vol_max += 2;
-            #endif
-            #ifdef ENABLE_FEAT_F4HWN_MEM
-                vol_max += 1;
-            #endif
-            #ifdef ENABLE_FEAT_F4HWN_QRCODE
-                vol_max += 2;
-            #endif
-            if (vol_max == 0) return -1;
-            *pMax = vol_max;
+#ifndef ENABLE_FEAT_F4HWN
+        case MENU_VOL:
+            *pMax = 0;
             break;
-        }
+#endif
 
         default:
             return -1;
@@ -1044,10 +1028,9 @@ void MENU_ShowCurrentSetting(void)
             gSubMenuSelection = gEeprom.SQUELCH_LEVEL;
             break;
 
-        case MENU_VOL:
-            // SysInf is paginated; always start on page 0 (identity).
-            gSubMenuSelection = 0;
-            break;
+#ifndef ENABLE_FEAT_F4HWN
+        case MENU_VOL: gSubMenuSelection = 0; break;
+#endif
 
         case MENU_STEP:
             gSubMenuSelection = FREQUENCY_GetSortedIdxFromStepIdx(gTxVfo->STEP_SETTING);
@@ -2200,7 +2183,10 @@ void MENU_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
     {
         const int m = UI_MENU_GetCurrentMenuId();
 
-        if (m == MENU_VOL ||
+        if (
+#ifndef ENABLE_FEAT_F4HWN
+            m == MENU_VOL ||
+#endif
             #ifdef ENABLE_F_CAL_MENU
                 m == MENU_F_CALI ||
             #endif

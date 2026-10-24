@@ -346,6 +346,12 @@ extern volatile bool         gTxTimeoutReached;
 
         bool SCREENSHOT_IsLocked(void);
     #endif
+    #ifdef ENABLE_FEAT_F4HWN_K5VIEWER
+        extern volatile uint8_t gUART_LockK5Viewer;
+        #define K5VIEWER_LOCK_HELD 0xFFu
+        extern bool gUSB_K5ViewerEnabled;
+        bool K5VIEWER_IsLocked(void);
+    #endif
 #endif
 
 extern volatile uint16_t     gTailNoteEliminationCountdown_10ms;

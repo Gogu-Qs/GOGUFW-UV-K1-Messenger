@@ -73,7 +73,7 @@ def build_c(blob, D, call=CALL, pos=None, hemi=None, ssid=None, path=None, sym=N
     f = bytearray(rd("F_DEST"))
     f += bytes(ord(call[i]) << 1 if i < len(call) else 0x40 for i in range(6))
     f.append(0x60 | (ssid << 1) | (0 if path else 1))
-    p = bytearray(rd("F_WIDE")[:7 * path])         # the first path WIDE entries
+    p = bytearray(rd("F_PATH")[:7 * path] if path < 3 else rd("F_PATH")[14:21])  # WIDEs, or ARISS
     if path: p[-1] |= 1                             # end of the address field
     f += p + b"\x03\xF0" + info.encode()
     c = 0xFFFF
@@ -147,6 +147,7 @@ def main():
     f = build_c(blob, D)
     ssid = default_ssid
     WIDE = ["WIDE1-1", "WIDE2-1"]                                # gen_assets.py WIDE
+    HOPS = [[], WIDE[:1], WIDE, ["ARISS"]]                       # gen_assets.py PATHS
     info = "!4850.90N/00216.25E[Portable, UV-K5/K1 F4HWN firmware (github.com/armel)"          # gen_assets.py defaults
     ref = build("%s-%d" % (CALL, ssid) if ssid else CALL, dst="APZK5",
                 path=WIDE[:default_path], info=info)
@@ -186,9 +187,9 @@ def main():
     ok &= f2 == want
     print("edited position frame:", f2 == want, decode(f2))
     # SSID and path edited: every path, SSID 0 (no suffix) and 15
-    for sid, path in ((0, 0), (15, 1), (9, 2)):
+    for sid, path in ((0, 0), (15, 1), (9, 2), (7, 3)):
         f3 = build_c(blob, D, ssid=sid, path=path)
-        want = build("F4HWN-%d" % sid if sid else "F4HWN", dst="APZK5", path=WIDE[:path], info=info)
+        want = build("F4HWN-%d" % sid if sid else "F4HWN", dst="APZK5", path=HOPS[path], info=info)
         ok &= f3 == want
         print("SSID %2d, path %d frame:" % (sid, path), f3 == want, decode(f3))
     f3 = build_c(blob, D, sym=0)

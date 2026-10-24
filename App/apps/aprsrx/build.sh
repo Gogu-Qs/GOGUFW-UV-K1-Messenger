@@ -8,8 +8,8 @@ set -euo pipefail
 
 APP="$(basename "$PWD")"            # breakout, foxhunt, beacon, fm, ...
 APP_NAME="APRS RX"                  # <-- the only per-app line
-APP_VER="0.15-gogu"
-APP_API_MIN=7
+APP_VER="1.0"
+APP_API_MIN=3
 APP_VMA=${APP_VMA:-0x20000280}      # pinned overlay VMA (Core/py32f071xb.ld)
 OUT="${APP_NAME// /}"               # blob basename ("Broadcast FM" -> BroadcastFM)
 
@@ -35,7 +35,7 @@ step 2 compile ; "$CC" $CFLAGS $LDFLAGS "${APP}_app.c" -lgcc -o "${APP}.elf" \
 step 3 objcopy ; "$OBJCOPY" -O binary "${APP}.elf" "${APP}.bin"
 step 4 pack    ; python3 ../pack_app.py "${APP}.bin" "${OUT}.app" \
                    --name "$APP_NAME" --ver "$APP_VER" --api-min "$APP_API_MIN" --vma "${APP_VMA}" \
-                   --shortcut none --assets "${APP}_assets.bin" >/dev/null
+                   --shortcut none --assets "${APP}_assets.bin" >/dev/null --require gogu
 trap - ERR
 
 BYTES=$(wc -c < "${APP}.bin")
