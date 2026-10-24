@@ -91,6 +91,14 @@ bool TEXT_INPUT_HandleKey(TEXT_INPUT_Editor_t *ed, KEY_Code_t key)
         return false;
     }
 
+    if (n == 1U) {
+        TEXT_INPUT_Commit(ed);
+        if (ed->len >= ed->max_len) return true;
+        ed->buffer[ed->len++] = apply_case(chars[0], ed->upper);
+        ed->buffer[ed->len] = 0;
+        return true;
+    }
+
     if (ed->has_pending && ed->pending_key == key && ed->len > 0) {
         ed->cycle_index = (uint8_t)((ed->cycle_index + 1U) % n);
         ed->buffer[ed->len - 1U] = apply_case(chars[ed->cycle_index], ed->upper);
