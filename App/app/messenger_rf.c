@@ -1170,8 +1170,12 @@ void MSG_RF_Tick10ms(void)
             if (s_wait_ack_retries == 0u &&
                 gCurrentFunction != FUNCTION_TRANSMIT && !MSG_RF_AutoTxBusy()) {
                 uint8_t retry_frame[MSG_PKT_WIRE_LEN];
+                char retry_to[MSG_CALLSIGN_LEN + 1u];
+                memset(retry_to, 0, sizeof(retry_to));
+                (void)MSG_STORE_GetOutboxToById(s_wait_ack_id, retry_to);
                 if (MSG_PACKET_BuildText(retry_frame, sizeof(retry_frame), s_wait_ack_id,
-                                         gMessengerConfig.callsign, s_wait_ack_text,
+                                         gMessengerConfig.callsign, retry_to,
+                                         s_wait_ack_text,
                                          s_wait_ack_ttl) == MSG_PKT_WIRE_LEN &&
                     MSG_RF_SendPacketFrameRepeatedOnVfo(retry_frame, true, true, s_wait_ack_vfo, 1u)) {
                     s_wait_ack_retries = 1u;
@@ -1672,6 +1676,14 @@ static void MSG_RF_HandleAckFor(uint16_t ack_id, const char *ack_from)
     gUpdateDisplay = true;
 }
 
+/* True if packet is addressed to this station or broadcast. */
+static bool msg_rx_addressed_to_us(const char *to)
+{
+    if (!to[0]) return true;
+    if (strncmp(to, MSG_PKT_TO_ALL, MSG_CALLSIGN_LEN) == 0) return true;
+    return strncmp(to, gMessengerConfig.callsign, MSG_CALLSIGN_LEN) == 0;
+}
+
 static void try_store_rx_packet(void)
 {
 #ifdef ENABLE_AIRCOPY
@@ -1724,6 +1736,10 @@ static void try_store_rx_packet(void)
 
     if (pkt.type == MSG_PKT_TYPE_ACK) {
         MSG_HeardUpdate(pkt.from, MSG_RF_CurrentRSSIdBm(), MSG_PKT_TYPE_ACK);
+        if (!msg_rx_addressed_to_us(pkt.to)) {
+            MSG_RF_FinishRxAttempt(false);
+            return;
+        }
         uint16_t ack_id = pkt.id;
         if (pkt.payload_len >= 2u) {
             ack_id = (uint16_t)(uint8_t)pkt.payload[0] | ((uint16_t)(uint8_t)pkt.payload[1] << 8);
@@ -1736,7 +1752,8 @@ static void try_store_rx_packet(void)
     if (pkt.type != MSG_PKT_TYPE_TEXT) return;
 
     uint16_t ack_text_id;
-    if (MSG_RF_ParseAckText(pkt.payload, &ack_text_id)) {
+    if (MSG_RF_ParseAckText(pkt.payload, &ack_text_id) &&
+        msg_rx_addressed_to_us(pkt.to)) {
         MSG_HeardUpdate(pkt.from, MSG_RF_CurrentRSSIdBm(), MSG_PKT_TYPE_ACK);
         /* RF28: text ACK is now proven enough for debugging; keep it out of
          * Inbox for daily use and only update the matching Sent status. */
@@ -1752,6 +1769,11 @@ static void try_store_rx_packet(void)
     }
 
     MSG_HeardUpdate(pkt.from, MSG_RF_CurrentRSSIdBm(), MSG_PKT_TYPE_TEXT);
+
+    if (!msg_rx_addressed_to_us(pkt.to)) {
+        MSG_RF_FinishRxAttempt(false);
+        return;
+    }
 
     const bool duplicate = MSG_STORE_IsDuplicateInbox(pkt.from, pkt.id);
 
@@ -1950,7 +1972,7 @@ static void MSG_RF_SendInitialWakeFrame(uint16_t id)
 #endif
 }
 
-bool MSG_RF_SendText(const char *text)
+bool MSG_RF_SendText(const char *text, const char *to)
 {
     s_last_send_blocked = false;
     s_last_send_block_reason = MSG_RF_BLOCK_NONE;
@@ -1973,11 +1995,15 @@ bool MSG_RF_SendText(const char *text)
     uint8_t packet[MSG_PKT_WIRE_LEN];
     char rf_text[MSG_RF_TEXT_LIMIT + 1u];
     clamp_rf_text(rf_text, text);
+    /* Target callsign in 'TO' field; NULL or empty for broadcast. */
+    char rf_to[MSG_CALLSIGN_LEN + 1u];
+    memset(rf_to, 0, sizeof(rf_to));
+    if (to) strncpy(rf_to, to, MSG_CALLSIGN_LEN);
 
     const uint16_t id = MSG_STORE_NextMsgId();
     const uint8_t ttl = 1u;
 
-    if (MSG_PACKET_BuildText(packet, sizeof(packet), id, gMessengerConfig.callsign, rf_text, ttl) != MSG_PKT_WIRE_LEN) {
+    if (MSG_PACKET_BuildText(packet, sizeof(packet), id, gMessengerConfig.callsign, rf_to, rf_text, ttl) != MSG_PKT_WIRE_LEN) {
         return false;
     }
 
@@ -1988,7 +2014,7 @@ bool MSG_RF_SendText(const char *text)
 
     if (!MSG_RF_SendPacketFrameRepeatedOnVfo(packet, true, true, sent_vfo, 1u)) return false;
 
-    MSG_STORE_AddOutboxMessage(rf_text, gMessengerConfig.callsign, MSG_PKT_TO_ALL, id, ttl, ttl);
+    MSG_STORE_AddOutboxMessage(rf_text, gMessengerConfig.callsign, rf_to, id, ttl, ttl);
     if (MSG_RF_AckEnabledNow()) {
         s_wait_ack_active = true;
         s_wait_ack_vfo = sent_vfo;

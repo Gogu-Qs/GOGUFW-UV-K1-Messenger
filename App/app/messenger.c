@@ -26,6 +26,7 @@ uint8_t gMsgCursor;
 uint8_t gMsgScroll;
 uint8_t gMsgHomeCursor;
 char gMsgComposeBuf[MSG_TEXT_LEN + 1];
+char gMsgComposeTo[MSG_CALLSIGN_LEN + 1];   /* directed reply target; "" = broadcast */
 TEXT_INPUT_Editor_t gMsgEditor;
 uint8_t gMsgReadIndex;
 uint8_t gMsgReadSource;
@@ -262,13 +263,16 @@ static void return_to_read_source_list(void)
         gMsgScroll = (uint8_t)(gMsgCursor - (UI_GOGU_CONTENT_ROWS - 1u));
 }
 
-static void open_compose(const char *seed)
+/* to: reply target written into the packet TO field; NULL = broadcast. */
+static void open_compose(const char *seed, const char *to)
 {
     gMsgComposeIsDraftEdit = false;
     gMsgComposeDraftIndex = 0;
     memset(gMsgComposeBuf, 0, sizeof(gMsgComposeBuf));
     if (seed) strncpy(gMsgComposeBuf, seed, MSG_TEXT_LEN);
     gMsgComposeBuf[MSG_TEXT_LEN] = 0;
+    memset(gMsgComposeTo, 0, sizeof(gMsgComposeTo));
+    if (to) strncpy(gMsgComposeTo, to, MSG_CALLSIGN_LEN);
     TEXT_INPUT_Start(&gMsgEditor, gMsgComposeBuf, MSG_TEXT_LEN);
     gMsgScreen = MSG_SCREEN_COMPOSE;
 }
@@ -279,6 +283,7 @@ static void open_draft_edit(uint8_t index)
     gMsgComposeIsDraftEdit = true;
     gMsgComposeDraftIndex = index;
     MSG_STORE_GetDraft(index, gMsgComposeBuf);
+    memset(gMsgComposeTo, 0, sizeof(gMsgComposeTo));   /* drafts stay broadcast */
     TEXT_INPUT_Start(&gMsgEditor, gMsgComposeBuf, MSG_TEXT_LEN);
     gMsgScreen = MSG_SCREEN_COMPOSE;
 }
@@ -296,6 +301,20 @@ static const char *read_message_text(void)
     }
     if (gMsgReadIndex >= MSG_STORE_CountInbox()) return 0;
     return gMessengerInbox[gMsgReadIndex].text;
+}
+
+static const char *read_message_from(void)
+{
+    if (gMsgReadSource != MSG_SCREEN_INBOX) return 0;
+    if (gMsgReadIndex >= MSG_STORE_CountInbox()) return 0;
+    return gMessengerInbox[gMsgReadIndex].from;
+}
+
+static const char *read_message_to(void)
+{
+    if (gMsgReadSource != MSG_SCREEN_OUTBOX) return 0;
+    if (gMsgReadIndex >= MSG_STORE_CountOutbox()) return 0;
+    return gMessengerOutbox[gMsgReadIndex].to;
 }
 
 static void read_move(int8_t dir)
@@ -355,7 +374,7 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             } else if (Key == KEY_MENU) {
                 switch (gMsgHomeCursor) {
                     case 0: open_list(MSG_SCREEN_INBOX); break;
-                    case 1: open_compose(""); break;
+                    case 1: open_compose("", NULL); break;
                     case 2: open_list(MSG_SCREEN_OUTBOX); break;
                     case 3: open_list(MSG_SCREEN_DRAFTS); break;
                 }
@@ -394,11 +413,11 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                 if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
                     const char *text = read_message_text();
                     if (text) {
-                        if (!MSG_RF_SendText(text) && handle_send_failure(text)) break;
+                        if (!MSG_RF_SendText(text, read_message_to()) && handle_send_failure(text)) break;
                     }
                     open_sent_after_send();
                 } else {
-                    open_compose("RE: ");
+                    open_compose("RE: ", read_message_from());
                 }
             } else if (Key == KEY_F) {
                 if (gMsgReadSource == MSG_SCREEN_OUTBOX) {
@@ -422,11 +441,11 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                      */
                     MSG_STORE_SetDraft(gMsgComposeDraftIndex, gMsgComposeBuf);
                     const char *send_text = gMsgComposeBuf[0] ? gMsgComposeBuf : "EMPTY";
-                    if (!MSG_RF_SendText(send_text) && handle_send_failure(send_text)) break;
+                    if (!MSG_RF_SendText(send_text, gMsgComposeTo) && handle_send_failure(send_text)) break;
                     open_sent_after_send();
                 } else {
                     const char *send_text = gMsgComposeBuf[0] ? gMsgComposeBuf : "EMPTY";
-                    if (!MSG_RF_SendText(send_text) && handle_send_failure(send_text)) break;
+                    if (!MSG_RF_SendText(send_text, gMsgComposeTo) && handle_send_failure(send_text)) break;
                     open_sent_after_send();
                 }
             }
