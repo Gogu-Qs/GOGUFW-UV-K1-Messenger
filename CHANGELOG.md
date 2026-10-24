@@ -49,7 +49,8 @@
 - Multiboot firmware: `GOGUFW-v3.3.1-multiboot.bin`
 - Required overlay updates: `Search.app`, `FMVFO.app`, `FMMemory.app`
 - CHIRP module: `Gogufw_3.3.1_chirp_module.py`
-- Internal Flash image: 116,316 / 120,832 bytes (4,516 bytes free)
+- Final Flash image: 117,236 / 120,832 bytes (3,596 bytes free), including
+  the 920-byte multiboot RAM-stub load image omitted by the linker region total
 - RAM/linker reservation: 16,360 / 16,384 bytes; 4,096-byte runtime stack
   reservation retained and multiboot RAM-stub isolation verified
 
