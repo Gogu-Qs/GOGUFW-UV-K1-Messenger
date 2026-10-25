@@ -65,6 +65,7 @@ void MSG_STORE_AddInboxMessage(const char *text, const char *from, const char *t
 void MSG_STORE_AddOutboxMessage(const char *text, const char *from, const char *to, uint16_t id, uint8_t ttl_init, uint8_t ttl_remain);
 void MSG_STORE_SetOutboxStatusById(uint16_t id, uint8_t status);
 void MSG_STORE_AddOutboxAckSourceById(uint16_t id, const char *from);
+bool MSG_STORE_GetOutboxToById(uint16_t id, char *to);
 void MSG_STORE_AddInboxDemo(const char *text);
 void MSG_STORE_AddOutboxDemo(const char *text);
 bool MSG_STORE_InjectNativePacket(const char *text);

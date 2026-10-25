@@ -33,6 +33,7 @@ extern uint8_t gMsgScroll;
 extern uint8_t gMsgReadIndex;
 extern uint8_t gMsgReadSource;
 extern char gMsgComposeBuf[];
+extern char gMsgComposeTo[];
 extern TEXT_INPUT_Editor_t gMsgEditor;
 extern uint8_t gMsgScreen;
 
@@ -420,11 +421,20 @@ static void draw_read(void)
     UI_GOGU_DrawFooter(sent ? "RESEND" : "REPLY", msg_footer_target(), "EXIT");
 }
 
+/* Compose footer shows addressee (target or ALL) */
 static void draw_compose(void)
 {
+    char footer[3u + MSG_CALLSIGN_LEN + 1u];
+    if (gMsgComposeTo[0]) {
+        footer[0] = 'T'; footer[1] = 'O'; footer[2] = ':';
+        strncpy(footer + 3u, gMsgComposeTo, MSG_CALLSIGN_LEN);
+        footer[3u + MSG_CALLSIGN_LEN] = 0;
+    } else {
+        strcpy(footer, "TO:" MSG_PKT_TO_ALL);
+    }
     UI_GOGU_DrawTextEditor("COMPOSE", gMsgComposeBuf, MSG_TEXT_LEN, "SEND",
                            (gMsgEditor.mode == 2U) ? "2" : (gMsgEditor.upper ? "B" : "b"),
-                           true, msg_footer_target());
+                           true, footer);
 }
 
 static uint8_t range_window_start(uint8_t count, uint8_t cursor)

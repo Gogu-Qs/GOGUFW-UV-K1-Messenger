@@ -32,7 +32,7 @@ typedef struct {
 } MSG_Packet_t;
 
 uint16_t MSG_PACKET_Crc16(const uint8_t *data, uint16_t len);
-uint8_t MSG_PACKET_BuildText(uint8_t *out, uint8_t out_len, uint16_t id, const char *from, const char *text, uint8_t ttl_init);
+uint8_t MSG_PACKET_BuildText(uint8_t *out, uint8_t out_len, uint16_t id, const char *from, const char *to, const char *text, uint8_t ttl_init);
 uint8_t MSG_PACKET_BuildAck(uint8_t *out, uint8_t out_len, uint16_t id, const char *from, const char *to);
 uint8_t MSG_PACKET_BuildPing(uint8_t *out, uint8_t out_len, uint16_t id, const char *from);
 uint8_t MSG_PACKET_BuildPong(uint8_t *out, uint8_t out_len, uint16_t id, const char *from, const char *to, uint16_t battery_cv);

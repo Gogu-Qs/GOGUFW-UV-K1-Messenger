@@ -312,6 +312,18 @@ void MSG_STORE_SetOutboxStatusById(uint16_t id, uint8_t status)
     }
 }
 
+bool MSG_STORE_GetOutboxToById(uint16_t id, char *to)
+{
+    for (uint8_t i = 0; i < MSG_OUTBOX_CAPACITY; i++) {
+        if (gMessengerOutbox[i].used && gMessengerOutbox[i].id == id) {
+            strncpy(to, gMessengerOutbox[i].to, MSG_CALLSIGN_LEN);
+            to[MSG_CALLSIGN_LEN] = 0;
+            return true;
+        }
+    }
+    return false;
+}
+
 void MSG_STORE_AddOutboxAckSourceById(uint16_t id, const char *from)
 {
     if (!from || !from[0]) return;
@@ -350,7 +362,7 @@ bool MSG_STORE_InjectNativePacket(const char *text)
     uint8_t frame[MSG_PKT_WIRE_LEN];
     MSG_Packet_t pkt;
     uint16_t id = MSG_STORE_NextMsgId();
-    if (!MSG_PACKET_BuildText(frame, sizeof(frame), id, "NODE2", text ? text : "NATIVE TEST", 1u)) return false;
+    if (!MSG_PACKET_BuildText(frame, sizeof(frame), id, "NODE2", NULL, text ? text : "NATIVE TEST", 1u)) return false;
     if (!MSG_PACKET_Parse(frame, sizeof(frame), &pkt)) return false;
     if (pkt.type != MSG_PKT_TYPE_TEXT) return false;
     MSG_STORE_AddInboxMessage(pkt.payload, pkt.from, pkt.to, pkt.id, pkt.ttl_init, pkt.ttl_remain, true);

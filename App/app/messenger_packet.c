@@ -35,7 +35,7 @@ static void copy_field(uint8_t *dst, uint8_t dst_len, const char *src)
     for (uint8_t i = 0; i < dst_len && src[i]; i++) dst[i] = (uint8_t)src[i];
 }
 
-uint8_t MSG_PACKET_BuildText(uint8_t *out, uint8_t out_len, uint16_t id, const char *from, const char *text, uint8_t ttl_init)
+uint8_t MSG_PACKET_BuildText(uint8_t *out, uint8_t out_len, uint16_t id, const char *from, const char *to, const char *text, uint8_t ttl_init)
 {
     if (!out || out_len < MSG_PKT_WIRE_LEN) return 0;
     memset(out, 0, MSG_PKT_WIRE_LEN);
@@ -50,7 +50,7 @@ uint8_t MSG_PACKET_BuildText(uint8_t *out, uint8_t out_len, uint16_t id, const c
     out[9] = ttl_init;
     out[10] = ttl_init; // ttl_remain starts equal to ttl_init at source
     copy_field(&out[11], MSG_CALLSIGN_LEN, from && from[0] ? from : "UVK1");
-    copy_field(&out[19], MSG_CALLSIGN_LEN, MSG_PKT_TO_ALL);
+    copy_field(&out[19], MSG_CALLSIGN_LEN, to && to[0] ? to : MSG_PKT_TO_ALL);
 
     uint8_t text_len = 0;
     if (text) {
@@ -185,7 +185,7 @@ bool MSG_PACKET_SelfTest(void)
 {
     uint8_t buf[MSG_PKT_WIRE_LEN];
     MSG_Packet_t pkt;
-    uint8_t n = MSG_PACKET_BuildText(buf, sizeof(buf), 0x1234u, "UVK1", "HELLO", 5);
+    uint8_t n = MSG_PACKET_BuildText(buf, sizeof(buf), 0x1234u, "UVK1", NULL, "HELLO", 5);
     if (n != MSG_PKT_WIRE_LEN) return false;
     if (!MSG_PACKET_Parse(buf, n, &pkt)) return false;
     if (pkt.id != 0x1234u) return false;
@@ -193,6 +193,11 @@ bool MSG_PACKET_SelfTest(void)
     if (strcmp(pkt.from, "UVK1") != 0) return false;
     if (strcmp(pkt.to, "ALL") != 0) return false;
     if (strcmp(pkt.payload, "HELLO") != 0) return false;
+    n = MSG_PACKET_BuildText(buf, sizeof(buf), 0x1235u, "UVK1", "NODE2", "DIRECT", 1);
+    if (n != MSG_PKT_WIRE_LEN) return false;
+    if (!MSG_PACKET_Parse(buf, n, &pkt)) return false;
+    if (pkt.type != MSG_PKT_TYPE_TEXT || pkt.id != 0x1235u) return false;
+    if (strcmp(pkt.to, "NODE2") != 0) return false;
     n = MSG_PACKET_BuildAck(buf, sizeof(buf), 0x1234u, "UVK1", "NODE2");
     if (n != MSG_PKT_WIRE_LEN) return false;
     if (!MSG_PACKET_Parse(buf, n, &pkt)) return false;

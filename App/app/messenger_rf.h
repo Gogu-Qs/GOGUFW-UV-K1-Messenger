@@ -19,7 +19,7 @@ void MSG_RF_Close(void);
 void MSG_RF_Tick10ms(void);
 void MSG_RF_ServiceSquelchClose(void);
 void MSG_RF_OnRadioInterrupt(uint16_t status);
-bool MSG_RF_SendText(const char *text);
+bool MSG_RF_SendText(const char *text, const char *to);
 bool MSG_RF_SendRangePing(void);
 void MSG_RF_CancelRangeWait(void);
 bool MSG_RF_LastSendWasBlocked(void);
