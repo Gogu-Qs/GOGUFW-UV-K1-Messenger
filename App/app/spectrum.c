@@ -1267,7 +1267,15 @@ static void UpdateScanStep(bool inc)
     }
 
     settings.frequencyChangeStep = GetBW() >> 1;
-    RelaunchScan();
+    /* Scan steps below 15 kHz use a much narrower BK4819 filter than the
+     * 15/20/25/50/100 kHz steps.  Crossing that boundary moves the measured
+     * noise floor, so retaining the previous dbMin/dbMax makes most of the
+     * trace clamp below the bottom axis.  Treat every step change as new scan
+     * geometry: clear stale samples and calibrate scale/trigger from the first
+     * complete sweep using the newly selected filter. */
+    initialCalibrationPending = true;
+    settings.rssiTriggerLevel = RSSI_MAX_VALUE;
+    RearmRuntimeState();
     ResetBlacklist();
     redrawScreen = true;
 }
@@ -1370,11 +1378,12 @@ static void ToggleModulation()
     }
     RADIO_SetModulation(settings.modulationType);
 
-    // Re-arm runtime spectrum state for the new demodulation profile.
-    // USB and FM can have very different RSSI/noise floors, so keeping the
-    // previous history/levels can draw a persistent horizontal wall.
-    if (!manualSetFlag)
-        settings.rssiTriggerLevel = RSSI_MAX_VALUE;
+    // Re-arm and calibrate for the new demodulation profile. AM, FM and USB
+    // can have different RSSI/noise floors; preserving the manual scale here
+    // clamps ordinary traces below the bottom axis (or draws a horizontal
+    // wall) until the user adjusts it by hand.
+    initialCalibrationPending = true;
+    settings.rssiTriggerLevel = RSSI_MAX_VALUE;
 
     RearmRuntimeState();
     ResetBlacklist();
