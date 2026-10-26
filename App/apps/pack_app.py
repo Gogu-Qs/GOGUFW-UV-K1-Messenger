@@ -57,6 +57,7 @@ CAPABILITIES = {
     "sysinfo": cdefine("app_overlay.h", "APP_CAP_SYSINFO"),
     "cfgproxy": cdefine("app_overlay.h", "APP_CAP_CFG_PROXY"),
     "serial": cdefine("app_overlay.h", "APP_CAP_SERIAL"),
+    "gogu-text": cdefine("app_overlay.h", "APP_CAP_GOGU_TEXT"),
     "gogu": cdefine("app_overlay.h", "APP_CAP_GOGU_EXT"),
 }
 

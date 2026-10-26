@@ -81,7 +81,8 @@ void MSG_Tick(void)
 {
     if (gMsgTxLockNoticeTicks > 0u && --gMsgTxLockNoticeTicks == 0u)
         gUpdateDisplay = true;
-    if (gMsgScreen == MSG_SCREEN_COMPOSE) TEXT_INPUT_Tick(&gMsgEditor);
+    if (gMsgScreen == MSG_SCREEN_COMPOSE && TEXT_INPUT_Tick(&gMsgEditor))
+        gUpdateDisplay = true;
     else if (gMsgScreen == MSG_SCREEN_RANGE && gMsgRangeStatus == 1u) {
         if (s_msgRangeWaitTicks > 0u) --s_msgRangeWaitTicks;
         if (s_msgRangeWaitTicks == 0u) {

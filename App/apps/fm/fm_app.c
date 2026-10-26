@@ -61,11 +61,11 @@ struct globals {
 #endif
     bool     liveRssi, liveEdit, liveChoice, nameEdit, autoConfirm;
     uint8_t  inBox[4];
-    uint8_t  menuMode, rssiLevel, namePos, nameKey, nameTap, nameMode;
+    uint8_t  menuMode, rssiLevel, namePos, nameMode;
     char     name[NAME_LEN];
     uint16_t lo, hi;
     uint16_t scanTimer;      /* ms until the next scan step */
-    uint32_t rssiTick, nameTick;
+    uint32_t rssiTick;
     const app_api_t *api;
     uint16_t *ch;            /* shared gFM_Channels[48] */
 };
@@ -192,10 +192,12 @@ static void scale(void)
 #ifdef FM_MEMORY_ONLY
 static void drawEditor(void)
 {
-    char title[TEXT_MAX],mode[2]={'B','\0'},left[TEXT_MAX],mid[TEXT_MAX];
+    char title[TEXT_MAX],mode[4]={'A','B','C','\0'},left[TEXT_MAX],mid[TEXT_MAX];
     put_t(title,T_CH_NAME);
-    mode[0]=g.nameMode==2u?'2':(g.nameMode==1u?'b':'B');
+    if(g.nameMode==2u){mode[0]='1';mode[1]='2';mode[2]='3';}
+    else if(g.nameMode==1u){mode[0]='a';mode[1]='b';mode[2]='c';}
     put_t(left,T_SAVE); put_t(mid,T_F_DEL);
+    G->set_text_editor_cursor(g.namePos);
     G->draw_text_editor(title,g.name,15u,left,mode,false,mid);
 }
 #endif
@@ -396,8 +398,9 @@ static void menuMove(int8_t dir)
 static void startNameEdit(void)
 {
     loadName(g.st.sel_ch);
-    g.namePos=0u; while(g.namePos<NAME_LEN-1u && g.name[g.namePos]) g.namePos++;
-    g.nameKey=0xFFu; g.nameTap=0u; g.nameMode=0u; g.nameEdit=true; g.menuMode=MENU_NONE;
+    uint16_t s=G->text_editor(g.name,NAME_LEN-1u,APP_KEY_INVALID,APP_TEXT_START);
+    g.namePos=(uint8_t)s; g.nameMode=(uint8_t)(s>>8);
+    g.nameEdit=true; g.menuMode=MENU_NONE;
 }
 
 static void finishNameEdit(bool save)
@@ -406,29 +409,13 @@ static void finishNameEdit(bool save)
         G->fm_name_save(g.st.sel_ch,g.name,NAME_LEN);
         G->chain_app(APP_CHAIN_FM_MEMORY); g.running=false;
     }
-    g.nameEdit=false; g.nameKey=0xFFu;
+    g.nameEdit=false;
 }
 
-static void nameDigit(uint8_t key, bool numeric)
+static void nameKey(uint8_t key, uint8_t action)
 {
-    static const char map[10][5] = {" ",".,?!","ABC","DEF","GHI","JKL","MNO","PQRS","TUV","WXYZ"};
-    uint32_t now=A->ticks_ms();
-    uint8_t count=0u; while(count<5u && map[key][count]) count++;
-    if(numeric||g.nameMode==2u){
-        if(g.namePos<NAME_LEN-1u){ g.name[g.namePos++]=(char)('0'+key); g.name[g.namePos]='\0'; }
-        g.nameKey=0xFFu; return;
-    }
-    if(g.nameKey==key && g.namePos>0u && now-g.nameTick<900u){
-        if(++g.nameTap>=count)g.nameTap=0u;
-        char c=map[key][g.nameTap];
-        if(g.nameMode==1u && c>='A'&&c<='Z') c=(char)(c+32);
-        g.name[g.namePos-1u]=c;
-    } else if(g.namePos<NAME_LEN-1u){
-        g.nameKey=key; g.nameTap=0u;
-        char c=map[key][0]; if(g.nameMode==1u&&c>='A'&&c<='Z') c=(char)(c+32);
-        g.name[g.namePos++]=c; g.name[g.namePos]='\0';
-    }
-    g.nameTick=now;
+    uint16_t s=G->text_editor(0,0u,key,action);
+    g.namePos=(uint8_t)s; g.nameMode=(uint8_t)(s>>8);
 }
 #endif
 
@@ -532,11 +519,11 @@ static void onShort(uint8_t key)
 {
 #ifdef FM_MEMORY_ONLY
     if(g.nameEdit){
-        if(key<=APP_KEY_9) nameDigit(key,false);
+        if(key<=APP_KEY_9) nameKey(key,APP_TEXT_SHORT);
         else if(key==APP_KEY_MENU) finishNameEdit(true);
         else if(key==APP_KEY_EXIT) finishNameEdit(false);
-        else if(key==APP_KEY_STAR){ if(++g.nameMode>=3u)g.nameMode=0u;g.nameKey=0xFFu; }
-        else if(key==APP_KEY_F){ if(g.namePos)g.name[--g.namePos]='\0';g.nameKey=0xFFu; }
+        else if(key==APP_KEY_STAR||key==APP_KEY_F||key==APP_KEY_UP||key==APP_KEY_DOWN)
+            nameKey(key,APP_TEXT_SHORT);
         return;
     }
 #endif
@@ -590,7 +577,7 @@ static void onShort(uint8_t key)
 static void onLong(uint8_t key)
 {
 #ifdef FM_MEMORY_ONLY
-    if(g.nameEdit && key<=APP_KEY_9){ nameDigit(key,true); return; }
+    if(g.nameEdit && key<=APP_KEY_9){ nameKey(key,APP_TEXT_LONG); return; }
 #endif
     g.fArm=false; func(key);
 }
@@ -600,6 +587,9 @@ void app_main(const app_api_t *api)
 {
     A=api;
     G=APP_GoguApi(api); if(!G) return;
+#ifdef FM_MEMORY_ONLY
+    if(G->level<2u||G->size<96u||!G->set_text_editor_cursor||!G->text_editor)return;
+#endif
     A->backlight_on();
     g.ch=A->fm_channels;
     A->fm_state(&g.st,false);        /* inherit the resident FM state */
@@ -634,6 +624,9 @@ void app_main(const app_api_t *api)
     bool     dirty=true;                               /* redraw only on change */
 
     while(g.running){
+#ifdef FM_MEMORY_ONLY
+        if(g.nameEdit){uint8_t p=g.namePos;nameKey(APP_KEY_INVALID,APP_TEXT_TICK_50MS);if(p!=g.namePos)dirty=true;}
+#endif
         /* Selected radio-channel RX temporarily owns audio and the LCD. The
          * resident callback restores this exact FM frequency/mode after RX. */
         if(G->fm_radio_service(g.st.freq_playing,g.st.band,g.scanState!=0)){

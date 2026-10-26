@@ -394,6 +394,9 @@ static void edit_number(uint8_t key, bool long_press)
     if (digit) {
         commit_pending(); if (insert_char((char)('0' + key))) sync_custom(); return;
     }
+    if (key == APP_KEY_0) {
+        commit_pending(); if (insert_char(' ')) sync_custom(); return;
+    }
     char chars[KEYMAP_STRIDE];   /* NUL-padded: every entry is shorter than its stride */
     g.A->asset_read((uint16_t)(KEYMAP + key * KEYMAP_STRIDE), chars, KEYMAP_STRIDE);
     if (g.pending && g.pending_key == key) {

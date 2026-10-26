@@ -1,5 +1,40 @@
 # Changelog
 
+## GOGUFW 3.3.2 — 2026-10-26
+
+- Ported the insertion-style text editor from Messenger PR #14 to every
+  resident text-entry screen: Messenger Compose, channel name, Messenger
+  callsign and FM channel name. UP/DOWN (LEFT/RIGHT on UV-K1) moves a visible
+  caret, insertion and backspace work in the middle of text, and `0` inserts a
+  space immediately. Input modes now display as `ABC`, `abc` and `123`. The
+  caret stays under a multi-tap character until it is committed. Thanks to
+  [@booqoffsky](https://github.com/booqoffsky) for proposing and implementing
+  the original interaction improvements in
+  [PR #14](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/pull/14).
+- Applied immediate space insertion to APRS Edit and moved FM Memory name entry
+  onto the same resident editor through the append-only GOGU extension level 2.
+  The new FM Memory declares its capability so older firmware rejects it
+  cleanly instead of attempting to call an unavailable service.
+- Preserved the navigation-layout setting across power cycles in non-RescueOps
+  builds and made Reset All clear both the navigation and key-lock bits.
+- Fixed the Spectrum graph in both VFO and Memory modes so weak traces remain
+  visible above the bottom axis. Initial scaling now also considers the weakest
+  sample in the completed sweep, making the scale easier to recover on mixed
+  or quiet channel ranges.
+- Renamed the assignable side-key action from `PTT` to `PTT MODE` in the
+  firmware and CHIRP module. Its behavior is unchanged: it switches the SetPTT
+  setting between Classic and OnePush; it is not a transmit command.
+- There is no breaking overlay ABI/API compatibility change in this release. Existing
+  GOGUFW 3.3.1 applications remain compatible and do not need to be reinstalled;
+  users may update only the firmware. Refreshed FM Memory/APRS Edit builds are
+  optional and only carry the new text-entry behavior.
+- Firmware: `GOGUFW-v3.3.2.bin`
+- Multiboot firmware: `GOGUFW-v3.3.2-multiboot.bin`
+- Optional refreshed overlays: `FMMemory.app`, `APRSEdit.app`
+- CHIRP module: `Gogufw_3.3.2_chirp_module.py`
+- Final Flash image: 117,864 / 120,832 bytes (2,968 bytes free), including the
+  920-byte multiboot RAM-stub load image; isolation checks pass.
+
 ## GOGUFW 3.3.1 — 2026-10-25
 
 ### Breaking overlay API change

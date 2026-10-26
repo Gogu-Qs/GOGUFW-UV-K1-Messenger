@@ -41,6 +41,7 @@
 #endif
 #include "app/app.h"
 #include "app/scanner.h"
+#include "app/text_input.h"
 #ifdef ENABLE_MESSENGER
 #include "app/messenger_store.h"
 #endif
@@ -94,6 +95,7 @@ _Static_assert(APP_SLOT_BASE(APP_SLOT_COUNT) <= 0x001DE000u,
 
 enum {
     APP_AVAILABLE_CAPS = APP_CAP_CFG_PROXY
+                       | APP_CAP_GOGU_TEXT
                        | APP_CAP_GOGU_EXT
 #ifdef ENABLE_FMRADIO
                        | APP_CAP_FM
@@ -167,6 +169,26 @@ static struct {
 } app_state;
 
 static const gogu_api_t gogu_api;
+static TEXT_INPUT_Editor_t app_text_editor;
+
+static void app_set_text_editor_cursor(uint8_t cursor)
+{
+    UI_GOGU_TextEditorCursor = cursor;
+}
+
+static uint16_t app_text_editor_service(char *text, uint8_t max_len, uint8_t key, uint8_t action)
+{
+    if (action == APP_TEXT_START)
+        TEXT_INPUT_Start(&app_text_editor, text, max_len);
+    else if (action == APP_TEXT_SHORT)
+        TEXT_INPUT_HandleKey(&app_text_editor, (KEY_Code_t)key);
+    else if (action == APP_TEXT_LONG)
+        TEXT_INPUT_HandleLongKey(&app_text_editor, (KEY_Code_t)key);
+    else if (action == APP_TEXT_TICK_50MS)
+        for (uint8_t i = 0u; i < 5u; i++) TEXT_INPUT_Tick(&app_text_editor);
+    return (uint16_t)(TEXT_INPUT_GetDisplayCursor(&app_text_editor) |
+                      ((uint16_t)app_text_editor.mode << 8));
+}
 extern uint64_t __aeabi_idivmod(int32_t n, int32_t d);
 extern uint64_t __aeabi_uidivmod(uint32_t n, uint32_t d);
 
@@ -1278,8 +1300,8 @@ static void app_fm_draw_gogu(const app_fm_view_t *v)
 
     if (v->flags & APP_FM_VIEW_NAME_EDIT) {
         UI_GOGU_DrawTextEditor("CH-NAME", v->name, 15u, "SAVE",
-                               v->editor_mode == 2u ? "2" :
-                               ((v->flags & APP_FM_VIEW_EDITOR_UPPER) ? "B" : "b"), false, "F:DEL");
+                               v->editor_mode == 2u ? "123" :
+                               ((v->flags & APP_FM_VIEW_EDITOR_UPPER) ? "ABC" : "abc"), false, "F:DEL");
         return;
     }
     if (v->flags & APP_FM_VIEW_AUTO_CONFIRM) {
@@ -1692,6 +1714,8 @@ static const gogu_api_t gogu_api = {
     .draw_dotted=UI_GOGU_DrawDottedSeparator, .draw_footer=UI_GOGU_DrawFooter,
     .draw_text_editor=UI_GOGU_DrawTextEditor, .fm_radio_service=app_fm_radio_service,
 #endif
+    .set_text_editor_cursor=app_set_text_editor_cursor,
+    .text_editor=app_text_editor_service,
 };
 
 /* Preparation and cleanup deliberately live in separate non-inlined calls.

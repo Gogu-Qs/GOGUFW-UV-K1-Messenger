@@ -202,8 +202,9 @@ void UI_UpdateFMRssiBar(void)
 static void FM_UI_DrawEditName(void)
 {
     const char *edit = FM_GetNameEditBuffer();
+    UI_GOGU_TextEditorCursor = FM_GetNameEditorCursor();
     UI_GOGU_DrawTextEditor("CH-NAME", edit, 15u, "SAVE",
-                           (FM_GetNameEditorMode() == 2U) ? "2" : (FM_GetNameEditorUpper() ? "B" : "b"),
+                           (FM_GetNameEditorMode() == 2U) ? "123" : (FM_GetNameEditorUpper() ? "ABC" : "abc"),
                            false, "F:DEL");
 }
 

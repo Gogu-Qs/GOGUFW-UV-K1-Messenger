@@ -149,13 +149,11 @@ void SETTINGS_InitEEPROM(void)
     #ifdef ENABLE_NOAA
         gEeprom.NOAA_AUTO_SCAN   = (Data[3] <  2) ? Data[3] : false;
     #endif
+    gEeprom.KEY_LOCK = (Data[4] & 0x01) != 0;
+    gEeprom.SET_NAV = (Data[4] & 0x40) != 0;
     #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
-        gEeprom.KEY_LOCK = (Data[4] & 0x01) != 0;
         gEeprom.MENU_LOCK = (Data[4] & 0x02) != 0;
         gEeprom.SET_KEY = ((Data[4] >> 2) & 0x0F) > 4 ? 0 : (Data[4] >> 2) & 0x0F;
-        gEeprom.SET_NAV = (Data[4] & 0x40) != 0;
-    #else
-        gEeprom.KEY_LOCK             = (Data[4] <  2) ? Data[4] : false;
     #endif
     #ifdef ENABLE_VOX
         gEeprom.VOX_SWITCH       = (Data[5] <  2) ? Data[5] : false;
@@ -829,30 +827,35 @@ void SETTINGS_FactoryReset(bool bIsAll)
         PY25Q16_SectorErase(0x00A000);
     }
 
-    // Prevent reset to restart in RO mode...
+    // Reset the shared lock/navigation controls in every edition and the
+    // additional lock controls in RescueOps editions.
+    uint8_t Data8[0x10];
+    PY25Q16_ReadBuffer(0x00A000, Data8, sizeof(Data8));
+
+    // KEY_LOCK to false
+    Data8[4] &= (uint8_t)~0x01;
+
+    // SET_NAV to false
+    Data8[4] &= (uint8_t)~0x40;  // Clear bit 6 (SET_NAV) for UV-K1 by default
+
     #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
-        // Bloc 0x0E70..0x0E7F -> offset 0x00A000
-        uint8_t Data8[0x10];
-        PY25Q16_ReadBuffer(0x00A000, Data8, sizeof(Data8));
-
-        // MENU_LOCK & KEY_LOCK to 0
-
-        Data8[4] &= (uint8_t)~0x01;
+        // MENU_LOCK to false
         Data8[4] &= (uint8_t)~0x02;
 
         // SET_KEY to 0
         Data8[4] &= (uint8_t)~0x3C;  // Clear bits 2-5 (SET_KEY)
 
-        // SET_NAV to false
-        Data8[4] &= (uint8_t)~0x40;  // Clear bit 6 (SET_NAV) for UV-K1 by default
-
         #ifdef ENABLE_FEAT_F4HWN_RESET_VFO
             Data8[7] = (1 & 0x01);
         #endif
+    #endif
 
-        PY25Q16_WriteBuffer(0x00A000, Data8, sizeof(Data8), false);
+    PY25Q16_WriteBuffer(0x00A000, Data8, sizeof(Data8), false);
 
-        // cohérence RAM
+    // Keep RAM consistent with the persisted defaults.
+    gEeprom.KEY_LOCK = false;
+    gEeprom.SET_NAV = false;
+    #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
         gEeprom.MENU_LOCK = 0;
     #endif
 
@@ -979,7 +982,12 @@ void SETTINGS_SaveSettings(void)
             ((gEeprom.SET_KEY & 0x0F) << 2)      |
             (gEeprom.SET_NAV  ? 0x40 : 0);
     #else
-        State[4] = gEeprom.KEY_LOCK;
+        // A non-RescueOps preset owns KEY_LOCK and SET_NAV. Preserve the
+        // RescueOps-only MENU_LOCK and SET_KEY fields plus the reserved bit.
+        PY25Q16_ReadBuffer(0x00A004, &State[4], 1);
+        State[4] = (State[4] & 0xBEu) |
+                   (gEeprom.KEY_LOCK ? 0x01u : 0u) |
+                   (gEeprom.SET_NAV ? 0x40u : 0u);
     #endif
 
     #ifdef ENABLE_VOX

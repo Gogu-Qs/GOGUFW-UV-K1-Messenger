@@ -365,17 +365,25 @@ void UI_GOGU_InvertBand(uint8_t y, uint8_t height)
     UI_GOGU_InvertArea(0u, 127u, y, height);
 }
 
+uint8_t UI_GOGU_TextEditorCursor = 0xFFu;
+
 void UI_GOGU_DrawTextEditor(const char *title, const char *text, uint8_t max_len,
                             const char *primary_action, const char *mode,
                             bool multiline, const char *footer_center)
 {
     char counter[10];
-    char mode_label[4] = "*:B";
+    char mode_label[6] = "*:";
     uint8_t used = text == NULL ? 0u : (uint8_t)strlen(text);
     if (used > max_len)
         used = max_len;
-    if (mode != NULL && mode[0] != '\0')
-        mode_label[2] = mode[0];
+    if (mode != NULL && mode[0] != '\0') {
+        uint8_t n = 0u;
+        while (n < 3u && mode[n] != '\0') {
+            mode_label[2u + n] = mode[n];
+            n++;
+        }
+        mode_label[2u + n] = '\0';
+    }
 
     UI_DisplayClear();
 #ifdef ENABLE_FEAT_F4HWN
@@ -408,6 +416,26 @@ void UI_GOGU_DrawTextEditor(const char *title, const char *text, uint8_t max_len
             UI_PrintStringSmallBold(text, 4u, 123u, 3u);
         }
     }
+
+    if (UI_GOGU_TextEditorCursor != 0xFFu && UI_GOGU_TextEditorCursor <= used) {
+        uint8_t x;
+        uint8_t y;
+        if (multiline) {
+            const uint8_t row = UI_GOGU_TextEditorCursor / 17u;
+            const uint8_t col = UI_GOGU_TextEditorCursor % 17u;
+            x = (uint8_t)(1u + col * 7u);
+            y = (uint8_t)(21u + row * 10u);
+        } else {
+            const uint8_t text_x = (uint8_t)(4u + (120u - used * 7u) / 2u);
+            x = (uint8_t)(text_x + UI_GOGU_TextEditorCursor * 7u);
+            y = 32u;
+        }
+        if (x > 122u) x = 122u;
+        const uint8_t mask = (uint8_t)(1u << (y & 7u));
+        for (uint8_t i = 0u; i < 6u; i++)
+            gFrameBuffer[y >> 3][x + i] |= mask;
+    }
+    UI_GOGU_TextEditorCursor = 0xFFu;
 
     UI_GOGU_DrawFooter(primary_action, footer_center, "EXIT");
 }

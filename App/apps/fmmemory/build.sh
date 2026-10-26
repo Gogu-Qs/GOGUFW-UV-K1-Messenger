@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP="$(basename "$PWD")"
 APP_NAME="FM Memory"
-APP_VER="3.3.1-gogu"
+APP_VER="3.3.2-gogu"
 APP_API_MIN=3
 APP_VMA=${APP_VMA:-0x20000280}
 OUT="${APP_NAME// /}"
@@ -23,7 +23,7 @@ python3 ../fm/gen_assets.py "${APP}_assets.bin" ../fm/fm_assets.h
 "$OBJCOPY" -O binary "${APP}.elf" "${APP}.bin"
 python3 ../pack_app.py "${APP}.bin" "${OUT}.app" \
   --name "$APP_NAME" --ver "$APP_VER" --api-min "$APP_API_MIN" --vma "$APP_VMA" \
-  --shortcut fm-memory --require fm --require gogu --screensaver --assets "${APP}_assets.bin" >/dev/null
+  --shortcut fm-memory --require fm --require gogu --require gogu-text --screensaver --assets "${APP}_assets.bin" >/dev/null
 
 BYTES=$(wc -c < "${APP}.bin")
 if [ "$BYTES" -gt 4096 ]; then

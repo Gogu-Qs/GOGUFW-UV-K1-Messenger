@@ -543,7 +543,7 @@ const t_sidefunction gSubMenu_SIDEFUNCTIONS[] =
 #ifdef ENABLE_FEAT_F4HWN
     {"RX MODE",         ACTION_OPT_RXMODE},
     {"MAIN ONLY",       ACTION_OPT_MAINONLY},
-    {"PTT",             ACTION_OPT_PTT},
+    {"PTT\nMODE",       ACTION_OPT_PTT},
     {"WIDE\nNARROW",    ACTION_OPT_WN},
     {"MUTE",            ACTION_OPT_MUTE},
     #ifdef ENABLE_FEAT_F4HWN_AUDIO
@@ -597,6 +597,7 @@ int     edit_index;
 bool    edit_is_uppercase = false;
 
 extern uint8_t gMenuTextEditorMode;
+extern uint8_t gMenuTextEditorCursor;
 
 static uint8_t UI_MENU_TextEditMaxLenFor(const int m)
 {
@@ -609,9 +610,9 @@ static uint8_t UI_MENU_TextEditMaxLenFor(const int m)
 
 static const char *UI_MENU_TextEditModeLabel(void)
 {
-    if (gMenuTextEditorMode == 2u) return "2";
-    if (gMenuTextEditorMode == 1u) return "b";
-    return edit_is_uppercase ? "B" : "b";
+    if (gMenuTextEditorMode == 2u) return "123";
+    if (gMenuTextEditorMode == 1u) return "abc";
+    return edit_is_uppercase ? "ABC" : "abc";
 }
 
 static void UI_MENU_DrawUnifiedTextEditor(const int m)
@@ -624,6 +625,7 @@ static void UI_MENU_DrawUnifiedTextEditor(const int m)
                         m == MENU_MSG_CSG ? "CLLSGN" :
 #endif
                         MenuList[gMenuCursor].name;
+    UI_GOGU_TextEditorCursor = edit_index < 0 ? 0xFFu : gMenuTextEditorCursor;
     UI_GOGU_DrawTextEditor(title, edit, max_len, "SAVE",
                            UI_MENU_TextEditModeLabel(), false, "F:DEL");
 }

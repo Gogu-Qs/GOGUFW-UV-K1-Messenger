@@ -120,6 +120,8 @@ bool APP_FmOverlayActive(void);
 /* Declarative cross-app configuration bridge used by current APRS Edit/TX. */
 #define APP_CAP_CFG_PROXY     0x00000020u
 #define APP_CAP_SERIAL        0x00000040u
+/* GOGU extension level 2: shared insertion text editor and visible caret. */
+#define APP_CAP_GOGU_TEXT     0x40000000u
 /* GOGUFW's separately versioned extension table. It is discovered through the
  * official asset_read service and never occupies future F4HWN API offsets. */
 #define APP_CAP_GOGU_EXT      0x80000000u

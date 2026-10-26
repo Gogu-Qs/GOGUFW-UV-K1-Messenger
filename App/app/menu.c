@@ -1385,6 +1385,7 @@ static KEY_Code_t edit_last_key = 255;
 static uint8_t edit_char_index = 0;
 static TEXT_INPUT_Editor_t s_menuTextEditor;
 uint8_t gMenuTextEditorMode; /* 0=B, 1=b, 2=2; displayed by UI menu editor */
+uint8_t gMenuTextEditorCursor;
 
 
 static bool MENU_IsTextEditMenuItemId(const int m)
@@ -1420,8 +1421,10 @@ void MENU_TextEditTick10ms(void)
      * editors share the independent text-input core, so advance their
      * pending key here as well.  After 800 ms, pressing the same number starts
      * a new character instead of cycling the previous one. */
-    if (MENU_IsEditingName())
-        TEXT_INPUT_Tick(&s_menuTextEditor);
+    if (MENU_IsEditingName() && TEXT_INPUT_Tick(&s_menuTextEditor)) {
+        gMenuTextEditorCursor = TEXT_INPUT_GetDisplayCursor(&s_menuTextEditor);
+        gRequestDisplayScreen = DISPLAY_MENU;
+    }
 }
 
 static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
@@ -1447,7 +1450,8 @@ static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
         else          TEXT_INPUT_HandleKey(&s_menuTextEditor, Key);
         edit_is_uppercase = s_menuTextEditor.upper;
         gMenuTextEditorMode = s_menuTextEditor.mode;
-        edit_index = s_menuTextEditor.len;
+        edit_index = s_menuTextEditor.cursor;
+        gMenuTextEditorCursor = TEXT_INPUT_GetDisplayCursor(&s_menuTextEditor);
         edit_last_key = 255;
         gRequestDisplayScreen = DISPLAY_MENU;
         return;
@@ -1782,7 +1786,8 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
                 TEXT_INPUT_Start(&s_menuTextEditor, edit, edit_max_len);
                 edit_is_uppercase = s_menuTextEditor.upper;
                 gMenuTextEditorMode = s_menuTextEditor.mode;
-                edit_index = s_menuTextEditor.len;
+                edit_index = s_menuTextEditor.cursor;
+                gMenuTextEditorCursor = TEXT_INPUT_GetDisplayCursor(&s_menuTextEditor);
             }
 
             // make a copy so we can test for change when exiting the menu item
@@ -1791,7 +1796,7 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
             return;
         }
         else
-        if (edit_index >= 0 && edit_index < edit_max_len)
+        if (edit_index >= 0)
         {   // finish editing text characters
             edit_last_key = 255;
             TEXT_INPUT_Commit(&s_menuTextEditor);
@@ -1918,7 +1923,8 @@ static void MENU_Key_STAR(const bool bKeyPressed, const bool bKeyHeld)
             TEXT_INPUT_HandleKey(&s_menuTextEditor, KEY_STAR);
             edit_is_uppercase = s_menuTextEditor.upper;
             gMenuTextEditorMode = s_menuTextEditor.mode;
-            edit_index = s_menuTextEditor.len;
+            edit_index = s_menuTextEditor.cursor;
+            gMenuTextEditorCursor = TEXT_INPUT_GetDisplayCursor(&s_menuTextEditor);
         }
         edit_last_key = 255;
         gRequestDisplayScreen = DISPLAY_MENU;
@@ -1966,17 +1972,17 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
         gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
     }
 
-    if (!gEeprom.SET_NAV && gIsInSubMenu) {
-        Direction = -Direction;
-    }
-
     if (MENU_IsTextEditMenuItemId(UI_MENU_GetCurrentMenuId()) && gIsInSubMenu && edit_index >= 0)
     {
-        /* Unified text editor: UP/DOWN no longer performs the old ASCII
-         * character cycling.  Text entry uses the same keypad/T9 behavior as
-         * Messenger/FM naming. */
-        (void)Direction;
+        TEXT_INPUT_HandleKey(&s_menuTextEditor, Direction > 0 ? KEY_UP : KEY_DOWN);
+        edit_index = s_menuTextEditor.cursor;
+        gMenuTextEditorCursor = TEXT_INPUT_GetDisplayCursor(&s_menuTextEditor);
+        gRequestDisplayScreen = DISPLAY_MENU;
         return;
+    }
+
+    if (!gEeprom.SET_NAV && gIsInSubMenu) {
+        Direction = -Direction;
     }
 
     if (SCANNER_IsScanning()) {
@@ -2162,7 +2168,8 @@ void MENU_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                 TEXT_INPUT_HandleKey(&s_menuTextEditor, KEY_F);
                 edit_is_uppercase = s_menuTextEditor.upper;
                 gMenuTextEditorMode = s_menuTextEditor.mode;
-                edit_index = s_menuTextEditor.len;
+                edit_index = s_menuTextEditor.cursor;
+                gMenuTextEditorCursor = TEXT_INPUT_GetDisplayCursor(&s_menuTextEditor);
                 edit_last_key = 255;
                 gRequestDisplayScreen = DISPLAY_MENU;
                 break;

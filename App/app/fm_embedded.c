@@ -180,8 +180,8 @@ void FM_NamesErase(void)
 
 void FM_Tick(void)
 {
-    if (s_fmNameEdit)
-        TEXT_INPUT_Tick(&s_fmNameEditor);
+    if (s_fmNameEdit && TEXT_INPUT_Tick(&s_fmNameEditor))
+        gRequestDisplayScreen = DISPLAY_FM;
 }
 
 
@@ -306,6 +306,7 @@ bool FM_ActionPickerAllowed(void)
 uint8_t FM_GetMenuMode(void) { return (uint8_t)s_fmMenuMode; }
 const char *FM_GetNameEditBuffer(void) { return s_fmNameBuf; }
 uint8_t FM_GetNameEditorMode(void) { return s_fmNameEditor.mode; }
+uint8_t FM_GetNameEditorCursor(void) { return TEXT_INPUT_GetDisplayCursor(&s_fmNameEditor); }
 bool FM_GetNameEditorUpper(void) { return s_fmNameEditor.upper; }
 
 
@@ -957,6 +958,7 @@ void FM_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
         if (state == BUTTON_EVENT_SHORT && Key >= KEY_0 && Key <= KEY_9) { TEXT_INPUT_HandleKey(&s_fmNameEditor, Key); gRequestDisplayScreen = DISPLAY_FM; return; }
         if (state == BUTTON_EVENT_LONG && Key >= KEY_0 && Key <= KEY_9) { TEXT_INPUT_HandleLongKey(&s_fmNameEditor, Key); gRequestDisplayScreen = DISPLAY_FM; return; }
         if (state == BUTTON_EVENT_SHORT && (Key == KEY_STAR || Key == KEY_F)) { TEXT_INPUT_HandleKey(&s_fmNameEditor, Key); gRequestDisplayScreen = DISPLAY_FM; return; }
+        if (state == BUTTON_EVENT_SHORT && (Key == KEY_UP || Key == KEY_DOWN)) { TEXT_INPUT_HandleKey(&s_fmNameEditor, Key); gRequestDisplayScreen = DISPLAY_FM; return; }
         return;
     }
 

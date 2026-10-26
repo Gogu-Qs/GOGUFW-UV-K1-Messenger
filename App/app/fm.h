@@ -77,6 +77,7 @@ bool    FM_ActionPickerAllowed(void);
 uint8_t FM_GetMenuMode(void);
 const char *FM_GetNameEditBuffer(void);
 uint8_t FM_GetNameEditorMode(void);
+uint8_t FM_GetNameEditorCursor(void);
 bool    FM_GetNameEditorUpper(void);
 
 void    FM_Tune(uint16_t Frequency, int8_t Step, bool bFlag);

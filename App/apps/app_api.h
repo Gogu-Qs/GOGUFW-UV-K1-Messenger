@@ -86,6 +86,13 @@ enum {
 };
 
 enum {
+    APP_TEXT_START,
+    APP_TEXT_SHORT,
+    APP_TEXT_LONG,
+    APP_TEXT_TICK_50MS,
+};
+
+enum {
     APP_CHAIN_NONE      = 0,
     APP_CHAIN_APRS_EDIT = 1,
     APP_CHAIN_APRS_TX   = 2,
@@ -337,7 +344,7 @@ _Static_assert(offsetof(app_api_t, sys_edition) == 276u &&
  * official API levels remain free to append fields after byte 396 forever. */
 #define APP_GOGU_API_MAGIC 0x55474F47u /* "GOGU" little-endian */
 #define APP_GOGU_API_MAJOR 1u
-#define APP_GOGU_API_LEVEL 1u
+#define APP_GOGU_API_LEVEL 2u
 #define APP_GOGU_API_QUERY 0xFFFFu
 
 typedef struct gogu_api {
@@ -394,9 +401,16 @@ typedef struct gogu_api {
      * same five-second post-RX hold used by the former resident FM screen. */
     bool (*fm_radio_service)(uint16_t fm_freq, uint8_t fm_band, bool fm_scanning);
 
+    /* API level 2: lets overlay editors use the resident text-editor caret
+     * without changing the level-1 draw_text_editor signature. */
+    void (*set_text_editor_cursor)(uint8_t cursor);
+    /* Runs the same insertion editor as resident screens. The return value is
+     * cursor in bits 0..7 and input mode in bits 8..15. */
+    uint16_t (*text_editor)(char *text, uint8_t max_len, uint8_t key, uint8_t action);
+
 } gogu_api_t;
 
-_Static_assert(sizeof(gogu_api_t) == 88u,
+_Static_assert(sizeof(gogu_api_t) == 96u,
                "GOGUFW extension ABI changed");
 
 static inline const gogu_api_t *APP_GoguApi(const app_api_t *api)

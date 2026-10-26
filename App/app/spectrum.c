@@ -132,6 +132,10 @@ uint32_t currentFreq, tempFreq;
 // Peak hold: tracks the highest Y per column with timed decay
 #define PEAK_HOLD_DELAY  15           // Sweeps before decay starts
 #define PEAK_HOLD_INIT   0xFF         // "no peak" sentinel (same as SPECTRUM_TOPY_SKIP)
+// DrawingEndY is also used by the bottom-axis ticks (frame-buffer page 5,
+// bit 0). Keep the live graph one pixel above that axis; otherwise values at
+// or below dbMin are drawn on the axis itself and appear to vanish under it.
+#define SPECTRUM_GRAPH_BOTTOM_Y (DrawingEndY - 1u)
 
 // Cached REG_30 value for scan steps: avoids re-reading it on every SetFScan()
 // call (saves 1 SPI read per step = fewer SPI bus events = less SPI-induced audio interference).
@@ -1568,9 +1572,12 @@ uint8_t Rssi2PX(uint16_t rssi, uint8_t pxMin, uint8_t pxMax)
 
 uint8_t Rssi2Y(uint16_t rssi)
 {
-    // Map into [DrawingTopY, DrawingEndY] so peaks never overdraw the
-    // frequency display rendered in gFrameBuffer[0] (pixels 0-7).
-    return DrawingEndY - Rssi2PX(rssi, 0, DrawingEndY - DrawingTopY);
+    // Reserve DrawingEndY for the bottom axis. Mapping the weakest value to
+    // the preceding row keeps the crest visible instead of merging it with
+    // the axis/ticks. The top still cannot overdraw the frequency display in
+    // gFrameBuffer[0] (pixels 0-7).
+    return SPECTRUM_GRAPH_BOTTOM_Y -
+           Rssi2PX(rssi, 0, SPECTRUM_GRAPH_BOTTOM_Y - DrawingTopY);
 }
 
 // Resolve the RSSI value at fractional sample index (Q8 fixed-point) using
@@ -1633,7 +1640,7 @@ Back:
     return;
 
 Start:
-    if (n != SPECTRUM_TOPY_SKIP && n <= DrawingEndY) {
+    if (n != SPECTRUM_TOPY_SKIP && n <= SPECTRUM_GRAPH_BOTTOM_Y) {
         uint8_t mid = (y0 + n + 1) >> 1;
         if (mid < *crestTop) *crestTop = mid;
         if (mid > *crestBot) *crestBot = mid;
@@ -1653,7 +1660,7 @@ static void DrawSpectrumCurve(const uint8_t *topY)
     for (uint8_t x = 0; x < 128; x++)
     {
         uint8_t y0 = topY[x];
-        if (y0 == SPECTRUM_TOPY_SKIP || y0 > DrawingEndY) {
+        if (y0 == SPECTRUM_TOPY_SKIP || y0 > SPECTRUM_GRAPH_BOTTOM_Y) {
             peakHoldY[x] = PEAK_HOLD_INIT;
             continue;
         }
@@ -1670,7 +1677,7 @@ static void DrawSpectrumCurve(const uint8_t *topY)
                 if (!(x & 1)) peakHoldAge[x >> 1]++;
             } else {
                 ph += 2;
-                peakHoldY[x] = (ph <= DrawingEndY) ? ph : PEAK_HOLD_INIT;
+                peakHoldY[x] = (ph <= SPECTRUM_GRAPH_BOTTOM_Y) ? ph : PEAK_HOLD_INIT;
             }
         }
     }
@@ -1680,7 +1687,7 @@ static void DrawSpectrumCurve(const uint8_t *topY)
     {
         // --- Live spectrum crest + body ---
         uint8_t y0 = topY[x];
-        if (y0 != SPECTRUM_TOPY_SKIP && y0 <= DrawingEndY)
+        if (y0 != SPECTRUM_TOPY_SKIP && y0 <= SPECTRUM_GRAPH_BOTTOM_Y)
         {
             uint8_t crestTop, crestBot;
             CalcCrest(topY, x, &crestTop, &crestBot);
@@ -1690,14 +1697,14 @@ static void DrawSpectrumCurve(const uint8_t *topY)
                 PutPixel(x, y, true);
 
             // Checkerboard body below the crest.
-            for (uint8_t y = crestBot + 1; y <= DrawingEndY; y++)
+            for (uint8_t y = crestBot + 1; y <= SPECTRUM_GRAPH_BOTTOM_Y; y++)
                 if (((x + y) & 1) == 0)
                     PutPixel(x, y, true);
         }
 
         // --- Peak hold dotted crest ---
         uint8_t ph = peakHoldY[x];
-        if (ph != PEAK_HOLD_INIT && ph <= DrawingEndY)
+        if (ph != PEAK_HOLD_INIT && ph <= SPECTRUM_GRAPH_BOTTOM_Y)
         {
             uint8_t phTop, phBot;
             CalcCrest(peakHoldY, x, &phTop, &phBot);
@@ -2580,8 +2587,20 @@ static void FinalizeCompletedSweep()
         if (noise != RSSI_MAX_VALUE)
         {
             const int noiseDbm = Rssi2DBm(noise);
-            settings.dbMin = noiseDbm - 5;
+            // Anchor the bottom below the weakest value actually seen in the
+            // reference sweep. Average noise alone can put quieter bins below
+            // dbMin, especially for MR channels spanning different bands.
+            int floorDbm = noiseDbm - 5;
+            if (scanInfo.rssiMin != RSSI_MAX_VALUE)
+            {
+                const int measuredFloorDbm = Rssi2DBm(scanInfo.rssiMin) - 3;
+                if (measuredFloorDbm < floorDbm)
+                    floorDbm = measuredFloorDbm;
+            }
+            settings.dbMin = floorDbm;
             settings.dbMax = noiseDbm + 45;
+            if (settings.dbMax < settings.dbMin + 10)
+                settings.dbMax = settings.dbMin + 10;
             if (settings.dbMax > 10)
                 settings.dbMax = 10;
 

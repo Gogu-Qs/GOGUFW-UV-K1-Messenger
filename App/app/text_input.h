@@ -8,6 +8,7 @@ typedef struct {
     char *buffer;
     uint8_t max_len;
     uint8_t len;
+    uint8_t cursor;
     bool upper;
     uint8_t mode; /* 0=upper(B), 1=lower(b), 2=numeric(2) */
     KEY_Code_t pending_key;
@@ -19,7 +20,8 @@ typedef struct {
 void TEXT_INPUT_Start(TEXT_INPUT_Editor_t *ed, char *buf, uint8_t max_len);
 bool TEXT_INPUT_HandleKey(TEXT_INPUT_Editor_t *ed, KEY_Code_t key);
 bool TEXT_INPUT_HandleLongKey(TEXT_INPUT_Editor_t *ed, KEY_Code_t key);
-void TEXT_INPUT_Tick(TEXT_INPUT_Editor_t *ed);
+bool TEXT_INPUT_Tick(TEXT_INPUT_Editor_t *ed);
 void TEXT_INPUT_Commit(TEXT_INPUT_Editor_t *ed);
+uint8_t TEXT_INPUT_GetDisplayCursor(const TEXT_INPUT_Editor_t *ed);
 
 #endif
