@@ -50,58 +50,6 @@ switching incomplete. Install this release's `Search.app` for F+4/F+STAR.**
 
 Back up the radio with CHIRP before updating and keep a known-good DFU recovery image available.
 
-## What's new in 3.3.1
-
-- Rebased the application contract on F4HWN 6.3.0's official ABI 1 / API 3,
-  including audio capture, timing, app hand-off, USB serial, paced LCD and VFO
-  staging services. GOGU-only callbacks moved to a capability-gated extension.
-- Added official KISS TNC serial support while preserving CHIRP and K5Viewer /
-  Live Viewer screen capture. KISS TNC starts on the frequency saved by APRS
-  Edit, with a 144.800 MHz fallback.
-- Fixed normal range scanning stopping on a carrier without opening audio when
-  Messenger was enabled, and audited analog RX/CTCSS/DCS against F4HWN 6.3.0.
-- Restored upstream RX/TX Compander setup and stopped applying the AM
-  weak-signal bandwidth mode to ordinary FM channels.
-- Restored the lightweight 20-entry RAM-only RF Log Lite and removed the larger
-  F4HWN RX/TX log, its external-Flash storage and UV Studio export bridge.
-- Removed the resident SysInfo menu screen; diagnostics remain in the
-  `SystemInfo.app` overlay, including real current-stack and high-water values.
-- Updated the paired FM VFO/Memory and Search overlays for the new API layout.
-  The final binary uses 117,236 of 120,832 bytes, leaving 3,596 bytes free
-  after including the 920-byte multiboot RAM-stub load image.
-
-### Included since 3.2.0
-
-- Moved the complete GOGUFW Broadcast FM interface into paired `FMVFO.app` and
-  `FMMemory.app` overlays while preserving F+0, saved stations, names, Live RSSI,
-  scanning, channel save/delete and the existing EEPROM/external-Flash layout.
-- Freed 5,888 bytes of internal firmware Flash compared with 3.1.1. The final
-  firmware uses 114,020 / 120,832 bytes before the multiboot stub.
-- Fixed held-key leakage during FM VFO/Memory switching, initial RSSI display,
-  scan/menu/save navigation, empty-band behavior and channel-name input mode.
-- Selected-channel RX temporarily returns to the radio screen, then resumes the
-  same FM mode and station five seconds after RX ends. EXIT remains available
-  even if a noisy or digital signal holds squelch open.
-- Restored Scrambler and Compander in the firmware and in the matching CHIRP
-  memory columns without changing the EEPROM layout. No FSK TX and No Roger are
-  preserved alongside them.
-- Fixed the modal missed-squelch-close path that could leave RX audio latched in
-  the Apps menu or an FM editor, and restored the stack headroom needed by APRS RX.
-- Includes all fixes and features from GOGUFW 3.1.1.
-- Includes Search v1.5 with vertically centred Frequency and Tone result/save
-  rows; install it to enable the F+4 and F+STAR Search shortcuts.
-
-### Also included from 3.1.0
-
-- Added F4HWN 6.1.0 Full Watch, including priority-channel Triple/Quad Watch display and receive handling.
-- In Full RX/Respond, the A/B action cycles through A, B and the valid priority channels; the displayed selection is used by manual PTT.
-- Main TX/Full RX supports the same watched-target selection; a manually selected watched target becomes the PTT target, and channel-menu edits apply to the displayed priority target.
-- Restored the SystemInfo overlay capability and rebuilt the compatible `SystemInfo.app`.
-- Full Watch now temporarily clears its middle-line indicator while `UNLOCK KEYBOARD` is shown and restores it when the notice expires.
-- Removed Survival Mode and Action Picker from the Fusion firmware image.
-- Combined HEARD and Range Check into one persistent activity screen.
-- Completed the late F4HWN stability/size fixes and made Quad Watch visit every channel before a battery-save sleep interval.
-
 See [CHANGELOG.md](CHANGELOG.md) for the complete list of changes since 2.3.1.
 
 ## Main features
