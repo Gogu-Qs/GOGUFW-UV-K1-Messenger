@@ -1,5 +1,13 @@
 # Changelog
 
+## GOGUFW 3.3.5 — Unreleased
+
+- Recalibrate the VFO Spectrum scale and trigger after `1`/`7` scan-step
+  changes. This prevents ordinary traces from falling below the graph when the
+  BK4819 scan filter switches between the 15 kHz-and-up and sub-15 kHz paths.
+- Apply the same recalibration after `0` switches between FM, AM and USB, so a
+  previous modulation's noise floor cannot hide the new trace.
+
 ## GOGUFW 3.3.2 — 2026-10-26
 
 - Ported the insertion-style text editor from Messenger PR #14 to every

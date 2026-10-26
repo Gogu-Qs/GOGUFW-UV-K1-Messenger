@@ -1,4 +1,4 @@
-# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v3.3.2
+# GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v3.3.5
 # Release build: 2026-10-26
 # Based on F4HWN Fusion CHIRP 5.5.0 support.
 # Matches the GOGUFW external-flash EEPROM aliases:
@@ -63,7 +63,7 @@ DEBUG_SHOW_OBFUSCATED_COMMANDS = False
 DEBUG_SHOW_MEMORY_ACTIONS = False
 
 # TODO: remove the driver version when it's in mainline chirp
-DRIVER_VERSION = "GOGUFW UV-K1 / UV-K5 V3 CHIRP driver v3.3.2 (2026-10-26)"
+DRIVER_VERSION = "GOGUFW UV-K1 / UV-K5 V3 CHIRP driver v3.3.5-dev (2026-10-26)"
 FIRMWARE_VERSION_UPDATE = "https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases"
 CHIRP_DRIVER_VERSION_UPDATE = "https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases"
 
@@ -1291,7 +1291,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
     """Quansheng UV-K1 / UV-K5 V3 running GOGUFW."""
     VENDOR = "Quansheng"
     MODEL = "UV-K1 / UV-K5 V3 GOGUFW Messenger"
-    VARIANT = "3.3.2"
+    VARIANT = "3.3.5"
     BAUD_RATE = 38400
     NEEDS_COMPAT_SERIAL = False
     FIRMWARE_VERSION = ""
@@ -2297,7 +2297,7 @@ class UVK5RadioEgzumer(chirp_common.CloneModeRadio):
 
 # add menu firmware with version and option display if version 3.0 and up
         ValFirm = "Firmware : " + self.FIRMWARE_VERSION
-        Compair1 = "GOGUFW v3.3.2"
+        Compair1 = "GOGUFW v3.3.5"
 
         if self.FIRMWARE_VERSION == "":
             ValFirm = "Firmware : Only when read from the radio "
