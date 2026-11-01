@@ -1,12 +1,52 @@
 # Changelog
 
-## GOGUFW 3.3.5 — Unreleased
+## GOGUFW 3.3.5 — 2026-11-01
 
+- Replaced the generic new-message double beep with the measured timing of the
+  requested classic Nokia alert: four equal 932 Hz, 200 ms notes in two close
+  pairs, with an approximately 735 ms pause between the pairs. ACK packets no
+  longer enter the new-message alert path and now use the same short 500 Hz
+  confirmation chirp as a manual PONG. Both remain controlled by `MsgBeep`.
+- Extended HEARD with a MENU containing manual **SEND PING** and background
+  **AUTO CHECK** choices for OFF, 30 seconds, 1 minute, 5 minutes and 10 minutes.
+  Automatic replies update HEARD silently; each unanswered check produces one
+  restrained 450-to-320 Hz descending alert directly from the background tick
+  instead of accumulating until a key is pressed. This is distinct from the
+  positive manual-PONG chirp and the new-message alert. Checks continue
+  on every normal firmware screen and defer only while voice TX/RX or scanning
+  owns the RF path.
+- Added a chain-link AUTO CHECK result indicator using the otherwise
+  empty VOX slot. Selecting an interval sends the first PING immediately and
+  leaves the result slot blank until it completes: the link stays fixed after
+  a PONG and blinks at one-second intervals after an unanswered 12-second
+  window. Later checks retain the previous completed result until the new
+  result is known. The real VOX icon has priority whenever VOX is enabled, and
+  the Messenger envelope, F/key-lock, mute/backlight and battery areas remain
+  unchanged.
+- Decoupled the Messenger envelope from AUTO CHECK. It now follows only the
+  Inbox unread flags and refreshes immediately when the final unread message is
+  opened or deleted.
+- Made private overlay tuning explicitly end resident RX state and pending
+  dual-watch activity before taking ownership of the radio, preventing a late
+  resident squelch event from pulling an active overlay back to the main screen.
 - Recalibrate the VFO Spectrum scale and trigger after `1`/`7` scan-step
   changes. This prevents ordinary traces from falling below the graph when the
   BK4819 scan filter switches between the 15 kHz-and-up and sub-15 kHz paths.
 - Apply the same recalibration after `0` switches between FM, AM and USB, so a
   previous modulation's noise floor cannot hide the new trace.
+- There is no overlay ABI/API change in 3.3.5. Applications built for the
+  official F4HWN 6.3.0 ABI 1 / API 3 contract used by GOGUFW 3.3.1 and 3.3.2
+  remain compatible; a firmware-only update is supported.
+- `FMVFO.app`, `FMMemory.app` and `Search.app` are included again for
+  convenience but are unchanged from 3.3.2. If they are already installed,
+  they do not need to be reinstalled; updating only the firmware is sufficient.
+- Firmware: `GOGUFW-v3.3.5.bin`
+- Multiboot firmware: `GOGUFW-v3.3.5-multiboot.bin`
+- CHIRP module: `Gogufw_3.3.5_chirp_module.py`
+- Final published image: 118,992 / 120,832 bytes (1,840 bytes free), including
+  the 920-byte multiboot load image. Linked firmware code/data uses 118,072
+  bytes; RAM usage is 16,360 / 16,384 bytes, and multiboot RAM-stub isolation
+  checks pass.
 
 ## GOGUFW 3.3.2 — 2026-10-26
 

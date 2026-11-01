@@ -686,7 +686,7 @@ static bool MSG_RF_CanPlayNotifyBeep(void)
 
 static void MSG_RF_PlayNotifyBeepNow(void)
 {
-    AUDIO_PlayBeep(BEEP_500HZ_60MS_DOUBLE_BEEP_FORCE);
+    AUDIO_PlayBeep(BEEP_MESSAGE_ALERT_FORCE);
     gBeepToPlay = BEEP_NONE;
     s_deferred_beep_pending = false;
     s_deferred_beep_ticks = 0;
@@ -711,7 +711,9 @@ static bool MSG_RF_CanPlayAckSuccessBeep(void)
 
 static void MSG_RF_PlayAckSuccessBeepNow(void)
 {
-    AUDIO_PlayBeep(BEEP_1KHZ_60MS_OPTIONAL);
+    /* ACK is a positive delivery result, so use the same short confirmation
+     * chirp as a manual Range Check PONG, never the new-message melody. */
+    AUDIO_PlayBeep(BEEP_500HZ_30MS);
     gBeepToPlay = BEEP_NONE;
     s_ack_success_beep_pending = false;
     s_ack_success_beep_ticks = 0;
@@ -1712,7 +1714,7 @@ static void try_store_rx_packet(void)
                 remote_battery = (uint16_t)(uint8_t)pkt.payload[0] | ((uint16_t)(uint8_t)pkt.payload[1] << 8);
             }
             MSG_RangeOnPong(pkt.from, MSG_RF_CurrentRSSIdBm(), remote_battery);
-            MSG_RF_RequestRangeBeep();
+            if (!MSG_RangeReplySilent()) MSG_RF_RequestRangeBeep();
         }
         /* Finish this capture but keep the original Range Check channel lock.
          * Other radios may still send their jittered PONG during the same
@@ -1729,7 +1731,8 @@ static void try_store_rx_packet(void)
             ack_id = (uint16_t)(uint8_t)pkt.payload[0] | ((uint16_t)(uint8_t)pkt.payload[1] << 8);
         }
         MSG_RF_HandleAckFor(ack_id, pkt.from);
-        MSG_RF_FinishRxAttempt(true);
+        /* ACK has its own short success chirp; do not queue a message alert. */
+        MSG_RF_FinishRxAttempt(false);
         return;
     }
 
@@ -1741,7 +1744,8 @@ static void try_store_rx_packet(void)
         /* RF28: text ACK is now proven enough for debugging; keep it out of
          * Inbox for daily use and only update the matching Sent status. */
         MSG_RF_HandleAckFor(ack_text_id, pkt.from);
-        MSG_RF_FinishRxAttempt(true);
+        /* Legacy text ACK follows the same ACK-only sound path. */
+        MSG_RF_FinishRxAttempt(false);
         gUpdateDisplay = true;
         return;
     }

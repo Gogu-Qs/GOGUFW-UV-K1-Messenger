@@ -85,6 +85,13 @@ void UI_DrawStatusBattery(uint8_t *line, char *str)
 static const uint8_t BITMAP_MSG_ENVELOPE[10] = {
     0x7E, 0x42, 0x46, 0x4A, 0x52, 0x52, 0x4A, 0x46, 0x42, 0x7E
 };
+/* Thin 10x6 interlocking-link mark derived from the supplied reference icon.
+ * Bits 0 and 7 stay clear, matching the vertical margins of the envelope and
+ * VOX marks instead of touching the lower edge of the status bar. */
+static const uint8_t BITMAP_MSG_AUTO_LINK[10] = {
+    0x00, 0x30, 0x40, 0x58, 0x44,
+    0x2A, 0x1A, 0x02, 0x0C, 0x00
+};
 #endif
 
 void UI_DisplayStatus()
@@ -249,11 +256,20 @@ void UI_DisplayStatus()
     #endif
 
 #ifdef ENABLE_VOX
-    // VOX indicator
+    // VOX owns this slot whenever it is enabled.  Otherwise Auto Check may
+    // reuse the already-reserved space without moving any following icons.
     if (gEeprom.VOX_SWITCH) {
         memcpy(line + x, gFontVox, sizeof(gFontVox));
         x1 = x + sizeof(gFontVox) + 1;
     }
+#ifdef ENABLE_MESSENGER
+    else if (!gAirCopyBootMode && MSG_AutoCheckEnabled()) {
+        if (MSG_AutoCheckResultValid() &&
+            (MSG_AutoCheckSuccess() || MSG_AutoCheckBlink()))
+            memcpy(line + x + 1u, BITMAP_MSG_AUTO_LINK, sizeof(BITMAP_MSG_AUTO_LINK));
+        x1 = x + sizeof(BITMAP_MSG_AUTO_LINK) + 2u;
+    }
+#endif
     x += sizeof(gFontVox) + 3;
 #endif
 

@@ -1,5 +1,5 @@
 # GOGUFW UV-K1 / UV-K5 V3 Messenger CHIRP module v3.3.5
-# Release build: 2026-10-26
+# Release build: 2026-11-01
 # Based on F4HWN Fusion CHIRP 5.5.0 support.
 # Matches the GOGUFW external-flash EEPROM aliases:
 #   FM names: 0x00D000 alias -> firmware flash 0x013000
@@ -63,7 +63,7 @@ DEBUG_SHOW_OBFUSCATED_COMMANDS = False
 DEBUG_SHOW_MEMORY_ACTIONS = False
 
 # TODO: remove the driver version when it's in mainline chirp
-DRIVER_VERSION = "GOGUFW UV-K1 / UV-K5 V3 CHIRP driver v3.3.5-dev (2026-10-26)"
+DRIVER_VERSION = "GOGUFW UV-K1 / UV-K5 V3 CHIRP driver v3.3.5 (2026-11-01)"
 FIRMWARE_VERSION_UPDATE = "https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases"
 CHIRP_DRIVER_VERSION_UPDATE = "https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases"
 

@@ -6,7 +6,13 @@
 #include "app/messenger_packet.h"
 #include "app/messenger_ui.h"
 #include "app/generic.h"
+#include "app/chFrScanner.h"
+#include "app/scanner.h"
+#ifdef ENABLE_FMRADIO_EMBEDDED
+#include "app/fm.h"
+#endif
 #include "audio.h"
+#include "functions.h"
 #include "ui/helper.h"
 #include "ui/ui.h"
 #include "misc.h"
@@ -19,6 +25,8 @@ typedef enum {
     MSG_SCREEN_COMPOSE,
     MSG_SCREEN_READ,
     MSG_SCREEN_RANGE,
+    MSG_SCREEN_RANGE_MENU,
+    MSG_SCREEN_RANGE_AUTO,
 } MSG_Screen_t;
 
 MSG_Screen_t gMsgScreen = MSG_SCREEN_HOME;
@@ -38,7 +46,18 @@ uint8_t gMsgRangeScroll;
 uint8_t gMsgRangeStatus; /* 0 idle, 1 wait, 2 ok */
 static uint16_t s_msgRangeWaitTicks;
 static uint8_t s_msgAgeSubTicks;
+static uint16_t s_msgAutoCountdownTicks;
+static uint8_t s_msgAutoState;
 uint8_t gMsgTxLockNoticeTicks;
+
+#define MSG_AUTO_INTERVAL_MASK 0x07u
+#define MSG_AUTO_RESULT_VALID 0x08u
+#define MSG_AUTO_WAIT         0x10u
+#define MSG_AUTO_REPLY        0x20u
+#define MSG_AUTO_SUCCESS      0x40u
+#define MSG_AUTO_ALERT        0x80u
+#define MSG_AUTO_INTERVAL()   (s_msgAutoState & MSG_AUTO_INTERVAL_MASK)
+static const uint16_t s_msgAutoIntervals[] = { 3000u, 6000u, 30000u, 60000u };
 
 static bool gMsgComposeIsDraftEdit;
 static uint8_t gMsgComposeDraftIndex;
@@ -83,18 +102,68 @@ void MSG_Tick(void)
         gUpdateDisplay = true;
     if (gMsgScreen == MSG_SCREEN_COMPOSE && TEXT_INPUT_Tick(&gMsgEditor))
         gUpdateDisplay = true;
-    else if (gMsgScreen == MSG_SCREEN_RANGE && gMsgRangeStatus == 1u) {
+    if (gMsgRangeStatus == 1u) {
         if (s_msgRangeWaitTicks > 0u) --s_msgRangeWaitTicks;
         if (s_msgRangeWaitTicks == 0u) {
             gMsgRangeStatus = 2u;
             MSG_RF_CancelRangeWait();
             MSG_RF_HardRestoreVoicePath();
+            if (s_msgAutoState & MSG_AUTO_WAIT) {
+                if (s_msgAutoState & MSG_AUTO_REPLY)
+                    s_msgAutoState |= MSG_AUTO_RESULT_VALID | MSG_AUTO_SUCCESS;
+                else {
+                    s_msgAutoState = (uint8_t)((s_msgAutoState & ~MSG_AUTO_SUCCESS) |
+                                               MSG_AUTO_RESULT_VALID | MSG_AUTO_ALERT);
+                    s_msgAgeSubTicks = 0u;
+                }
+            }
+            s_msgAutoState &= (uint8_t)~(MSG_AUTO_WAIT | MSG_AUTO_REPLY);
+            gUpdateStatus = true;
             gUpdateDisplay = true;
         }
     }
 
-    if (++s_msgAgeSubTicks >= 100u) {
-        s_msgAgeSubTicks = 0u;
+    /* Unlike key beeps, an automatic failure alert must not wait for a key
+     * event.  Keep one pending alert while voice RX/TX owns the audio path,
+     * then play it directly from the global 10 ms service as soon as RF is
+     * idle.  This works independently of the currently displayed screen. */
+    if ((s_msgAutoState & MSG_AUTO_ALERT) &&
+        !MSG_RF_TransactionActive() &&
+        (gCurrentFunction == FUNCTION_FOREGROUND || gCurrentFunction == FUNCTION_POWER_SAVE)) {
+        s_msgAutoState &= (uint8_t)~MSG_AUTO_ALERT;
+        AUDIO_PlayBeep(BEEP_AUTO_CHECK_FAIL_FORCE);
+    }
+
+    if (MSG_AUTO_INTERVAL()) {
+        if (s_msgAutoCountdownTicks > 0u) --s_msgAutoCountdownTicks;
+        if (s_msgAutoCountdownTicks == 0u && gMsgRangeStatus != 1u &&
+            !MSG_RF_TransactionActive() &&
+            (gCurrentFunction == FUNCTION_FOREGROUND || gCurrentFunction == FUNCTION_POWER_SAVE) &&
+            !gPttIsPressed && gScanStateDir == SCAN_OFF && !SCANNER_IsScanning()
+#ifdef ENABLE_FMRADIO_EMBEDDED
+            && gFM_ScanState == FM_SCAN_OFF
+#endif
+            ) {
+            gMsgRangeStatus = 1u;
+            s_msgRangeWaitTicks = MSG_RANGE_WAIT_TICKS;
+            s_msgAutoState = (uint8_t)((s_msgAutoState | MSG_AUTO_WAIT) &
+                                       ~MSG_AUTO_REPLY);
+            gUpdateStatus = true;
+            s_msgAutoCountdownTicks = s_msgAutoIntervals[MSG_AUTO_INTERVAL() - 1u];
+            if (!MSG_RF_SendRangePing()) {
+                gMsgRangeStatus = 0u;
+                s_msgRangeWaitTicks = 0u;
+                s_msgAutoState &= (uint8_t)~MSG_AUTO_WAIT;
+            }
+            gUpdateDisplay = true;
+        }
+    }
+
+    if (++s_msgAgeSubTicks == 100u || s_msgAgeSubTicks >= 200u) {
+        if (s_msgAgeSubTicks >= 200u) s_msgAgeSubTicks = 0u;
+        if (MSG_AUTO_INTERVAL()) {
+            gUpdateStatus = true;
+        }
         for (uint8_t i = 0; i < MSG_RANGE_MAX_FOUND; i++) {
             if (gMsgRangeFound[i].used && gMsgRangeFound[i].age_seconds < 0xFFFFu) ++gMsgRangeFound[i].age_seconds;
         }
@@ -114,8 +183,10 @@ void MSG_RangeOpen(void)
     MSG_Init();
     gMsgScreen = MSG_SCREEN_RANGE;
     gMsgRangeScroll = 0;
-    gMsgRangeStatus = 0;
-    s_msgRangeWaitTicks = 0;
+    if (!(s_msgAutoState & MSG_AUTO_WAIT)) {
+        gMsgRangeStatus = 0;
+        s_msgRangeWaitTicks = 0;
+    }
     gRequestDisplayScreen = DISPLAY_MESSENGER;
 }
 
@@ -128,6 +199,12 @@ bool MSG_IsHomeOpen(void)
 {
     return gMsgScreen != MSG_SCREEN_RANGE;
 }
+
+bool MSG_AutoCheckEnabled(void) { return MSG_AUTO_INTERVAL() != 0u; }
+bool MSG_AutoCheckBlink(void) { return s_msgAgeSubTicks < 100u; }
+bool MSG_AutoCheckResultValid(void) { return (s_msgAutoState & MSG_AUTO_RESULT_VALID) != 0u; }
+bool MSG_AutoCheckSuccess(void) { return (s_msgAutoState & MSG_AUTO_SUCCESS) != 0u; }
+bool MSG_RangeReplySilent(void) { return (s_msgAutoState & MSG_AUTO_WAIT) != 0u; }
 
 #ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
 bool MSG_ActionPickerAllowed(void)
@@ -172,6 +249,10 @@ void MSG_HeardUpdate(const char *callsign, int8_t rssi_dbm, uint8_t packet_type)
 
 void MSG_RangeOnPong(const char *callsign, int8_t rssi_dbm, uint16_t battery_cv)
 {
+    if (s_msgAutoState & MSG_AUTO_WAIT) {
+        s_msgAutoState |= MSG_AUTO_REPLY | MSG_AUTO_RESULT_VALID | MSG_AUTO_SUCCESS;
+        gUpdateStatus = true;
+    }
     MSG_HeardUpdate(callsign, rssi_dbm, MSG_PKT_TYPE_PONG);
     if (!callsign || !callsign[0]) return;
     for (uint8_t i = 0; i < gMsgRangeCount; i++) {
@@ -330,6 +411,44 @@ static void range_move(int8_t dir)
     gMsgRangeScroll = (uint8_t)next;
 }
 
+static void range_send_ping(bool automatic)
+{
+    if (gMsgRangeStatus == 1u) return;
+    gMsgRangeStatus = 1u;
+    s_msgRangeWaitTicks = MSG_RANGE_WAIT_TICKS;
+    if (automatic) s_msgAutoState = (uint8_t)((s_msgAutoState | MSG_AUTO_WAIT) &
+                                               ~MSG_AUTO_REPLY);
+    else s_msgAutoState &= (uint8_t)~(MSG_AUTO_WAIT | MSG_AUTO_REPLY);
+    gMsgRangeScroll = 0u;
+    if (gScreenToDisplay == DISPLAY_MESSENGER) UI_DisplayMessenger();
+    if (!MSG_RF_SendRangePing()) {
+        gMsgRangeStatus = 0u;
+        s_msgRangeWaitTicks = 0u;
+        s_msgAutoState &= (uint8_t)~MSG_AUTO_WAIT;
+        if (!automatic && MSG_RF_LastSendWasBlocked()) show_tx_blocked_notice();
+    }
+}
+
+static void auto_check_set(uint8_t interval)
+{
+    if (interval > 4u) interval = 0u;
+    if (interval)
+        s_msgAutoState = (uint8_t)((s_msgAutoState &
+            (MSG_AUTO_RESULT_VALID | MSG_AUTO_WAIT | MSG_AUTO_REPLY |
+             MSG_AUTO_SUCCESS | MSG_AUTO_ALERT)) | interval);
+    else
+        s_msgAutoState &= MSG_AUTO_WAIT;
+    s_msgAutoCountdownTicks = interval ? 1u : 0u;
+    if (!interval && (s_msgAutoState & MSG_AUTO_WAIT)) {
+        MSG_RF_CancelRangeWait();
+        MSG_RF_HardRestoreVoicePath();
+        gMsgRangeStatus = 0u;
+        s_msgRangeWaitTicks = 0u;
+        s_msgAutoState = 0u;
+    }
+    gUpdateStatus = true;
+}
+
 void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
     if (gMsgTxLockNoticeTicks > 0u) {
@@ -437,32 +556,49 @@ void MSG_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
         case MSG_SCREEN_RANGE:
             if (Key == KEY_EXIT) {
-                MSG_RF_CancelRangeWait();
-                MSG_RF_HardRestoreVoicePath();
-                gMsgRangeStatus = 0u;
-                s_msgRangeWaitTicks = 0u;
+                if (!(s_msgAutoState & MSG_AUTO_WAIT)) {
+                    MSG_RF_CancelRangeWait();
+                    MSG_RF_HardRestoreVoicePath();
+                    gMsgRangeStatus = 0u;
+                    s_msgRangeWaitTicks = 0u;
+                }
                 GENERIC_ExitApplication();
             } else if (Key == KEY_MENU) {
-                if (gMsgRangeStatus != 1u) {
-                    /* Show WAIT on the physical LCD before the blocking FSK
-                     * transmit path starts, so the key press gets immediate
-                     * visual feedback instead of updating after TX. */
-                    gMsgRangeStatus = 1u;
-                    s_msgRangeWaitTicks = MSG_RANGE_WAIT_TICKS;
-                    gMsgRangeScroll = 0u;
-                    UI_DisplayMessenger();
-
-                    if (!MSG_RF_SendRangePing()) {
-                        gMsgRangeStatus = 0u;
-                        s_msgRangeWaitTicks = 0u;
-                        if (MSG_RF_LastSendWasBlocked())
-                            show_tx_blocked_notice();
-                    }
-                }
+                gMsgCursor = 0u;
+                gMsgScreen = MSG_SCREEN_RANGE_MENU;
             } else if (Key == KEY_UP) {
                 range_move(-1);
             } else if (Key == KEY_DOWN) {
                 range_move(1);
+            }
+            break;
+
+        case MSG_SCREEN_RANGE_MENU:
+            if (Key == KEY_UP || Key == KEY_DOWN)
+                gMsgCursor ^= 1u;
+            else if (Key == KEY_EXIT)
+                gMsgScreen = MSG_SCREEN_RANGE;
+            else if (Key == KEY_MENU) {
+                if (gMsgCursor == 0u) {
+                    gMsgScreen = MSG_SCREEN_RANGE;
+                    range_send_ping(false);
+                } else {
+                    gMsgCursor = MSG_AUTO_INTERVAL();
+                    gMsgScreen = MSG_SCREEN_RANGE_AUTO;
+                }
+            }
+            break;
+
+        case MSG_SCREEN_RANGE_AUTO:
+            if (Key == KEY_UP)
+                gMsgCursor = gMsgCursor ? (uint8_t)(gMsgCursor - 1u) : 4u;
+            else if (Key == KEY_DOWN)
+                gMsgCursor = (uint8_t)((gMsgCursor + 1u) % 5u);
+            else if (Key == KEY_EXIT)
+                gMsgScreen = MSG_SCREEN_RANGE_MENU;
+            else if (Key == KEY_MENU) {
+                auto_check_set(gMsgCursor);
+                gMsgScreen = MSG_SCREEN_RANGE;
             }
             break;
 

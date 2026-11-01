@@ -283,7 +283,7 @@ void MSG_STORE_AddInboxMessage(const char *text, const char *from, const char *t
     gUpdateStatus = true;
     gUpdateDisplay = true;
     if (unread && gMessengerConfig.msg_beep) {
-        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_FORCE;
+        gBeepToPlay = BEEP_MESSAGE_ALERT_FORCE;
     }
 }
 
@@ -362,6 +362,8 @@ void MSG_STORE_DeleteInbox(uint8_t index)
     if (index >= MSG_INBOX_CAPACITY || !gMessengerInbox[index].used) return;
     for (uint8_t i = index; i + 1u < MSG_INBOX_CAPACITY; ++i) gMessengerInbox[i] = gMessengerInbox[i + 1u];
     memset(&gMessengerInbox[MSG_INBOX_CAPACITY - 1u], 0, sizeof(gMessengerInbox[0]));
+    gUpdateStatus = true;
+    gUpdateDisplay = true;
 }
 
 void MSG_STORE_DeleteOutbox(uint8_t index)

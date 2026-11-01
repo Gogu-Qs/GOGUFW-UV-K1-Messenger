@@ -41,7 +41,7 @@ extern uint8_t gMsgRangeScroll;
 extern uint8_t gMsgRangeStatus;
 extern uint8_t gMsgTxLockNoticeTicks;
 
-enum { MSG_SCREEN_HOME = 0, MSG_SCREEN_INBOX, MSG_SCREEN_OUTBOX, MSG_SCREEN_DRAFTS, MSG_SCREEN_COMPOSE, MSG_SCREEN_READ, MSG_SCREEN_RANGE };
+enum { MSG_SCREEN_HOME = 0, MSG_SCREEN_INBOX, MSG_SCREEN_OUTBOX, MSG_SCREEN_DRAFTS, MSG_SCREEN_COMPOSE, MSG_SCREEN_READ, MSG_SCREEN_RANGE, MSG_SCREEN_RANGE_MENU, MSG_SCREEN_RANGE_AUTO };
 
 /* Seven-pixel small text centred between the shared y=9/y=46 separators. */
 #define MSG_EMPTY_TEXT_Y 25u
@@ -493,7 +493,31 @@ static void draw_range(void)
         }
     }
 
-    UI_GOGU_DrawFooter(gMsgRangeStatus == 1u ? "WAIT" : "PING", msg_footer_target(), "EXIT");
+    UI_GOGU_DrawFooter("MENU", msg_footer_target(), "EXIT");
+}
+
+static void draw_range_menu(void)
+{
+    const char *items[] = { "SEND PING", "AUTO CHECK" };
+    draw_title("HEARD MENU");
+    UI_GOGU_DrawDottedSeparator(UI_GOGU_TOP_SEPARATOR_Y);
+    for (uint8_t i = 0u; i < 2u; i++)
+        print_line_y(items[i], UI_GOGU_CONTENT_ROW_Y(i + 1u), i == gMsgCursor);
+    UI_GOGU_DrawFooter("SELECT", NULL, "EXIT");
+}
+
+static void draw_range_auto(void)
+{
+    const char *items[] = { "OFF", "30 SECONDS", "1 MINUTE", "5 MINUTES", "10 MINUTES" };
+    draw_title("AUTO CHECK");
+    UI_GOGU_DrawDottedSeparator(UI_GOGU_TOP_SEPARATOR_Y);
+    for (uint8_t i = 0u; i < 5u; i++) {
+        const uint8_t y = (uint8_t)(11u + i * 7u);
+        GUI_DisplaySmallest(items[i], 2u, y, false, true);
+        if (i == gMsgCursor)
+            UI_GOGU_InvertBand(y > 0u ? (uint8_t)(y - 1u) : y, 7u);
+    }
+    UI_GOGU_DrawFooter("SELECT", NULL, "EXIT");
 }
 
 void UI_DisplayMessenger(void)
@@ -511,6 +535,8 @@ void UI_DisplayMessenger(void)
         case MSG_SCREEN_READ: draw_read(); break;
         case MSG_SCREEN_COMPOSE: draw_compose(); break;
         case MSG_SCREEN_RANGE: draw_range(); break;
+        case MSG_SCREEN_RANGE_MENU: draw_range_menu(); break;
+        case MSG_SCREEN_RANGE_AUTO: draw_range_auto(); break;
         default: draw_home(); break;
     }
 

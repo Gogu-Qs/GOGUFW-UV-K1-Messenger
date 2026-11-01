@@ -47,6 +47,8 @@ static const uint16_t BEEP_Classic_array[][3] = { /* Tone    Duration    Repeats
     [BEEP_400HZ_30MS]                             = {400,    30,         1      },
     [BEEP_500HZ_30MS]                             = {500,    30,         1      },
     [BEEP_600HZ_30MS]                             = {600,    30,         1      },
+    [BEEP_AUTO_CHECK_FAIL_FORCE]                  = {0,      0,          0      },
+    [BEEP_MESSAGE_ALERT_FORCE]                    = {0,      0,          0      },
 #endif
     [BEEP_880HZ_60MS_TRIPLE_BEEP]                 = {880,    60,         3      }
 };
@@ -87,7 +89,8 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
     uint16_t ToneConfig = BK4819_ReadRegister(BK4819_REG_71);
 
 #ifdef ENABLE_FEAT_F4HWN
-    if(Beep == BEEP_400HZ_30MS || Beep == BEEP_500HZ_30MS || Beep == BEEP_600HZ_30MS)
+    if(Beep == BEEP_400HZ_30MS || Beep == BEEP_500HZ_30MS ||
+       Beep == BEEP_600HZ_30MS || Beep == BEEP_AUTO_CHECK_FAIL_FORCE)
     {
         BK4819_WriteRegister(BK4819_REG_70, BK4819_REG_70_ENABLE_TONE1 | ((1 & 0x7f) << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
     }
@@ -101,10 +104,30 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
 
     SYSTEM_DelayMs(60);
 
-    for (uint8_t i = 0; i < BEEP_Classic_array[Beep][BEEP_REPEATS]; i++) {
-        BK4819_PlayToneRaw( BEEP_Classic_array[Beep][BEEP_TONE], 
-                            BEEP_Classic_array[Beep][BEEP_DURATION]);
-        SYSTEM_DelayMs(20);
+    if (Beep == BEEP_MESSAGE_ALERT_FORCE) {
+        /* Timing and pitch measured from the requested classic Nokia alert:
+         * four equal monophonic bursts, grouped as two close pairs. */
+        BK4819_PlayToneRaw(932u, 200u);
+        SYSTEM_DelayMs(85u);
+        BK4819_PlayToneRaw(932u, 200u);
+        SYSTEM_DelayMs(735u);
+        BK4819_PlayToneRaw(932u, 200u);
+        SYSTEM_DelayMs(85u);
+        BK4819_PlayToneRaw(932u, 200u);
+        SYSTEM_DelayMs(20u);
+    } else if (Beep == BEEP_AUTO_CHECK_FAIL_FORCE) {
+        /* A restrained descending two-tone: deliberately unlike the short
+         * 500 Hz positive PONG chirp and the ordinary message double beep. */
+        BK4819_PlayToneRaw(450u, 35u);
+        SYSTEM_DelayMs(15u);
+        BK4819_PlayToneRaw(320u, 65u);
+        SYSTEM_DelayMs(20u);
+    } else {
+        for (uint8_t i = 0; i < BEEP_Classic_array[Beep][BEEP_REPEATS]; i++) {
+            BK4819_PlayToneRaw(BEEP_Classic_array[Beep][BEEP_TONE],
+                               BEEP_Classic_array[Beep][BEEP_DURATION]);
+            SYSTEM_DelayMs(20);
+        }
     }
 
     AUDIO_AudioPathOff();

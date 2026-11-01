@@ -529,6 +529,15 @@ static uint32_t app_rx_freq(void)
 
 static void app_radio_tune_power(uint32_t frequency, uint8_t power)
 {
+    /* A private overlay RF target is sovereign for the lifetime of the app.
+     * End any resident-channel RX state and cancel a pending dual-watch hop
+     * before replacing the VFO pointers; otherwise a late SQL event from the
+     * previously selected memory channel can briefly return to the main RX
+     * screen while a decoder such as Sonde MTS01 owns the receiver. */
+    if (gCurrentFunction != FUNCTION_FOREGROUND)
+        FUNCTION_Select(FUNCTION_FOREGROUND);
+    gDualWatchActive = false;
+    gScheduleDualWatch = false;
     RADIO_InitInfo(&app_radio_vfo,
                    FREQ_CHANNEL_FIRST + FREQUENCY_GetBand(frequency), frequency);
     app_radio_vfo.Modulation = MODULATION_FM;
