@@ -38,7 +38,7 @@ static const uint16_t BEEP_Classic_array[][3] = { /* Tone    Duration    Repeats
     [BEEP_1KHZ_60MS_OPTIONAL]                     = {1000,   60,         1      },
     [BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL]        = {500,    60,         2      },
     [BEEP_500HZ_60MS_DOUBLE_BEEP_FORCE]           = {500,    60,         2      },
-    [BEEP_500HZ_60MS_QUADRUPLE_BEEP_FORCE]        = {500,    60,         4      },
+    [BEEP_TX_BLOCKED_FORCE]                       = {0,      0,          0      },
 #ifdef ENABLE_DTMF_CALLING
     [BEEP_880HZ_200MS]                            = {880,    200,        1      },
     [BEEP_880HZ_500MS]                            = {880,    500,        1      },
@@ -90,7 +90,8 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
 
 #ifdef ENABLE_FEAT_F4HWN
     if(Beep == BEEP_400HZ_30MS || Beep == BEEP_500HZ_30MS ||
-       Beep == BEEP_600HZ_30MS || Beep == BEEP_AUTO_CHECK_FAIL_FORCE)
+       Beep == BEEP_600HZ_30MS || Beep == BEEP_AUTO_CHECK_FAIL_FORCE ||
+       Beep == BEEP_TX_BLOCKED_FORCE)
     {
         BK4819_WriteRegister(BK4819_REG_70, BK4819_REG_70_ENABLE_TONE1 | ((1 & 0x7f) << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
     }
@@ -121,6 +122,13 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
         BK4819_PlayToneRaw(450u, 35u);
         SYSTEM_DelayMs(15u);
         BK4819_PlayToneRaw(320u, 65u);
+        SYSTEM_DelayMs(20u);
+    } else if (Beep == BEEP_TX_BLOCKED_FORCE) {
+        /* Dedicated negative alert: one short and one longer burst at the
+         * same pitch ("dit, diit"), unlike PONG, message and menu sounds. */
+        BK4819_PlayToneRaw(650u, 45u);
+        SYSTEM_DelayMs(55u);
+        BK4819_PlayToneRaw(650u, 170u);
         SYSTEM_DelayMs(20u);
     } else {
         for (uint8_t i = 0; i < BEEP_Classic_array[Beep][BEEP_REPEATS]; i++) {

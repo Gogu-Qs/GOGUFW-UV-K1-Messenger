@@ -169,6 +169,9 @@ uint8_t APP_ValidateSlot(uint8_t slot, app_header_t *out_header);
  * Returns when the app exits; the internal flash is never touched. */
 uint8_t APP_LaunchOverlay(uint8_t slot);
 
+/* Set when an app stages a VFO or memory selection for the main radio. */
+extern bool gAppVfoExit;
+
 /* Launch the installed app advertising this shortcut ID. */
 uint8_t APP_LaunchOverlayShortcut(uint8_t shortcut);
 

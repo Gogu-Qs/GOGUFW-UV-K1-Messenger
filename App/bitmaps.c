@@ -4,10 +4,10 @@
 // all these images are on their right sides
 // turn your monitor 90-deg anti-clockwise to see the images
 
-const uint8_t gFontPowerSave[2][6] =
+/* 9x7 "Zz" Power Save mark copied cell-for-cell from the supplied reference. */
+const uint8_t gFontPowerSave[9] =
 {
-    {0x00, 0x7f, 0x9, 0x9, 0x9, 0x6},
-    {0x00, 0x26, 0x49, 0x49, 0x49, 0x32},
+    0x48, 0x68, 0x58, 0x48, 0x00, 0x09, 0x0D, 0x0B, 0x09,
 };
 
 const uint8_t gFontPttOnePush[2][6] =
@@ -193,28 +193,28 @@ const uint8_t BITMAP_VFO_Lock[7] =
     0b00111100,
 };
 
-/* RSS-style radio waves: this memory channel permits FSK transmission. */
+/* Compact FSK policy mark from the supplied 5x5 pixel reference. */
 const uint8_t BITMAP_FskTx[8] =
 {
     0b00101010,
-    0b00101010,
     0b00001010,
-    0b00010010,
-    0b00100100,
+    0b00110010,
     0b00000100,
-    0b00011000,
-    0b00100000,
+    0b00111000,
+    0b00000000,
+    0b00000000,
+    0b00000000,
 };
 
-/* Clear single musical note: its presence means Roger/MDC is enabled. */
+/* Compact musical-note mark from the supplied 5x5 pixel reference. */
 const uint8_t BITMAP_NoRoger[8] =
 {
     0b00110000,
     0b00110000,
     0b00111110,
     0b00000010,
-    0b00000010,
     0b00000110,
+    0b00000000,
     0b00000000,
     0b00000000,
 };

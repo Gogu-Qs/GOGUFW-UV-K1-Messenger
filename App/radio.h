@@ -170,6 +170,7 @@ void     RADIO_SetTxParameters(void);
 void     RADIO_PrepareTx(void);
 void     RADIO_SetupAGC(bool listeningAM, bool disable);
 void     RADIO_SetModulation(ModulationMode_t modulation);
+bool     RADIO_IsRxCompanderOn(const VFO_Info_t *pInfo);
 void     RADIO_SetVfoState(VfoState_t State);
 void     RADIO_PrepareTX(void);
 void     RADIO_SendCssTail(void);

@@ -55,14 +55,21 @@ struct globals {
     uint8_t  savePos;
 #endif
     int8_t   scanState;      /* 0 = off, +1 up, -1 down (non-blocking) */
-    bool     autoScan, scanFound, fArm, running;
+    bool     autoScan, scanFound, running;
 #ifdef FM_VFO_ONLY
     bool     askSave;
 #endif
-    bool     liveRssi, liveEdit, liveChoice, nameEdit, autoConfirm;
+    bool     liveRssi, liveEdit, liveChoice;
+#ifdef FM_MEMORY_ONLY
+    bool     nameEdit;
+#endif
+    bool     autoConfirm;
     uint8_t  inBox[4];
-    uint8_t  menuMode, rssiLevel, namePos, nameMode;
+    uint8_t  menuMode, rssiLevel;
+#ifdef FM_MEMORY_ONLY
+    uint8_t  namePos, nameMode;
     char     name[NAME_LEN];
+#endif
     uint16_t lo, hi;
     uint16_t scanTimer;      /* ms until the next scan step */
     uint32_t rssiTick;
@@ -171,6 +178,9 @@ static void rssiBars(void)
         else A->draw_line(A->fb,x,6u,(int16_t)(x+2u),6u,true);
     }
 }
+
+enum { KEY_STATE_QUERY, KEY_STATE_F_OFF, KEY_STATE_F_TOGGLE, KEY_STATE_LOCK_TOGGLE };
+enum { KEY_FLAG_LOCK=1u, KEY_FLAG_F=2u };
 #ifdef FM_VFO_ONLY
 static void scale(void)
 {
@@ -205,8 +215,7 @@ static void drawEditor(void)
 static void draw(void)
 {
     char a[24],b[24],c[24],band[16],*o; const char *label;
-    A->display_clear(); A->status_clear(); A->draw_battery();
-    if(g.fArm)A->asset_read(BMP_F,A->status_line+70,BMP_F_LEN);
+    A->display_clear(); A->draw_battery();
 #ifdef FM_MEMORY_ONLY
     if(g.nameEdit){ drawEditor(); return; }
 #endif
@@ -517,6 +526,8 @@ static void func(uint8_t key)
 }
 static void onShort(uint8_t key)
 {
+    const uint8_t keyState=G->key_state(KEY_STATE_QUERY);
+    if(keyState&KEY_FLAG_LOCK)return;
 #ifdef FM_MEMORY_ONLY
     if(g.nameEdit){
         if(key<=APP_KEY_9) nameKey(key,APP_TEXT_SHORT);
@@ -549,8 +560,8 @@ static void onShort(uint8_t key)
         else if(key==APP_KEY_EXIT) g.autoConfirm=false;
         return;
     }
-    if(key==APP_KEY_F){ g.fArm=!g.fArm; return; }
-    if(g.fArm){ g.fArm=false; func(key); return; }    /* F + key */
+    if(key==APP_KEY_F){ G->key_state(KEY_STATE_F_TOGGLE); return; }
+    if(keyState&KEY_FLAG_F){ G->key_state(KEY_STATE_F_OFF); func(key); return; }
     if(key<=APP_KEY_9){ digit(key); return; }
     switch(key){
         case APP_KEY_UP:
@@ -576,10 +587,12 @@ static void onShort(uint8_t key)
 }
 static void onLong(uint8_t key)
 {
+    if(key==APP_KEY_F){G->key_state(KEY_STATE_LOCK_TOGGLE);return;}
+    if(G->key_state(KEY_STATE_QUERY)&KEY_FLAG_LOCK)return;
 #ifdef FM_MEMORY_ONLY
     if(g.nameEdit && key<=APP_KEY_9){ nameKey(key,APP_TEXT_LONG); return; }
 #endif
-    g.fArm=false; func(key);
+    G->key_state(KEY_STATE_F_OFF); func(key);
 }
 
 __attribute__((section(".text.entry"),used))
@@ -587,6 +600,7 @@ void app_main(const app_api_t *api)
 {
     A=api;
     G=APP_GoguApi(api); if(!G) return;
+    if(G->level<4u)return;
 #ifdef FM_MEMORY_ONLY
     if(G->level<2u||G->size<96u||!G->set_text_editor_cursor||!G->text_editor)return;
 #endif

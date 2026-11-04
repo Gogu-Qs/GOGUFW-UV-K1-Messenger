@@ -32,7 +32,11 @@ typedef struct __attribute__((packed)) {
 
 _Static_assert(sizeof(RFLOG_Entry_t) == 10u, "unexpected RF log entry layout");
 
-static RFLOG_Entry_t gEntries[RFLOG_CAPACITY];
+/* The entry bytes are valid only while gCount (ordinary zeroed BSS) says so,
+ * therefore this array does not itself need startup clearing.  Keep it in the
+ * 200-byte linker gap immediately before the fixed overlay workspace. */
+static RFLOG_Entry_t gEntries[RFLOG_CAPACITY]
+    __attribute__((section(".pre_overlay_bss"), aligned(4)));
 static uint8_t gCount;
 static uint8_t gCursor;
 static uint8_t gScroll;

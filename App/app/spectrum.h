@@ -126,10 +126,14 @@ typedef enum State
 
 typedef enum StepsCount
 {
-    STEPS_128,
-    STEPS_64,
-    STEPS_32,
     STEPS_16,
+    STEPS_32,
+    STEPS_64,
+    STEPS_128,
+    STEPS_256,
+    STEPS_512,
+    STEPS_1024,
+    STEPS_2048,
 } StepsCount;
 
 typedef enum ScanStep

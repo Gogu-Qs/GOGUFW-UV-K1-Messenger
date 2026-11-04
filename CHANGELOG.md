@@ -1,5 +1,126 @@
 # Changelog
 
+## GOGUFW 3.6.0 — 2026-11-04
+
+### Spectrum
+
+- Expanded VFO Spectrum from the original 16/32/64/128 sample choices to
+  **16/32/64/128/256/512/1024/2048 samples**. Higher values cover a much wider
+  frequency span without requiring one LCD column for every RF sample; multiple
+  samples are combined into the 128-column graph.
+- Corrected centred VFO-window arithmetic and band-edge clamping for the new
+  spans. Changing the sample count, entering a frequency or launching Spectrum
+  near a band edge no longer shifts, wraps or truncates the requested range.
+- Kept the established pre-expansion graph/ruler height in both VFO and Memory
+  Spectrum. Memory channel labels fit around the unchanged ruler instead of
+  pushing the graph upward.
+- Reduced ruler density at 512/1024/2048 samples and clears only the small
+  marker field before drawing the selected-peak triangle. Wide-span rulers no
+  longer turn into a solid comb or obscure the marker.
+- Fixed the temporary `M---` value that could remain after listening to a
+  signal. The first valid RSSI measurement now refreshes the status line
+  immediately.
+- Replaced Spectrum's private battery drawing with the exact normal-radio
+  battery icon and low-battery blink behaviour. VFO channel-name refreshes no
+  longer erase the battery's left edge and make it flash.
+
+### Overlay API and F4HWN 7.0 compatibility
+
+- Advanced the public overlay contract from official **ABI 1 / API 3** to the
+  append-only **F4HWN API 4** layout. It adds memory-channel/list access and
+  staging, per-app TX-power control and the GPS-position service slot. The
+  existing API-3 prefix is byte-for-byte unchanged, so applications built for
+  GOGUFW 3.3.1–3.3.5 remain compatible.
+- Added API-4 memory staging: a compatible overlay can select a stored channel,
+  return to the main radio and have the new VFO/MR state committed safely after
+  the overlay has closed.
+- Added the official GPS entry point without inventing a stale fix. Until a live
+  K5Viewer GPS position is retained by the firmware, it returns unavailable so
+  applications can use their saved-coordinate fallback.
+- Extended the separately versioned GOGU capability table with resident analog
+  voice PTT and shared F/key-lock state. This does not consume unofficial public
+  API numbers and leaves future F4HWN levels free to append normally.
+- Corrected overlay analog voice TX to enter the same resident transmit/audio
+  path as physical PTT, including decoder reset, audio filtering, PTT-ID policy
+  and TX ownership. Overlay exit also restores the selected VFO's squelch and
+  output-power state.
+- Added the F4HWN 7.0 `SetRxG` option for the BK4829 receive audio gate. RX
+  Compander forces the required gate automatically; otherwise the user may
+  disable it to pass weaker modulation at the cost of more inter-word hiss.
+- Corrected BK4829 Compander handling. BK4819 ratio-table writes are no longer
+  sent to BK4829 noise-gate/HPF registers, preventing muted or damaged ordinary
+  analogue RX audio.
+
+### FM VFO and FM Memory overlays
+
+- Updated both paired Broadcast FM applications to **3.6.0-gogu**. The resident
+  status bar is now continuous from launch and remains visible while tuning,
+  changing channels or using menus; its non-battery icons no longer disappear
+  for about one second and reappear.
+- Added normal keypad-lock behaviour to both FM overlays. Holding F toggles the
+  resident lock, locked keys are ignored, and the resident F/lock indicators
+  remain synchronized rather than being redrawn privately by the app.
+- Reduced FM VFO's overlay-RAM state by compiling Memory-only name-editor data
+  only into FM Memory. Both applications still preserve all existing FM
+  settings, names and 48 saved stations.
+- **Reinstall both `FMVFO.app` and `FMMemory.app`** to receive these changes.
+  Installing only one leaves the paired FM interface at mixed versions.
+
+### Messenger, HEARD and status/audio feedback
+
+- When AUTO CHECK cannot transmit because of No FSK, frequency lock, modulation,
+  configuration or battery policy, it now behaves like manual SEND PING: AUTO
+  CHECK is cancelled and the same visible TX-blocked notice is shown. A blocked
+  background attempt brings HEARD forward so the reason cannot expire unseen.
+- The TX-blocked warning now plays immediately rather than being queued until a
+  later key press. Its new restrained negative alert is a 650 Hz short/long
+  `dit, diit`, clearly different from PONG/ACK and new-message sounds.
+- Replaced the Power Save text with the requested compact 9x7 `Zz` symbol and
+  refreshed the 11x7 unread-message envelope, 10x7 AUTO CHECK chain link, No
+  FSK and No Roger marks from the supplied pixel references. Status-bar symbols
+  are top-aligned with the existing resident icons.
+- Kept AUTO CHECK and unread-message state independent: the chain link still
+  reports the most recent automatic PING result while the envelope is driven
+  only by unread Inbox messages.
+
+### Applications and reliability
+
+- Updated the APRS DIGI source to **0.2-gogu**. It now reads the shared APRS
+  profile/callsign configured by APRS Edit through the bounded config proxy and
+  no longer stores a conflicting private one-byte mode. APRS DIGI is not one of
+  the three overlay binaries bundled with this release.
+- Updated the CHIRP module's driver, variant and firmware-comparison identifiers
+  to 3.6.0. Its channel/settings schema is unchanged from the 3.3.5 module.
+- Saved 520 bytes of resident RAM without reducing the 4 KiB runtime stack or
+  4 KiB overlay workspace: UART and USB share one synchronous decoded-command
+  staging buffer (256 bytes), the full-speed USB endpoint buffer is one packet
+  instead of two (64 bytes saved), and RF Log Lite's guarded 200-byte entry
+  array occupies the otherwise unused gap before the fixed overlay anchor.
+  UART and USB RX rings remain independent.
+- Preserved RF Log Lite's 20-entry behaviour, CHIRP/K5Viewer USB operation,
+  multiboot workspace isolation and all normal radio functions. Host regression
+  tests pass under AddressSanitizer and UndefinedBehaviorSanitizer for the font
+  dictionary/framebuffer, USB, Messenger protocol/store and HEARD layout.
+
+### Compatibility, release files and build information
+
+- `Search.app` remains **1.5-gogu** and is byte-for-byte identical to the 3.3.5
+  release (`SHA-256 acda9da...5753`). It is supplied as the requested Scan/Search
+  package for convenience and does not need to be reinstalled if already present.
+- `FMVFO.app` and `FMMemory.app` changed and should be reinstalled together.
+- Old custom GOGUFW binaries made for the pre-3.3.1 experimental API 4–9 layout
+  remain incompatible. Official API-3 apps made for GOGUFW 3.3.1 and later are
+  still compatible because official API 4 only appends services.
+- Firmware: `GOGUFW-v3.6.0.bin`
+- Multiboot firmware: `GOGUFW-v3.6.0-multiboot.bin`
+- CHIRP module: `Gogufw_3.6.0_chirp_module.py`
+- Overlay packages: `Search.zip`, `FMVFO.zip`, `FMMemory.zip` and the combined
+  `Apps.zip` containing those three applications.
+- Final published image: **120,028 / 120,832 bytes** (804 bytes free), including
+  the 920-byte multiboot load image. Linked code/data uses 119,108 bytes.
+- RAM with the enforced stack reservation: **15,840 / 16,384 bytes** (544 bytes
+  free); the 4,096-byte runtime stack and multiboot RAM-stub isolation checks pass.
+
 ## GOGUFW 3.3.5 — 2026-11-01
 
 - Replaced the generic new-message double beep with the measured timing of the

@@ -5,19 +5,23 @@ AFSK at 1200 baud with the APRS RX software demodulator and repeats eligible
 AX.25 UI frames with the APRS TX tone generator.
 
 The GOGUFW build opens a private RX/TX VFO on the frequency saved by APRS Edit
-in the shared APRS profile. It falls back to 144.800 MHz when the profile is
-missing or invalid, and restores the resident VFO when the overlay exits.
+in the shared APRS profile. Version 0.2 also uses the callsign saved by APRS
+Edit when it contains one to six valid characters, with CHIRP boot-message
+line 1 as the fallback. It falls back to 144.800 MHz when the profile frequency
+is missing or invalid, and restores the resident VFO when the overlay exits.
 
-Version 0.1 starts as a `WIDE1-1` fill-in. Key `1` switches between:
+Version 0.2 starts as a `WIDE1-1` fill-in. Key `1` switches between:
 
 - `W1`: only `WIDE1-1` is accepted;
 - `W12`: both `WIDE1-1` and `WIDE2-1` are accepted.
 
-The selected mode is shown in a 3x5-font capsule in the status bar and is saved
-when the app closes. In either mode:
+The selected mode is shown in a 3x5-font capsule in the status bar. Since v0.2
+uses the APRS TX configuration proxy, this choice is session-only and starts at
+`W1` on every launch. In either mode:
 
 - the first unused path address must be `WIDE1-1`, or `WIDE2-1` in `W12`;
-- it is replaced in place by the boot-message callsign with SSID 3 and the H bit;
+- it is replaced in place by the APRS Edit callsign (or boot-message fallback)
+  with SSID 3 and the H bit;
 - source, destination, remaining path and information bytes are preserved;
 - the FCS is recalculated;
 - the eight most recent logical packets are suppressed for up to 30 seconds,
@@ -34,15 +38,16 @@ overlay API.
 
 ## Requirements
 
-- GOGUFW firmware with official application ABI 1/API 3 and GOGU extension 1;
-- a plain 1-6 character callsign in boot-message line 1;
+- GOGUFW firmware with official application ABI 1/API 3, configuration proxy,
+  and the GOGU extension;
+- a plain 1-6 character callsign in APRS Edit or boot-message line 1;
 - FM on the selected VFO;
 - a non-zero squelch setting. The channel must remain squelch-closed for a
   randomized 100-227 ms before transmission. A pending frame is dropped after
   3 seconds. Hearing the same logical packet from another digipeater during
   that wait cancels the queued copy.
 
-The digipeater identifies as the boot callsign with SSID `-3`. EXIT stops it.
+The digipeater identifies as the configured callsign with SSID `-3`. EXIT stops it.
 The screen shows accepted AX.25 UI frames (`RX`) and transmitted frames (`DIGI`)
 on its second row, then logical duplicates (`DUP`) and all other drops (`DROP`)
 on its third row. A dotted separator and the large receive frequency match the

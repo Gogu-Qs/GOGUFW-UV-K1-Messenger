@@ -2,12 +2,23 @@
 """APRS DIGI read-only texts and Bell 202 correlator tables."""
 import math
 import os
+import struct
 import sys
 
 sys.dont_write_bytecode = True
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
-from app_assets import Assets
+from app_assets import Assets, cdefine
+
+PROXY_MAGIC = cdefine("app_config_proxy.h", "APP_CONFIG_PROXY_MAGIC")
+PROFILE_MAGIC = cdefine("aprs_profile.h", "APRS_PROFILE_MAGIC")
+PROFILE_LEN = cdefine("aprs_profile.h", "APRS_PROFILE_LEN")
+TARGET = b"APRS TX"
+
+proxy = struct.pack("<I16sHBBI", PROXY_MAGIC, TARGET.ljust(16, b"\0"),
+                    0, PROFILE_LEN, 0, PROFILE_MAGIC)
+if len(proxy) != 28:
+    raise ValueError("configuration proxy descriptor layout changed")
 
 FS = 9600
 
@@ -19,6 +30,7 @@ def cos_table(freq):
 
 
 a = Assets("APRSDIGI")
+a.prefix("CFG_PROXY", proxy)
 a.text("T_TITLE", "APRS DIGI")
 a.text("T_WAIT", "WAIT")
 a.text("T_HOLD", "HOLD")

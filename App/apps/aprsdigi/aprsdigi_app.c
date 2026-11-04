@@ -21,6 +21,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "../app_api.h"
+#include "../aprs_profile.h"
 #include "aprsdigi_assets.h"
 
 /* PA4 audio capture and the 48 MHz cycle clock are resident (API level 3);
@@ -457,9 +458,15 @@ reset:
     }
 }
 
-static bool makeOwn(const app_api_t *A){
+static bool makeOwn(const app_api_t *A,const uint8_t *profile){
     char raw[12];
-    A->boot_callsign(raw,sizeof raw);
+    uint32_t magic;
+    memcpy(&magic,profile,sizeof magic);
+    uint8_t configured=profile[APRS_PROFILE_CALL_LEN];
+    if(magic==APRS_PROFILE_MAGIC&&configured>=1u&&configured<=APRS_CALL_MAX){
+        memcpy(raw,profile+APRS_PROFILE_CALL,configured);
+        raw[configured]='\0';
+    }else A->boot_callsign(raw,sizeof raw);
     uint8_t n=0;
     while(raw[n]){
         if(n>=6u||!callChar((uint8_t)raw[n])||raw[n]==' ') return false;
@@ -476,19 +483,19 @@ static bool makeOwn(const app_api_t *A){
 __attribute__((section(".text.entry"),used))
 void app_main(const app_api_t *api){
     uint8_t pending[FRAME_MAX];
+    uint8_t profile[APRS_PROFILE_LEN];
     g.A=api;
     const gogu_api_t *G=APP_GoguApi(api);
     if(!G) return;
     G->radio_tune_aprs();
     g.pendingBuf=pending; g.prevKey=APP_KEY_INVALID;
-    api->cfg_load(&g.mode,1u);
-    g.mode=(uint8_t)(g.mode==1u);
+    api->cfg_load(profile,sizeof profile);
     api->af_capture_open();      /* PA4 bias and ADC channel 4, restored by close */
     api->set_af(APP_AF_FM);
     api->delay_ms(50);
     api->backlight_on();
     g.running=true;
-    if(!makeOwn(api)){
+    if(!makeOwn(api,profile)){
         g.state=ST_NOCALL; draw();
         while(g.running){
             uint8_t key=api->get_key();
@@ -501,5 +508,4 @@ void app_main(const app_api_t *api){
     api->af_capture_close();
     api->set_af(APP_AF_MUTE);
     api->audio_path(false);
-    api->cfg_save(&g.mode,1u);
 }

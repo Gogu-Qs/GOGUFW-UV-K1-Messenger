@@ -62,23 +62,62 @@ static const uint16_t s_msgAutoIntervals[] = { 3000u, 6000u, 30000u, 60000u };
 static bool gMsgComposeIsDraftEdit;
 static uint8_t gMsgComposeDraftIndex;
 
-static void show_tx_blocked_notice(void)
+static void show_tx_blocked_notice(bool play_now)
 {
     /* Keep the current Messenger screen underneath a short floating warning.
-     * Four beeps are intentionally distinct from the two-beep RX alert. */
+     * Four beeps are intentionally distinct from the two-beep RX alert.
+     * Key-triggered sends use the normal end-of-key beep queue.  Auto Check
+     * has no key dispatcher to consume that queue, so play it immediately
+     * before its warning is rendered and leave no delayed beep behind. */
     gMsgTxLockNoticeTicks = 200u;
-    gBeepToPlay = BEEP_500HZ_60MS_QUADRUPLE_BEEP_FORCE;
+    if (play_now) {
+        gBeepToPlay = BEEP_NONE;
+        AUDIO_PlayBeep(BEEP_TX_BLOCKED_FORCE);
+    } else {
+        gBeepToPlay = BEEP_TX_BLOCKED_FORCE;
+    }
     gUpdateDisplay = true;
 }
 
 static bool handle_send_failure(const char *text)
 {
     if (MSG_RF_LastSendWasBlocked()) {
-        show_tx_blocked_notice();
+        show_tx_blocked_notice(false);
         return true;
     }
     MSG_STORE_AddOutboxDemo(text);
     return false;
+}
+
+static void handle_range_ping_failure(bool automatic)
+{
+    gMsgRangeStatus = 0u;
+    s_msgRangeWaitTicks = 0u;
+
+    if (automatic) {
+        /* A blocked/failed automatic PING must not leave Auto Check armed.
+         * Clear the interval and every result/wait flag so the status icon
+         * disappears and no later retry is scheduled silently. */
+        s_msgAutoState = 0u;
+        s_msgAutoCountdownTicks = 0u;
+        gUpdateStatus = true;
+    } else {
+        s_msgAutoState &= (uint8_t)~MSG_AUTO_WAIT;
+    }
+
+    /* Match manual SEND PING: explain policy failures instead of returning
+     * silently to HEARD.  The initial Auto Check attempt is made while that
+     * screen is still active, so the same floating reason popup is shown. */
+    if (MSG_RF_LastSendWasBlocked()) {
+        if (automatic) {
+            /* A scheduled check can fail while another screen is open.  Bring
+             * HEARD forward so the existing modal warning is actually visible
+             * instead of expiring invisibly in the background. */
+            gMsgScreen = MSG_SCREEN_RANGE;
+            gRequestDisplayScreen = DISPLAY_MESSENGER;
+        }
+        show_tx_blocked_notice(automatic);
+    }
 }
 
 void MSG_Init(void)
@@ -151,9 +190,7 @@ void MSG_Tick(void)
             gUpdateStatus = true;
             s_msgAutoCountdownTicks = s_msgAutoIntervals[MSG_AUTO_INTERVAL() - 1u];
             if (!MSG_RF_SendRangePing()) {
-                gMsgRangeStatus = 0u;
-                s_msgRangeWaitTicks = 0u;
-                s_msgAutoState &= (uint8_t)~MSG_AUTO_WAIT;
+                handle_range_ping_failure(true);
             }
             gUpdateDisplay = true;
         }
@@ -421,12 +458,8 @@ static void range_send_ping(bool automatic)
     else s_msgAutoState &= (uint8_t)~(MSG_AUTO_WAIT | MSG_AUTO_REPLY);
     gMsgRangeScroll = 0u;
     if (gScreenToDisplay == DISPLAY_MESSENGER) UI_DisplayMessenger();
-    if (!MSG_RF_SendRangePing()) {
-        gMsgRangeStatus = 0u;
-        s_msgRangeWaitTicks = 0u;
-        s_msgAutoState &= (uint8_t)~MSG_AUTO_WAIT;
-        if (!automatic && MSG_RF_LastSendWasBlocked()) show_tx_blocked_notice();
-    }
+    if (!MSG_RF_SendRangePing())
+        handle_range_ping_failure(automatic);
 }
 
 static void auto_check_set(uint8_t interval)

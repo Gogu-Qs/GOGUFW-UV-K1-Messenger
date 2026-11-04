@@ -544,5 +544,6 @@ void UI_DisplayMessenger(void)
         /* Floating modal: retain the current screen and cover only its centre. */
         UI_GOGU_DrawFloatingPopup("TX BLOCKED", tx_block_reason_text());
     }
+
     ST7565_BlitFullScreen();
 }

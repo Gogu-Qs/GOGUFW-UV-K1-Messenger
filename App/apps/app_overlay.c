@@ -40,6 +40,7 @@
 #include "k5viewer.h"
 #endif
 #include "app/app.h"
+#include "app/common.h"
 #include "app/scanner.h"
 #include "app/text_input.h"
 #ifdef ENABLE_MESSENGER
@@ -124,6 +125,7 @@ static struct {
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_BEAM
     uint16_t beam_pending_channel;
 #endif
+    uint16_t mr_pending_channel;
     uint8_t run_slot;
     uint8_t cfg_len;       /* staged length; 0 = nothing to commit */
     bool allow_screen_saver;
@@ -143,6 +145,7 @@ static struct {
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_BEAM
     bool beam_dirty;
 #endif
+    bool mr_dirty;
     bool shortcuts_cached;
     uint8_t shortcut_mask;
     uint8_t shortcut_found;
@@ -167,6 +170,9 @@ static struct {
     uint8_t saved_rx_vfo;
     uint8_t cfg_buf[APP_CONFIG_PROXY_MAX];
 } app_state;
+
+/* A staged official API-4 memory selection returns the Apps menu to MAIN. */
+bool gAppVfoExit;
 
 static const gogu_api_t gogu_api;
 static TEXT_INPUT_Editor_t app_text_editor;
@@ -439,7 +445,7 @@ static uint16_t app_beam_save(const app_beam_channel_t *in)
 
     /* Only one external-flash write can be deferred per app run.  Preserve the
        first successfully received channel if an older app tries to queue more. */
-    if (app_state.beam_dirty)
+    if (app_state.beam_dirty || app_state.mr_dirty)
         return 0xFFFFu;
 
     uint16_t channel = MR_CHANNEL_FIRST;
@@ -510,6 +516,88 @@ static void app_beam_draw(const char *status)
     UI_PrintStringSmallBold(status, 2, LCD_WIDTH - 1u, line);
 }
 #endif
+
+/* ---- official API level 4: memory channels and scan lists ---- */
+_Static_assert(APP_MR_COUNT == MR_CHANNELS_MAX &&
+               APP_MR_LISTS == MR_CHANNELS_LIST &&
+               APP_MR_EVERY == MR_CHANNELS_LIST + 1u,
+               "overlay memory API must match the resident memory layout");
+
+static int app_mr_read(uint16_t channel, app_mr_channel_t *out)
+{
+    if (!IS_MR_CHANNEL(channel))
+        return APP_MR_INVALID;
+
+    const ChannelAttributes_t *const attributes = MR_GetChannelAttributes(channel);
+    if (attributes == NULL || attributes->band > BAND7_470MHz)
+        return APP_MR_INVALID;
+
+    const uint32_t frequency = SETTINGS_FetchChannelFrequency(channel);
+    if (frequency == 0u || frequency == UINT32_MAX)
+        return APP_MR_INVALID;
+
+    if (out != NULL) {
+        out->rx_frequency = frequency;
+        SETTINGS_FetchChannelName(out->name, channel);
+    }
+
+    return attributes->scanlist <= APP_MR_EVERY ? attributes->scanlist : 0;
+}
+
+static int app_mr(uint8_t op, uint16_t index, void *out)
+{
+    if (op == APP_MR_READ)
+        return app_mr_read(index, out);
+
+    if (op == APP_MR_LIST_NAME) {
+        if (index < 1u || index > APP_MR_LISTS)
+            return APP_MR_INVALID;
+        const char *const name = gListName[index - 1u];
+        uint8_t length = 0u;
+        while (length < sizeof(gListName[0]) &&
+               name[length] >= 32 && name[length] < 127)
+            length++;
+        while (length != 0u && name[length - 1u] == ' ')
+            length--;
+        if (out != NULL) {
+            memcpy(out, name, length);
+            ((char *)out)[length] = '\0';
+        }
+        return length;
+    }
+
+    if (op == APP_MR_STAGE) {
+#ifdef ENABLE_FEAT_F4HWN_OVERLAY_BEAM
+        if (app_state.beam_dirty)
+            return APP_MR_INVALID;
+#endif
+        if (app_state.mr_dirty || app_mr_read(index, NULL) < 0)
+            return APP_MR_INVALID;
+        app_state.mr_pending_channel = index;
+        app_state.mr_dirty = true;
+        gAppVfoExit = true;
+        return 0;
+    }
+
+    return APP_MR_INVALID;
+}
+
+static void app_mr_commit(void)
+{
+    if (!app_state.mr_dirty)
+        return;
+    app_state.mr_dirty = false;
+    const uint8_t vfo = gEeprom.TX_VFO;
+    gEeprom.MrChannel[vfo] = app_state.mr_pending_channel;
+    gEeprom.ScreenChannel[vfo] = app_state.mr_pending_channel;
+#ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
+    gRemoveOffset = false;
+    gPowerHigh = false;
+#endif
+    RADIO_ConfigureChannel(vfo, VFO_CONFIGURE_RELOAD);
+    SETTINGS_SaveVfoIndices();
+    gFlagReconfigureVfos = true;
+}
 
 /* ---- radio wrappers ---- */
 static int16_t  app_rssi_dbm(void)     { return BK4819_GetRSSI_dBm() + dBmCorrTable[gRxVfo->Band]; }
@@ -876,6 +964,26 @@ static void app_battery_sample(void)
     BATTERY_Sample(false);
 }
 
+enum { APP_KEY_STATE_QUERY, APP_KEY_STATE_F_OFF, APP_KEY_STATE_F_TOGGLE,
+       APP_KEY_STATE_LOCK_TOGGLE };
+static uint8_t app_key_state(uint8_t action)
+{
+    if (action == APP_KEY_STATE_LOCK_TOGGLE) {
+        gWasFKeyPressed = false;
+        COMMON_KeypadLockToggle();
+    } else if (action == APP_KEY_STATE_F_OFF) {
+        gWasFKeyPressed = false;
+    } else if (action == APP_KEY_STATE_F_TOGGLE && !gEeprom.KEY_LOCK) {
+        gWasFKeyPressed = !gWasFKeyPressed;
+    } else {
+        return (gEeprom.KEY_LOCK ? 1u : 0u) | (gWasFKeyPressed ? 2u : 0u);
+    }
+
+    UI_DisplayStatus();
+    ST7565_BlitStatusLine();
+    return (gEeprom.KEY_LOCK ? 1u : 0u) | (gWasFKeyPressed ? 2u : 0u);
+}
+
 /* ---- v2 TX (beacon) ---- */
 static uint8_t app_tx_state(void)
 {
@@ -894,6 +1002,43 @@ static uint32_t app_tx_freq(void)
     return gTxVfo == &app_radio_vfo
         ? app_radio_vfo.freq_config_TX.Frequency
         : gTxVfo->pTX->Frequency;
+}
+
+static uint8_t app_tx_power(uint8_t level)
+{
+    VFO_Info_t *const vfo = gTxVfo;
+    const uint8_t own = vfo->OUTPUT_POWER;
+    if (level <= OUTPUT_POWER_HIGH) {
+        vfo->OUTPUT_POWER = level;
+        RADIO_ConfigureSquelchAndOutputPower(vfo);
+        vfo->OUTPUT_POWER = own;
+    }
+    return own;
+}
+
+static bool app_gps_position(app_gps_position_t *out)
+{
+    (void)out;
+    /* The official API-4 slot is present and safe to call. GOGUFW does not
+     * retain a live host GPS fix yet because the Fusion RAM image has only a
+     * few bytes of headroom; apps therefore use their persisted fallback. */
+    return false;
+}
+
+static bool app_voice_tx(bool on)
+{
+    if (!on) {
+        app_tx_end();
+        return true;
+    }
+    if (app_tx_state() != 0u)
+        return false;
+    /* Use the resident voice path verbatim.  Besides the carrier setup this
+     * clears every DTMF/live-decoder state that can keep the BK4829 TX audio
+     * filters selected, applies PTT-ID policy and establishes TX function
+     * ownership exactly as a normal physical-PTT press does. */
+    FUNCTION_Select(FUNCTION_TRANSMIT);
+    return true;
 }
 
 static void app_boot_callsign(char *buf, uint8_t len)
@@ -1705,6 +1850,9 @@ static const app_api_t app_api = {
     .blit_page        = ST7565_BlitScreen,
     .lcd_feed         = ST7565_Feed,
     .viewer_update    = app_viewer_update,
+    .mr               = app_mr,
+    .tx_power         = app_tx_power,
+    .gps_position     = app_gps_position,
 };
 
 static const gogu_api_t gogu_api = {
@@ -1725,6 +1873,7 @@ static const gogu_api_t gogu_api = {
 #endif
     .set_text_editor_cursor=app_set_text_editor_cursor,
     .text_editor=app_text_editor_service,
+    .voice_tx=app_voice_tx, .key_state=app_key_state,
 };
 
 /* Preparation and cleanup deliberately live in separate non-inlined calls.
@@ -1791,6 +1940,7 @@ static uint8_t app_prepare_overlay(uint8_t slot)
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_BEAM
     app_state.beam_dirty = false;
 #endif
+    app_state.mr_dirty = false;
 
     app_state.allow_screen_saver = (h.flags & APP_FLAG_SCREEN_SAVER) != 0;
     app_state.screen_saver_wake = false;
@@ -1841,6 +1991,8 @@ static void app_finish_overlay(uint8_t slot)
     BACKLIGHT_TurnOn();
     app_state.allow_screen_saver = false;
     app_state.screen_saver_wake = false;
+    gWasFKeyPressed = false;
+    gUpdateStatus = true;
 
 #ifdef ENABLE_FMRADIO
     if (app_state.fm_host_active) {
@@ -1855,6 +2007,7 @@ static void app_finish_overlay(uint8_t slot)
     gRxVfo         = app_state.saved_rx;
     gTxVfo         = app_state.saved_tx;
     gCurrentVfo    = app_state.saved_current;
+    RADIO_ConfigureSquelchAndOutputPower(gTxVfo);
     RADIO_SetupRegisters(true);
 
     /* The overlay held app code, not a valid config sector. */
@@ -1863,6 +2016,7 @@ static void app_finish_overlay(uint8_t slot)
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_BEAM
     app_beam_commit();
 #endif
+    app_mr_commit();
 
     /* Commit a validated upstream proxy target, GOGUFW's extended APRS editor
      * payload, or ordinary local app config. All writes remain deferred until

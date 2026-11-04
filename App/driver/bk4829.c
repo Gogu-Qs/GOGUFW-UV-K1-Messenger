@@ -933,58 +933,14 @@ void BK4819_SetCompander(const unsigned int mode)
     // mode 2 .. RX
     // mode 3 .. TX and RX
 
+    /* BK4829 differs from BK4819 here: REG_31<3> is its compander switch,
+     * while REG_28/29 contain the RX/TX AF noise gates and HPF1 settings.
+     * Writing BK4819 ratio tables into those registers can mute or damage
+     * ordinary analogue audio, so leave them intact. REG_28<8> is managed
+     * independently by SetRxG in radio.c. */
     const uint16_t r31 = BK4819_ReadRegister(BK4819_REG_31);
-
-    if (mode == 0)
-    {   // disable
-        BK4819_WriteRegister(BK4819_REG_31, r31 & ~(1u << 3));
-        return;
-    }
-
-    // REG_29
-    //
-    // <15:14> 10 Compress (AF Tx) Ratio
-    //         00 = Disable
-    //         01 = 1.333:1
-    //         10 = 2:1
-    //         11 = 4:1
-    //
-    // <13:7>  86 Compress (AF Tx) 0 dB point (dB)
-    //
-    // <6:0>   64 Compress (AF Tx) noise point (dB)
-    //
-    const uint16_t compress_ratio    = (mode == 1 || mode >= 3) ? 2 : 0;  // 2:1
-    const uint16_t compress_0dB      = 86;
-    const uint16_t compress_noise_dB = 64;
-//  AB40  10 1010110 1000000
-    BK4819_WriteRegister(BK4819_REG_29, // (BK4819_ReadRegister(BK4819_REG_29) & ~(3u << 14)) | (compress_ratio << 14));
-        (compress_ratio    << 14) |
-        (compress_0dB      <<  7) |
-        (compress_noise_dB <<  0));
-
-    // REG_28
-    //
-    // <15:14> 01 Expander (AF Rx) Ratio
-    //         00 = Disable
-    //         01 = 1:2
-    //         10 = 1:3
-    //         11 = 1:4
-    //
-    // <13:7>  86 Expander (AF Rx) 0 dB point (dB)
-    //
-    // <6:0>   56 Expander (AF Rx) noise point (dB)
-    //
-    const uint16_t expand_ratio    = (mode >= 2) ? 1 : 0;   // 1:2
-    const uint16_t expand_0dB      = 86;
-    const uint16_t expand_noise_dB = 56;
-//  6B38  01 1010110 0111000
-    BK4819_WriteRegister(BK4819_REG_28, // (BK4819_ReadRegister(BK4819_REG_28) & ~(3u << 14)) | (expand_ratio << 14));
-        (expand_ratio    << 14) |
-        (expand_0dB      <<  7) |
-        (expand_noise_dB <<  0));
-
-    // enable
-    BK4819_WriteRegister(BK4819_REG_31, r31 | (1u << 3));
+    BK4819_WriteRegister(BK4819_REG_31,
+                         mode == 0 ? (r31 & ~(1u << 3)) : (r31 | (1u << 3)));
 }
 
 void BK4819_DisableVox(void)

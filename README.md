@@ -1,7 +1,8 @@
-# GOGUFW 3.3.5
+# GOGUFW 3.6.0
 
 GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3 based on
-**F4HWN 6.3.0**. It keeps the F4HWN radio feature set and adds an integrated
+**F4HWN 6.3.0**, with selected compatible F4HWN 7.0 services and fixes. It keeps
+the F4HWN radio feature set and adds an integrated
 radio-to-radio Messenger, HEARD list, multi-radio Range Check, CALLTX melodies,
 RF Log Lite, named FM memories and a multiboot environment.
 
@@ -9,19 +10,19 @@ RF Log Lite, named FM memories and a multiboot environment.
 
 | Statistic | Project status |
 | --- | --- |
-| 📦 **Current stable release** | GOGUFW 3.3.5 |
+| 📦 **Current stable release** | GOGUFW 3.6.0 |
 | 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
 | ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
 | ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
 | 🍴 **GitHub forks** | [![GitHub forks](https://img.shields.io/github/forks/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=forks&color=orange)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/forks) |
-| 🧩 **Firmware base** | **F4HWN 6.3.0** |
+| 🧩 **Firmware base** | **F4HWN 6.3.0 + selected F4HWN 7.0 additions** |
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **Firmware image** | 118,992 / 120,832 bytes · **98.48%** · 1,840 bytes free, including the 920-byte multiboot load image |
+| 💾 **Firmware image** | 120,028 / 120,832 bytes · **99.33%** · 804 bytes free, including the 920-byte multiboot load image |
 | 🧠 **Runtime stack** | 4,096-byte linker reservation · live/current and high-water values reported by `SystemInfo.app` |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Auto Check · Range Check · CALLTX · RF Log Lite · Full Watch · FM names/RSSI |
-| 🔌 **CHIRP support** | Matching 3.3.5 module with 1024 memories, Messenger settings, FM names and all channel policies |
+| 🔌 **CHIRP support** | Matching 3.6.0 module with 1024 memories, Messenger settings, FM names and all channel policies |
 
 ## Compatibility and downloads
 
@@ -29,28 +30,27 @@ GOGUFW is intended only for Quansheng **UV-K1 / UV-K5 V3** radios built around t
 
 The current release contains:
 
-- `GOGUFW-v3.3.5.bin` and `GOGUFW-v3.3.5-multiboot.bin` — normal and multiboot firmware images;
-- `Gogufw_3.3.5_chirp_module.py` — the matching custom CHIRP module;
-- `Apps.zip` — the compatible core GOGUFW overlay bundle;
+- `GOGUFW-v3.6.0.bin` and `GOGUFW-v3.6.0-multiboot.bin` — normal and multiboot firmware images;
+- `Gogufw_3.6.0_chirp_module.py` — the matching custom CHIRP module;
+- `Apps.zip` — the requested Search/FM VFO/FM Memory overlay bundle;
 - `FMVFO.app` and `FMMemory.app` — the two required Broadcast FM overlays;
 - `Search.app` — the matching Frequency/Tone Search overlay.
 
 > [!CAUTION]
-> GOGUFW 3.3.1 and later replace the former experimental GOGUFW API levels 4–9 with
-> F4HWN 6.3.0's official ABI 1 / API 3 layout. **Old GOGUFW overlay binaries
+> GOGUFW 3.3.1 replaced the former experimental GOGUFW API levels 4–9 with
+> F4HWN's official ABI 1 / API 3 layout. **Old GOGUFW overlay binaries
 > built for API 4–9 will not run and are intentionally rejected as
-> incompatible.** Reinstall the applications published with this release.
-> GOGU-only services now use a separately versioned capability extension so
-> future official API levels can be added without changing every GOGU app.
+> incompatible.** GOGUFW 3.6.0 now appends the official F4HWN API 4 services;
+> API-3 apps built for GOGUFW 3.3.1 and later remain compatible. GOGU-only
+> services use a separately versioned capability extension.
 
-**Broadcast FM is not a resident screen. Install this release's `FMVFO.app`
-and `FMMemory.app` after flashing 3.3.5; installing only one leaves mode
+**Broadcast FM is not a resident screen. Install this release's updated
+`FMVFO.app` and `FMMemory.app` after flashing 3.6.0; installing only one leaves mode
 switching incomplete. Install this release's `Search.app` for F+4/F+STAR.**
 
-`FMVFO.app`, `FMMemory.app` and `Search.app` are supplied again with 3.3.5 for
-convenience, but their binaries have not changed since 3.3.2. If they are
-already installed, do not reinstall them; this release supports a
-firmware-only update.
+`FMVFO.app` and `FMMemory.app` changed in 3.6.0 and should be reinstalled
+together. `Search.app` remains byte-for-byte identical to 3.3.5; if Search is
+already installed, it does not need to be reinstalled.
 
 [Download GOGUFW releases](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases)
 
@@ -114,6 +114,10 @@ HEARD records recently received Messenger packets with callsign, battery voltage
 
 - Open HEARD with **F + 7**, or assign **HEARD** to a side key.
 - Press **MENU** on HEARD to open **SEND PING** and **AUTO CHECK**. SEND PING starts the normal 12-second Range Check.
+- If a manual or automatic PING is blocked by channel/frequency/modulation or
+  battery policy, the same visible TX-blocked warning and dedicated short/long
+  error tone are produced. A blocked automatic attempt also cancels AUTO CHECK
+  instead of appearing to remain active.
 - AUTO CHECK offers **OFF**, **30 seconds, 1 minute, 5 minutes and 10 minutes** and can repeat the check on every normal firmware screen. A received PONG updates HEARD silently; a cycle with no replies gives a restrained 450-to-320 Hz descending two-tone immediately from the background service rather than waiting for a key press. Active voice TX/RX and scanning defer the check until the RF path is free.
 - Selecting a timed AUTO CHECK sends the first PING immediately. Its VOX status-bar slot remains empty until that first result is known. A chain-link icon stays fixed after a PONG; the same icon blinks at one-second intervals if the 12-second reply window expires unanswered. Later checks keep the last completed result visible until a new result replaces it. If VOX is enabled, the VOX icon takes priority and the AUTO CHECK mark is hidden.
 - The Messenger envelope is independent of AUTO CHECK: it appears only while at least one Inbox message is unread and clears immediately after the last unread message is read or deleted.
@@ -174,6 +178,9 @@ normal use and makes room in the firmware without changing saved FM data.
 - The radio retains 48 named FM memories, rename/delete controls, channel save,
   four configurable bands and **LIVE RSSI**. Existing settings, memories and
   names are reused without conversion.
+- In the 3.6.0 overlays the complete resident status bar remains continuously
+  visible during tuning and menu actions. Holding **F** toggles the normal
+  keypad lock, and the resident F/lock indicators remain synchronized.
 
 | Saved broadcast station | Manual FM tuning |
 | --- | --- |
@@ -200,12 +207,14 @@ Scanner-created memories preserve the power setting that was active before the s
 
 GOGUFW provides 48 external-Flash app slots. Empty slots are hidden; hold UP/DOWN to move quickly through the list and press `*` to toggle the right column between app size and version. Install `.app` files from the **Apps** page in Armel's UV Studio while the radio is running normally.
 
-GOGUFW 3.3.5 exposes F4HWN 6.3.0's official ABI 1 / API 3 prefix. GOGUFW-only
-services use `APP_CAP_GOGU_EXT` and a separately versioned extension table.
+GOGUFW 3.6.0 exposes F4HWN's append-only official ABI 1 / API 4 contract,
+including memory-channel access/staging, app TX power and the GPS-position
+service slot. GOGUFW-only services use `APP_CAP_GOGU_EXT` and a separately
+versioned extension table.
 This replaces the experimental GOGUFW API 4–9 layout: older custom GOGUFW app
 binaries from the old experimental API 4–9 layout are not compatible. Existing
-apps built for GOGUFW 3.3.1/3.3.2's official API-3 prefix remain compatible with
-3.3.5 and do not need to be reinstalled for a firmware-only update. Official
+apps built for GOGUFW 3.3.1–3.3.5's official API-3 prefix remain compatible with
+3.6.0 and do not need to be reinstalled for a firmware-only update. Official
 API-3 apps work when their declared resident capabilities are available; Beam
 remains unsupported.
 
@@ -226,6 +235,9 @@ Open Spectrum with **F + 5**.
 
 - From MR mode it scans valid stored memories and displays the selected channel name and frequency.
 - From VFO mode it scans a continuous frequency range.
+- VFO mode offers 16, 32, 64, 128, 256, 512, 1024 and 2048 samples. Higher
+  values combine several RF samples into each of the 128 display columns to
+  cover a wider span, with a progressively simplified ruler from 512x upward.
 - Press **PTT** on a peak to stop and listen.
 - Press **MENU** while listening to inspect or adjust LNA/PGA controls.
 - Press **PTT** again to open the stored MR channel or transfer a VFO peak to the active VFO; this does not transmit.
@@ -262,10 +274,10 @@ Hold **MENU while powering on** to open the firmware-slot selector.
 
 ## CHIRP
 
-Use the module that matches the firmware release. For GOGUFW 3.3.5:
+Use the module that matches the firmware release. For GOGUFW 3.6.0:
 
 1. Start CHIRP and choose **File → Load Module**.
-2. Select `Gogufw_3.3.5_chirp_module.py`.
+2. Select `Gogufw_3.6.0_chirp_module.py`.
 3. Download the radio using **Quansheng → UV-K1 / UV-K5 V3 GOGUFW Messenger**.
 4. Edit channels, side-key actions, Messenger/Call settings, FM names,
    `No FSK TX`, `No Roger`, `Scrambler` and `Compander` as required.
@@ -283,7 +295,7 @@ cmake --build --preset Fusion
 ```
 
 The build emits the normal `gogufw.bin` and the canonical multiboot filename
-`f4hwn.gogufw.v3.3.5.bin`. Build the paired FM apps by running `build.sh` in
+`f4hwn.gogufw.v3.6.0.bin`. Build the paired FM apps by running `build.sh` in
 `App/apps/fm` and `App/apps/fmmemory`; they produce `FMVFO.app` and
 `FMMemory.app` respectively. See `BUILD_VSCODE_MAC.md` or
 `BUILD_WITH_VSCODE.md` for environment setup.

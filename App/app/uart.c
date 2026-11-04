@@ -182,15 +182,18 @@ typedef union
     };
 } UART_Command_t __attribute__ ((aligned (4)));
 
+/* UART_ServiceCommands() parses and handles each port synchronously before
+ * examining the other one, so both transports can safely share the decoded
+ * command workspace.  Their asynchronous RX rings and parser indices remain
+ * independent; this only removes a redundant 256-byte staging copy. */
+static UART_Command_t SharedCommand;
 
 #if defined(ENABLE_UART)
     static uint32_t UART_Timestamp;
-    static UART_Command_t UART_Command;
     static uint16_t gUART_WriteIndex;
 #endif
 #if defined(ENABLE_USB)
     static uint32_t VCP_Timestamp;
-    static UART_Command_t VCP_Command;
 #if defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS)
     uint16_t VCP_ReadIndex;
 #else
@@ -670,7 +673,7 @@ bool UART_IsCommandAvailable(uint32_t Port)
         ReadBuf = UART_DMA_Buffer;
         ReadBufSize = sizeof(UART_DMA_Buffer);
         pReadPointer = &gUART_WriteIndex;
-        pUART_Command = &UART_Command;
+        pUART_Command = &SharedCommand;
     }
 #endif
 #if defined(ENABLE_USB)
@@ -680,7 +683,7 @@ bool UART_IsCommandAvailable(uint32_t Port)
         ReadBuf = VCP_RxBuf;
         ReadBufSize = sizeof(VCP_RxBuf);
         pReadPointer = &VCP_ReadIndex;
-        pUART_Command = &VCP_Command;
+        pUART_Command = &SharedCommand;
     }
 #endif
     else
@@ -819,13 +822,13 @@ void UART_HandleCommand(uint32_t Port)
 #if defined(ENABLE_UART)
     else if (Port == UART_PORT_UART)
     {
-        pUART_Command = &UART_Command;
+        pUART_Command = &SharedCommand;
     }
 #endif
 #if defined(ENABLE_USB)
     else if (Port == UART_PORT_VCP)
     {
-        pUART_Command = &VCP_Command;
+        pUART_Command = &SharedCommand;
     }
 #endif
     else

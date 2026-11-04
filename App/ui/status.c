@@ -79,18 +79,19 @@ void UI_DrawStatusBattery(uint8_t *line, char *str)
 #endif
 
 #ifdef ENABLE_MESSENGER
-// 10x8 envelope outline used in the original GGFW Messenger experiments.
+// 11x7 envelope from the supplied pixel reference.  Like the other status-bar
+// marks it begins at bit 0 (the top screen row) and leaves only bit 7 clear.
 // It is drawn in the former CL/OP/PTT-session indicator area, while MO/DWR
 // remains untouched.
-static const uint8_t BITMAP_MSG_ENVELOPE[10] = {
-    0x7E, 0x42, 0x46, 0x4A, 0x52, 0x52, 0x4A, 0x46, 0x42, 0x7E
+static const uint8_t BITMAP_MSG_ENVELOPE[11] = {
+    0x3E, 0x43, 0x45, 0x49, 0x51, 0x51,
+    0x51, 0x49, 0x45, 0x43, 0x3E
 };
-/* Thin 10x6 interlocking-link mark derived from the supplied reference icon.
- * Bits 0 and 7 stay clear, matching the vertical margins of the envelope and
- * VOX marks instead of touching the lower edge of the status bar. */
+/* 10x7 interlocking-link mark copied cell-for-cell from the supplied pixel
+ * reference.  Its first active pixels are in bit 0 and bit 7 stays clear. */
 static const uint8_t BITMAP_MSG_AUTO_LINK[10] = {
-    0x00, 0x30, 0x40, 0x58, 0x44,
-    0x2A, 0x1A, 0x02, 0x0C, 0x00
+    0x30, 0x48, 0x5C, 0x52, 0x25,
+    0x1D, 0x09, 0x06, 0x00, 0x00
 };
 #endif
 

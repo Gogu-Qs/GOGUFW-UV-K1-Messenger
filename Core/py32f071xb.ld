@@ -159,10 +159,23 @@ SECTIONS
     *(.noncacheable*)
     . = ALIGN(4);
   } >RAM
+
+  /* Fill the otherwise unusable gap before the fixed overlay anchor with
+     state whose contents are guarded by separately zeroed counters. */
+  .pre_overlay_bss (NOLOAD) :
+  {
+    . = ALIGN(4);
+    __pre_overlay_bss_start = .;
+    KEEP(*(.pre_overlay_bss))
+    KEEP(*(.pre_overlay_bss*))
+    . = ALIGN(4);
+    __pre_overlay_bss_end = .;
+  } >RAM
+
   /* The restore-only routine and the 4 KiB PY25Q16 sector cache deliberately
      share one fixed RAM address. Its load image stays in internal Flash until
      the validated slot is ready to be restored. */
-  ASSERT((ADDR(.noncacheable) + SIZEOF(.noncacheable)) <= (ORIGIN(RAM) + 0x280),
+  ASSERT((ADDR(.pre_overlay_bss) + SIZEOF(.pre_overlay_bss)) <= (ORIGIN(RAM) + 0x280),
          "RAM before the overlay exceeds the fixed 0x280 anchor")
   OVERLAY (ORIGIN(RAM) + 0x280) : NOCROSSREFS AT (LOADADDR(.data) + SIZEOF(.data))
   {

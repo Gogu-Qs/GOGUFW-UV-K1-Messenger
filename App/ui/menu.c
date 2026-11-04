@@ -156,6 +156,7 @@ const t_menu_item MenuList[] =
     {"SetGUI",      MENU_SET_GUI       },
 #ifdef ENABLE_FEAT_F4HWN_AUDIO    
     {"SetRxA",      MENU_SET_AUD       },
+    {"SetRxG",      MENU_SET_RXG       },
 #endif
     {"SetTmr",      MENU_SET_TMR       },
 #ifdef ENABLE_FEAT_F4HWN_SLEEP
@@ -1511,6 +1512,12 @@ void UI_DisplayMenu(void)
                     strcpy(String, gSubMenu_SET_AUD_FM[gSubMenuSelection]);
                     strcpy(top_right_badge, "FM");
                 }
+                break;
+            case MENU_SET_RXG:
+                if (RADIO_IsRxCompanderOn(gTxVfo))
+                    strcpy(String, "ON\n(COMPND)");
+                else
+                    strcpy(String, gSubMenu_OFF_ON[gSubMenuSelection]);
                 break;
         #endif
 

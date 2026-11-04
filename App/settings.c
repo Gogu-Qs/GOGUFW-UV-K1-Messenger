@@ -135,6 +135,12 @@ void SETTINGS_InitEEPROM(void)
                     buf[i] = dBmCorrTable[i];
                 PY25Q16_WriteBuffer(0x00A0B9, buf, 7, false);
             }
+
+            /* 0x00A0C0 was unused in the Fusion build. Preserve the previous
+             * receive behaviour on upgrade by enabling the new BK4829 AF
+             * noise gate once; subsequent saves keep the user's SetRxG value. */
+            uint8_t rxg = 1u;
+            PY25Q16_WriteBuffer(0x00A0C0, &rxg, 1u, false);
         }
     }
 
@@ -300,6 +306,9 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
 
     // 0EA8..0EAF
     PY25Q16_ReadBuffer(0x00A0A8 + 0x18, Data, 8);
+    #ifdef ENABLE_FEAT_F4HWN_AUDIO
+        gSetting_set_rxg = (Data[0] < 2u) ? Data[0] : true;
+    #endif
     #ifdef ENABLE_ALARM
         gEeprom.ALARM_MODE                 = (Data[0] <  2) ? Data[0] : true;
     #endif
@@ -1078,10 +1087,10 @@ void SETTINGS_SaveSettings(void)
 
     // 0x0EA8
     State = SecBuf + 0x18;
-    #if defined(ENABLE_ALARM) || defined(ENABLE_TX1750)
+    #ifdef ENABLE_FEAT_F4HWN_AUDIO
+        State[0] = gSetting_set_rxg;
+    #elif defined(ENABLE_ALARM) || defined(ENABLE_TX1750)
         State[0] = gEeprom.ALARM_MODE;
-    #else
-        State[0] = false;
     #endif
     State[1] = gEeprom.ROGER;
     State[2] = gEeprom.REPEATER_TAIL_TONE_ELIMINATION;

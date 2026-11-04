@@ -28,6 +28,7 @@
 
 #include "driver/backlight.h"
 #include "frequencies.h"
+#include "ui/battery.h"
 #include "ui/helper.h"
 #include "ui/main.h"
 
@@ -132,9 +133,9 @@ uint32_t currentFreq, tempFreq;
 // Peak hold: tracks the highest Y per column with timed decay
 #define PEAK_HOLD_DELAY  15           // Sweeps before decay starts
 #define PEAK_HOLD_INIT   0xFF         // "no peak" sentinel (same as SPECTRUM_TOPY_SKIP)
-// DrawingEndY is also used by the bottom-axis ticks (frame-buffer page 5,
-// bit 0). Keep the live graph one pixel above that axis; otherwise values at
-// or below dbMin are drawn on the axis itself and appear to vanish under it.
+// DrawingEndY remains the original VFO bottom-axis row (y=40); Memory Spectrum
+// is aligned to that same row. Keep the live graph one pixel above it so weak
+// values do not disappear into the ruler.
 #define SPECTRUM_GRAPH_BOTTOM_Y (DrawingEndY - 1u)
 
 // Cached REG_30 value for scan steps: avoids re-reading it on every SetFScan()
@@ -257,14 +258,23 @@ static void LoadSettings()
     uint8_t Data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     PY25Q16_ReadBuffer(0x00A148, Data, sizeof(Data));
 
-    // Data[0]: scanStepIndex (7:4), stepsCount (3:2), listenBw (1:0)
+    // Data[0]: scanStepIndex (7:4), legacy stepsCount (3:2), listenBw (1:0)
+    // Data[1]: settings layout version
+    // Data[4]: v2 stepsCount (0..7 => 16..2048 samples)
     settings.scanStepIndex = (Data[0] >> 4) & 0x0F;
     if (settings.scanStepIndex > 14)
         settings.scanStepIndex = S_STEP_25_0kHz;
 
-    settings.stepsCount = (Data[0] >> 2) & 0x03;
-    if (settings.stepsCount > 3)
-        settings.stepsCount = STEPS_64;
+    if (Data[1] >= 2u && Data[4] <= STEPS_2048)
+    {
+        settings.stepsCount = (StepsCount)Data[4];
+    }
+    else
+    {
+        // v1 stored the count in reverse order: 0/1/2/3 = 128/64/32/16.
+        const uint8_t legacySteps = (Data[0] >> 2) & 0x03;
+        settings.stepsCount = (StepsCount)(STEPS_128 - legacySteps);
+    }
 
     settings.listenBw = Data[0] & 0x03;
     if (settings.listenBw > 2)
@@ -277,7 +287,7 @@ static void LoadSettings()
     // Data[3]: rssiTriggerLevel as uint8_t (0xFF = auto)
     settings.rssiTriggerLevel = (Data[3] == 0xFF) ? RSSI_MAX_VALUE : Data[3];
 
-    // Data[4] ~ Data[7] are free (for the moment...)
+    // Data[5] ~ Data[7] are free (for the moment...)
 }
 
 static void SaveSettings()
@@ -285,16 +295,23 @@ static void SaveSettings()
     uint8_t Data[8] = {0};
     PY25Q16_ReadBuffer(0x00A148, Data, sizeof(Data));
 
-    // Data[0]: scanStepIndex (7:4), stepsCount (3:2), listenBw (1:0)
-    Data[0] = (settings.scanStepIndex << 4) | (settings.stepsCount << 2) | settings.listenBw;
+    // Keep a sensible legacy count in Data[0] for downgrade compatibility.
+    // Counts above 128 appear as 128 to older firmware; v2 reads the full
+    // three-bit value from Data[4].
+    uint8_t legacySteps = 0u;
+    if (settings.stepsCount < STEPS_128)
+        legacySteps = (uint8_t)(STEPS_128 - settings.stepsCount);
+    Data[0] = (settings.scanStepIndex << 4) | (legacySteps << 2) | settings.listenBw;
 
-    Data[1] = 1u;
+    Data[1] = 2u;
 
     // Data[2]: dbMax encoded as (dbMax + 130) / 5
     Data[2] = (uint8_t)((settings.dbMax + 130) / 5);
 
     // Data[3]: rssiTriggerLevel as uint8_t (0xFF = auto)
     Data[3] = (settings.rssiTriggerLevel == RSSI_MAX_VALUE) ? 0xFF : (uint8_t)settings.rssiTriggerLevel;
+
+    Data[4] = (uint8_t)settings.stepsCount;
 
     PY25Q16_WriteBuffer(0x00A148, Data, sizeof(Data), false);
 }
@@ -584,7 +601,7 @@ uint16_t GetStepsCount()
         return (range / step) + 1;  // +1 to include up limit
     }
 #endif
-    return 128 >> settings.stepsCount;
+    return (uint16_t)(16u << settings.stepsCount);
 }
 
 #ifdef ENABLE_SCAN_RANGES
@@ -599,6 +616,43 @@ static uint16_t GetStepsCountDisplay()
 #endif
 
 uint32_t GetBW() { return GetStepsCount() * GetScanStep(); }
+
+static void ClampVfoScanWindow()
+{
+    if (spectrumChannelMode)
+        return;
+#ifdef ENABLE_SCAN_RANGES
+    if (gScanRangeStart)
+        return;
+#endif
+
+    const uint32_t bw = GetBW();
+    const uint32_t fullRange = F_MAX - F_MIN;
+    if (bw >= fullRange)
+    {
+        currentFreq = IsCenterMode() ? F_MIN + (fullRange >> 1) : F_MIN;
+        return;
+    }
+
+    if (IsCenterMode())
+    {
+        const uint32_t half = bw >> 1;
+        const uint32_t minCenter = F_MIN + half;
+        const uint32_t maxCenter = F_MAX - half;
+        if (currentFreq < minCenter)
+            currentFreq = minCenter;
+        else if (currentFreq > maxCenter)
+            currentFreq = maxCenter;
+    }
+    else
+    {
+        const uint32_t maxStart = F_MAX - bw;
+        if (currentFreq < F_MIN)
+            currentFreq = F_MIN;
+        else if (currentFreq > maxStart)
+            currentFreq = maxStart;
+    }
+}
 
 static uint16_t SpectrumChannelAt(uint16_t ordinal)
 {
@@ -676,7 +730,8 @@ uint32_t GetFEnd()
         return gScanRangeStop;
     }
 #endif
-    return currentFreq + GetBW();
+    return IsCenterMode() ? currentFreq + (GetBW() >> 1)
+                          : currentFreq + GetBW();
 }
 
 uint8_t GetBWRegValueForScan(void);
@@ -1124,8 +1179,17 @@ static void SetRssiHistory(uint16_t idx, uint16_t rssi)
 
 static void Measure()
 {
+    const bool statusRssiWasInvalid =
+        scanInfo.rssi == 0 || scanInfo.rssi == RSSI_MAX_VALUE;
     uint16_t rssi = scanInfo.rssi = GetRssi();
     SetRssiHistory(scanInfo.i, rssi);
+
+    // ResetScanStats() deliberately marks the current RSSI as unavailable
+    // while RX hands control back to the sweep. Refresh the status line on
+    // the first new measurement; otherwise M--- can remain visible until the
+    // slow periodic refresh or a manual trigger adjustment.
+    if (statusRssiWasInvalid)
+        redrawStatus = true;
 }
 
 static void RequestAutoTriggerRecalibration()
@@ -1178,6 +1242,7 @@ static void ResetSpectrumToDefaults()
 
     // Keep frequency/range unchanged; recompute move step from fresh scan params.
     settings.frequencyChangeStep = GetBW() >> 1;
+    ClampVfoScanWindow();
 
     RADIO_SetModulation(settings.modulationType);
     BK4819_SetFilterBandwidth(settings.listenBw, false);
@@ -1294,6 +1359,7 @@ static void UpdateCurrentFreq(bool inc)
     {
         return;
     }
+    ClampVfoScanWindow();
     RelaunchScan();
     ResetBlacklist();
     redrawScreen = true;
@@ -1419,15 +1485,11 @@ static void ToggleBacklight()
 
 static void ToggleStepsCount()
 {
-    if (settings.stepsCount == STEPS_128)
-    {
-        settings.stepsCount = STEPS_16;
-    }
-    else
-    {
-        settings.stepsCount--;
-    }
+    settings.stepsCount = (settings.stepsCount == STEPS_2048)
+                              ? STEPS_16
+                              : (StepsCount)(settings.stepsCount + 1);
     settings.frequencyChangeStep = GetBW() >> 1;
+    ClampVfoScanWindow();
     RelaunchScan();
     ResetBlacklist();
     redrawScreen = true;
@@ -1785,7 +1847,8 @@ static void BuildCurrentSpectrumTopY(uint8_t *topY)
     // max bars at 128 to correctly draw larger numbers of samples
     uint8_t bars = (steps > 128) ? 128 : steps;
 #else
-    uint8_t bars = 128 >> settings.stepsCount;
+    uint16_t stepCount = GetStepsCount();
+    uint8_t bars = (stepCount > 128u) ? 128u : (uint8_t)stepCount;
     if (bars == 0)
         bars = 1;
 #endif
@@ -1829,32 +1892,11 @@ static void DrawStatus()
     if (spectrumChannelMode && spectrumDisplayName[0])
         UI_PrintStringSmallBufferNormal(spectrumDisplayName, gStatusLine + 43);
 
-    BOARD_ADC_GetBatteryInfo(&gBatteryVoltages[gBatteryCheckCounter++ % 4],
-                             &gBatteryCurrent);
-
-    uint16_t voltage = (gBatteryVoltages[0] + gBatteryVoltages[1] +
-                        gBatteryVoltages[2] + gBatteryVoltages[3]) /
-                       4 * 760 / gBatteryCalibration[3];
-
-    unsigned perc = BATTERY_VoltsToPercent(voltage);
-
-    // sprintf(String, "%d %d", voltage, perc);
-    // GUI_DisplaySmallest(String, 48, 1, true, true);
-
-    gStatusLine[116] = 0b00011100;
-    gStatusLine[117] = 0b00111110;
-    for (int i = 118; i <= 126; i++)
-    {
-        gStatusLine[i] = 0b00100010;
-    }
-
-    for (unsigned i = 127; i >= 118; i--)
-    {
-        if (127 - i <= (perc + 5) * 9 / 100)
-        {
-            gStatusLine[i] = 0b00111110;
-        }
-    }
+    // Use the exact same battery outline, level bars and low-battery blink as
+    // the normal radio status bar. Spectrum intentionally omits the optional
+    // voltage/percentage text and shows only the icon.
+    UI_DrawBattery(gStatusLine + LCD_WIDTH - sizeof(BITMAP_BatteryLevel1),
+                   gBatteryDisplayLevel, gLowBatteryBlink);
 }
 
 #ifdef ENABLE_FEAT_F4HWN_SPECTRUM
@@ -1864,10 +1906,13 @@ static void ShowChannelName(uint32_t f)
     static char channelName[12]; 
     f = NormalizeScanFrequency(f);
 
-    // Channel name starts at x=43 (fixed), leaving room for the dBm
-    // string on the left (max ~40 px) and battery indicator at x=116.
-    // Clear first so a shorter name doesn't leave stale pixels.
-    memset(&gStatusLine[43], 0, 116 - 43);
+    // Channel name starts at x=43 (fixed), leaving room for the dBm string on
+    // the left and the normal-radio battery icon on the right. Clear only up
+    // to the battery's actual first column; clearing to the old x=116 custom
+    // icon position erased five columns of the 17-pixel standard battery and
+    // made its left edge blink whenever the VFO channel name was refreshed.
+    const uint8_t batteryX = LCD_WIDTH - sizeof(BITMAP_BatteryLevel1);
+    memset(&gStatusLine[43], 0, batteryX - 43u);
 
     if (isListening)
     {
@@ -2045,15 +2090,40 @@ static void DrawTicks()
     uint32_t f = GetFStart();
     uint32_t span = GetFEnd() - GetFStart();
     uint32_t step = span / 128;
-    for (uint8_t i = 0; i < 128; i += (1 << settings.stepsCount))
-    {
-        f = GetFStart() + span * i / 128;
-        uint8_t barValue = 0b00000001;
-        (f % 10000) < step && (barValue |= 0b00000010);
-        (f % 50000) < step && (barValue |= 0b00000100);
-        (f % 100000) < step && (barValue |= 0b00011000);
+    const uint16_t sampleCount = GetStepsCount();
 
-        gFrameBuffer[5][i] |= barValue;
+    // At 512+ samples the frequency-per-pixel interval is large enough that
+    // the old modulo tests turn almost every LCD column into a tall tick. Use
+    // an increasingly sparse, screen-relative ruler instead: 32 ticks at
+    // 512x, 16 at 1024x and 8 at 2048x.  16x..256x retain the original look.
+    if (sampleCount >= 512u)
+    {
+        const uint8_t sparseStride = (uint8_t)(sampleCount / 128u);
+        for (uint8_t i = 0; i < 128; i += sparseStride)
+        {
+            uint8_t barValue = 0b00000001;
+            if ((i & 31u) == 0u)
+                barValue = 0b00000111;
+            else if ((i & 15u) == 0u)
+                barValue = 0b00000011;
+            gFrameBuffer[5][i] |= barValue;
+        }
+    }
+    else
+    {
+        const uint8_t pixelStride = sampleCount >= 128u
+                                        ? 1u
+                                        : (uint8_t)(128u / sampleCount);
+        for (uint8_t i = 0; i < 128; i += pixelStride)
+        {
+            f = GetFStart() + span * i / 128;
+            uint8_t barValue = 0b00000001;
+            (f % 10000) < step && (barValue |= 0b00000010);
+            (f % 50000) < step && (barValue |= 0b00000100);
+            (f % 100000) < step && (barValue |= 0b00011000);
+
+            gFrameBuffer[5][i] |= barValue;
+        }
     }
 
     // center
@@ -2074,6 +2144,19 @@ static void DrawTicks()
 
 static void DrawArrow(uint8_t x)
 {
+    // Dense wide-span rulers can otherwise join the marker to neighbouring
+    // ticks. Clear only the marker's lower five-column field; the y=40 axis
+    // and the spectrum graph above it remain untouched.
+    if (!spectrumChannelMode && GetStepsCount() >= 512u)
+    {
+        for (signed i = -2; i <= 2; ++i)
+        {
+            signed v = x + i;
+            if (!(v & 128))
+                gFrameBuffer[5][v] &= (uint8_t)~0b01111000;
+        }
+    }
+
     for (signed i = -2; i <= 2; ++i)
     {
         signed v = x + i;
@@ -2229,6 +2312,7 @@ static void OnKeyDownFreqInput(KEY_Code_t key)
         currentFreq = tempFreq;
         if (currentState == SPECTRUM)
         {
+            ClampVfoScanWindow();
             ResetBlacklist();
             RelaunchScan();
         }
@@ -3005,8 +3089,13 @@ void APP_RunSpectrum()
 #endif
     else
     {
-        currentFreq = initialFreq = gTxVfo->pRX->Frequency -
-                                    ((GetStepsCount() / 2) * GetScanStep());
+        initialFreq = gTxVfo->pRX->Frequency;
+        const uint32_t halfSpan = (GetStepsCount() / 2u) * GetScanStep();
+        if (IsCenterMode())
+            currentFreq = initialFreq;
+        else
+            currentFreq = initialFreq > halfSpan ? initialFreq - halfSpan : F_MIN;
+        ClampVfoScanWindow();
         #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
             gEeprom.CURRENT_STATE = 4;
         #endif

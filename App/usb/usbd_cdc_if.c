@@ -86,7 +86,16 @@ static const uint8_t cdc_descriptor[] = {
     0x00
 };
 
-USB_MEM_ALIGNX uint8_t read_buffer[128];
+#ifdef CONFIG_USB_HS
+#define CDC_MAX_MPS 512
+#else
+#define CDC_MAX_MPS 64
+#endif
+
+/* One endpoint packet is enough here.  Completed packets are copied into the
+ * independent VCP ring before the endpoint is armed again; the old 128-byte
+ * allocation only batched two full-speed packets and retained 64 idle bytes. */
+USB_MEM_ALIGNX uint8_t read_buffer[CDC_MAX_MPS];
 // USB_MEM_ALIGNX uint8_t write_buffer[4];
 
 static cdc_acm_rx_buf_t client_rx_buf = {0};
@@ -97,12 +106,6 @@ volatile uint8_t cdc_acm_config_count = 0;
 #endif
 
 volatile bool ep_tx_busy_flag = false;
-
-#ifdef CONFIG_USB_HS
-#define CDC_MAX_MPS 512
-#else
-#define CDC_MAX_MPS 64
-#endif
 
 void usbd_configure_done_callback(void)
 {

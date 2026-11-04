@@ -932,9 +932,8 @@ void RADIO_SetupRegisters(bool switchToForeground)
         BK4819_DisableVox();
     }
 
-    // RX expander (F4HWN 6.3.0 analog receive behavior).
-    BK4819_SetCompander((gRxVfo->Modulation == MODULATION_FM &&
-                         gRxVfo->Compander >= 2) ? gRxVfo->Compander : 0);
+    // RX expander.
+    BK4819_SetCompander(RADIO_IsRxCompanderOn(gRxVfo) ? gRxVfo->Compander : 0);
 
     BK4819_EnableDTMF();
     InterruptMask |= BK4819_REG_3F_DTMF_5TONE_FOUND;
@@ -1076,6 +1075,11 @@ static void RADIO_SetTxParametersEx(bool fm)
 void RADIO_SetTxParameters(void) { RADIO_SetTxParametersEx(true); }
 void RADIO_PrepareTx(void) { RADIO_SetTxParametersEx(false); }
 
+bool RADIO_IsRxCompanderOn(const VFO_Info_t *pInfo)
+{
+    return pInfo->Modulation == MODULATION_FM && pInfo->Compander >= 2;
+}
+
 void RADIO_SetModulation(ModulationMode_t modulation)
 {
     #ifdef ENABLE_BYP_RAW_DEMODULATORS
@@ -1171,6 +1175,16 @@ void RADIO_SetModulation(ModulationMode_t modulation)
         }
     }
     
+    #ifdef ENABLE_FEAT_F4HWN_AUDIO
+        /* BK4829 REG_28<8>: RX AF noise gate. Compander RX requires it; when
+         * compander is off SetRxG lets weak modulation pass at the cost of
+         * hearing more inter-word hiss. Preserve the level and HPF1 bits. */
+        const bool rxGate = gSetting_set_rxg || RADIO_IsRxCompanderOn(gRxVfo);
+        const uint16_t reg28 = BK4819_ReadRegister(BK4819_REG_28);
+        BK4819_WriteRegister(BK4819_REG_28,
+                             rxGate ? (reg28 | (1u << 8)) : (reg28 & ~(1u << 8)));
+    #endif
+
     BK4819_SetRegValue(afDacGainRegSpec, 0xF);
     BK4819_WriteRegister(BK4819_REG_3D, modulation == MODULATION_USB ? 0 : 0x2AAB);
     BK4819_SetRegValue(afcDisableRegSpec, modulation != MODULATION_FM);

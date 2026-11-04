@@ -49,16 +49,21 @@
  *      capture, 48 MHz timing, frequency drawing, app hand-off, quiet TX
  *      preparation, USB serial, paced LCD output and deferred VFO staging.
  *
- * GOGUFW-specific services are capability-gated extensions after the official
- * level-3 prefix. They do not consume private API-level numbers. */
+ *   4  official F4HWN v7 services: memory-channel query/list/staging,
+ *      application TX power and fresh K5Viewer GPS position.
+ *
+ * GOGUFW-specific services are capability-gated extensions outside the
+ * official table. They do not consume private API-level numbers. */
 #define APP_ABI_MAJOR  1u
-#define APP_API_LEVEL  3u
+#define APP_API_LEVEL  4u
 
 #define APP_NAME_LEN    16
 #define APP_HANDOFF_MAX 32u
 
 /* Minimum API level of an app that ships read-only assets (pack_app.py). */
 #define APP_API_ASSETS 2u
+#define APP_API_MEMORY 4u
+#define APP_API_GPS    4u
 
 /* KEY codes mirrored from driver/keyboard.h (enum KEY_Code_e). Kept in sync by
  * value so the app stays independent of the firmware headers. */
@@ -80,6 +85,8 @@ enum {
     APP_KEY_STAR    = 14,
     APP_KEY_F       = 15,
     APP_KEY_PTT     = 16,
+    APP_KEY_SIDE2   = 17,
+    APP_KEY_SIDE1   = 18,
     APP_KEY_INVALID = 19,
     APP_KEY_SAVER   = 0xFD, /* virtual: saver active, skip this app frame       */
     APP_KEY_WAKE    = 0xFE, /* virtual: saver dismissed, redraw without action */
@@ -106,6 +113,14 @@ enum {
 /* The framebuffer is the resident gFrameBuffer[FRAME_LINES][128]; the app draws
  * into it and calls a blit_* to push it to the LCD. */
 typedef uint8_t (*app_fb_t)[128];
+
+typedef struct {
+    int32_t lat_cas;
+    int32_t lon_cas;
+} app_gps_position_t;
+
+_Static_assert(sizeof(app_gps_position_t) == 8u,
+               "app GPS position layout must stay stable");
 
 /* Broadcast FM shared state (mirrors gEeprom.FM_*), read/written via fm_state. */
 #define APP_FM_CH_MAX 48
@@ -142,6 +157,25 @@ typedef struct {
     uint8_t  compander;
     char     name[16]; /* fixed-width wire field; NUL termination is not required */
 } app_beam_channel_t;
+
+typedef struct {
+    uint32_t rx_frequency;
+    char     name[11];
+} app_mr_channel_t;
+
+_Static_assert(offsetof(app_mr_channel_t, name) == 4u &&
+               sizeof(app_mr_channel_t) == 16u,
+               "memory-channel ABI layout changed");
+
+enum {
+    APP_MR_READ      = 0,
+    APP_MR_LIST_NAME = 1,
+    APP_MR_STAGE     = 2,
+};
+#define APP_MR_LISTS 24u
+#define APP_MR_COUNT 1024u
+#define APP_MR_EVERY (APP_MR_LISTS + 1u)
+#define APP_MR_INVALID (-1)
 
 _Static_assert(sizeof(app_beam_channel_t) == 44u,
                "BEAM ABI/wire channel layout changed");
@@ -327,6 +361,11 @@ typedef struct app_api {
     void     (*viewer_update)(void);
     bool     (*vfo_stage)(const app_beam_channel_t *ch);
 
+    /* ---- official API level 4 ---- */
+    int      (*mr)(uint8_t op, uint16_t index, void *out);
+    uint8_t  (*tx_power)(uint8_t level);
+    bool     (*gps_position)(app_gps_position_t *out);
+
 } app_api_t;
 
 _Static_assert(offsetof(app_api_t, sys_edition) == 276u &&
@@ -336,15 +375,18 @@ _Static_assert(offsetof(app_api_t, sys_edition) == 276u &&
                offsetof(app_api_t, serial_read) == 368u &&
                offsetof(app_api_t, blit_page) == 380u &&
                offsetof(app_api_t, vfo_stage) == 392u &&
-               sizeof(app_api_t) == 396u,
-               "official F4HWN API-3 layout changed");
+               offsetof(app_api_t, mr) == 396u &&
+               offsetof(app_api_t, tx_power) == 400u &&
+               offsetof(app_api_t, gps_position) == 404u &&
+               sizeof(app_api_t) == 408u,
+               "official F4HWN append-only API layout changed");
 
 /* GOGUFW services deliberately live outside app_api_t.  APP_GoguApi() discovers
  * this table through asset_read's otherwise-invalid 0xffff offset, so future
- * official API levels remain free to append fields after byte 396 forever. */
+ * official API levels remain free to append fields after byte 408. */
 #define APP_GOGU_API_MAGIC 0x55474F47u /* "GOGU" little-endian */
 #define APP_GOGU_API_MAJOR 1u
-#define APP_GOGU_API_LEVEL 2u
+#define APP_GOGU_API_LEVEL 4u
 #define APP_GOGU_API_QUERY 0xFFFFu
 
 typedef struct gogu_api {
@@ -408,9 +450,17 @@ typedef struct gogu_api {
      * cursor in bits 0..7 and input mode in bits 8..15. */
     uint16_t (*text_editor)(char *text, uint8_t max_len, uint8_t key, uint8_t action);
 
+    /* API level 3: normal analog voice PTT for split-frequency overlays. */
+    bool (*voice_tx)(bool on);
+
+    /* API level 4: resident F/key-lock state for modal overlays. Action 0
+     * queries, 1 hides F, 2 toggles F and 3 toggles the persistent lock.
+     * State-changing actions redraw the complete resident status bar. */
+    uint8_t (*key_state)(uint8_t action);
+
 } gogu_api_t;
 
-_Static_assert(sizeof(gogu_api_t) == 96u,
+_Static_assert(sizeof(gogu_api_t) == 104u,
                "GOGUFW extension ABI changed");
 
 static inline const gogu_api_t *APP_GoguApi(const app_api_t *api)

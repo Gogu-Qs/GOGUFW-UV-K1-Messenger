@@ -163,6 +163,7 @@ enum
     #endif
     #ifdef ENABLE_FEAT_F4HWN_AUDIO
         MENU_SET_AUD,
+        MENU_SET_RXG,
     #endif
 #endif
     MENU_BATCAL,  // battery voltage calibration
