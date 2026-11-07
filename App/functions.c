@@ -147,6 +147,10 @@ void FUNCTION_Transmit()
     // if DTMF is enabled when TX'ing, it changes the TX audio filtering !! .. 1of11
     BK4819_DisableDTMF();
 
+    /* RX may have left voice inversion enabled.  Keep TX-up signalling and
+     * alarm/tone modes clear; normal voice TX reapplies it below. */
+    BK4819_DisableScramble();
+
 #ifdef ENABLE_DTMF_CALLING
     // clear the DTMF RX buffer
     DTMF_clear_RX();
@@ -223,14 +227,7 @@ void FUNCTION_Transmit()
     }
 #endif
 
-#ifdef ENABLE_FEAT_F4HWN
-    BK4819_DisableScramble();
-#else
-    if (gCurrentVfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable)
-        BK4819_EnableScramble(gCurrentVfo->SCRAMBLING_TYPE - 1);
-    else
-        BK4819_DisableScramble();
-#endif
+    RADIO_ApplyScrambler(gCurrentVfo);
 
     if (gSetting_backlight_on_tx_rx & BACKLIGHT_ON_TR_TX) {
         BACKLIGHT_TurnOn();

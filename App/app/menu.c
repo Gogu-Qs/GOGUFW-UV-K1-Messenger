@@ -628,7 +628,10 @@ void MENU_AcceptSetting(void)
                 else
                     BK4819_DisableScramble();
             #endif
-            gRequestSaveChannel     = 1;
+            /* Mode 1 only writes VFO/frequency slots.  Scrambler is a
+             * per-channel byte, so use mode 2 to persist it for MR channels
+             * as well; otherwise it returns to OFF after leaving the channel. */
+            gRequestSaveChannel     = 2;
             return;
 #endif
 

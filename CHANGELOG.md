@@ -1,5 +1,47 @@
 # Changelog
 
+## GOGUFW 3.6.2 — 2026-11-07
+
+### Scrambler
+
+- Restored the per-channel scrambler setting in the GOGUFW Fusion build and
+  made channel changes retain it correctly. Returning to a channel now restores
+  that channel's saved scrambler state instead of silently switching it off.
+- Applied the selected scrambler consistently to normal FM receive and voice
+  transmit paths. DTMF, FSK, alarm/tone, CSS-tail and Roger/MDC signalling are
+  explicitly sent without voice inversion, then normal voice operation restores
+  the channel setting.
+- Added a compact uppercase `S` in the smallest status font between the No FSK
+  and No Roger indicators. The FSK indicator now starts at x=111 so the three
+  indicators remain tightly spaced without overlapping.
+
+### Overlay power save
+
+- Confirmed that overlay applications do not enter power save while they own
+  the main loop. The idle timer can still expire in the background, however,
+  leaving a pending power-save request behind.
+- Reset the idle countdown and clear pending/expired power-save requests when
+  an overlay closes. Returning from an app is now treated as user activity, so
+  the radio no longer enters power save immediately or flashes the `Zz` status
+  icon as soon as the normal screen returns.
+
+### Compatibility and release files
+
+- Existing overlay applications remain compatible and were not updated for
+  this firmware-only release. The previous application versions may continue
+  to be used.
+- `FMVFO.app`, `FMMemory.app` and `Search.app` are supplied unchanged as direct
+  downloads for convenience.
+- Updated the CHIRP module's driver, variant and firmware-comparison identifiers
+  to 3.6.2. Its channel/settings schema is unchanged from the 3.6.0 module.
+- Firmware: `GOGUFW-v3.6.2.bin` (single image for direct flashing and the
+  supported multiboot workflow).
+- CHIRP module: `Gogufw_3.6.2_chirp_module.py`.
+- Final published image: **120,220 / 120,832 bytes** (612 bytes free), including
+  the 920-byte multiboot load image. Linked code/data uses 119,300 bytes.
+- RAM with the enforced stack reservation: **15,832 / 16,384 bytes** (552 bytes
+  free); the 4,096-byte runtime stack and multiboot RAM-stub isolation checks pass.
+
 ## GOGUFW 3.6.0 — 2026-11-04
 
 ### Spectrum

@@ -62,10 +62,20 @@ center_line_t center_line = CENTER_LINE_NONE;
 #ifdef ENABLE_FEAT_F4HWN
 enum
 {
+#ifdef ENABLE_GOGUFW_SCRAMBLER
+    /* Keep the S and Roger positions fixed; place the FSK icon at x=111 in
+     * both layouts. */
+    VFO_CLASSIC_BANDWIDTH_X  = 88,
+    VFO_CLASSIC_FSK_ICON_X   = 111,
+    VFO_TINY_FSK_ICON_X      = 111,
+    VFO_SCRAMBLER_TEXT_X     = 117,
+    VFO_ROGER_ICON_X         = 121,
+#else
     VFO_CLASSIC_BANDWIDTH_X  = 88,
     VFO_CLASSIC_FSK_ICON_X   = 109,
     VFO_TINY_FSK_ICON_X      = 106,
     VFO_ROGER_ICON_X         = 121,
+#endif
 };
 #endif
 
@@ -2414,6 +2424,12 @@ void UI_DisplayMain(void)
                     memcpy(policyLine + VFO_ROGER_ICON_X,
                            BITMAP_NoRoger, LCD_WIDTH - VFO_ROGER_ICON_X);
             }
+
+#ifdef ENABLE_GOGUFW_SCRAMBLER
+            if (vfoInfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable)
+                GUI_DisplaySmallest("S", VFO_SCRAMBLER_TEXT_X,
+                                    line == 0 ? 17 : 49, false, true);
+#endif
         }
 #endif
 

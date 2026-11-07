@@ -382,7 +382,7 @@ void RADIO_ConfigureChannel(const unsigned int VFO, const unsigned int configure
         pVfo->StepFrequency = gStepFrequencyTable[tmp];
 
         tmp = data[7];
-#ifndef ENABLE_FEAT_F4HWN
+#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
         if (tmp > (ARRAY_SIZE(gSubMenu_SCRAMBLER) - 1))
             tmp = 0;
         pVfo->SCRAMBLING_TYPE = tmp;
@@ -895,14 +895,6 @@ void RADIO_SetupRegisters(bool switchToForeground)
                     break;
             }
 
-#ifndef ENABLE_FEAT_F4HWN
-            if (gRxVfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable)
-                BK4819_EnableScramble(gRxVfo->SCRAMBLING_TYPE - 1);
-            else
-                BK4819_DisableScramble();
-#else
-                BK4819_DisableScramble();
-#endif
         }
     }
     #ifdef ENABLE_NOAA
@@ -913,6 +905,13 @@ void RADIO_SetupRegisters(bool switchToForeground)
                           |  BK4819_REG_3F_CTCSS_LOST;
         }
     #endif
+
+#ifdef ENABLE_NOAA
+    if (IS_NOAA_CHANNEL(gRxVfo->CHANNEL_SAVE) && gIsNoaaMode)
+        BK4819_DisableScramble();
+    else
+#endif
+        RADIO_ApplyScrambler(gRxVfo);
 
 #ifdef ENABLE_VOX
     if (gEeprom.VOX_SWITCH  && gCurrentVfo->Modulation == MODULATION_FM
@@ -1003,6 +1002,11 @@ static void RADIO_SetTxParametersEx(bool fm)
 {
     BK4819_FilterBandwidth_t Bandwidth = gCurrentVfo->CHANNEL_BANDWIDTH;
 
+    /* Every TX mode starts clean.  Voice TX reapplies the channel scrambler
+     * after its clear DTMF/Apollo signalling; FSK, alarm and tone TX stay
+     * unscrambled. */
+    BK4819_DisableScramble();
+
     #ifdef ENABLE_FEAT_F4HWN_NARROWER
         if(Bandwidth == BK4819_FILTER_BW_NARROW && gSetting_set_nfm == 1)
         {
@@ -1078,6 +1082,25 @@ void RADIO_PrepareTx(void) { RADIO_SetTxParametersEx(false); }
 bool RADIO_IsRxCompanderOn(const VFO_Info_t *pInfo)
 {
     return pInfo->Modulation == MODULATION_FM && pInfo->Compander >= 2;
+}
+
+void RADIO_ApplyScrambler(const VFO_Info_t *pInfo)
+{
+#if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
+    if (pInfo != NULL &&
+        pInfo->Modulation == MODULATION_FM &&
+        pInfo->SCRAMBLING_TYPE > 0 &&
+        pInfo->SCRAMBLING_TYPE < ARRAY_SIZE(gSubMenu_SCRAMBLER) &&
+        gSetting_ScrambleEnable)
+    {
+        BK4819_EnableScramble(pInfo->SCRAMBLING_TYPE - 1);
+        return;
+    }
+#else
+    (void)pInfo;
+#endif
+
+    BK4819_DisableScramble();
 }
 
 void RADIO_SetModulation(ModulationMode_t modulation)
@@ -1373,6 +1396,9 @@ void RADIO_PrepareTX(void)
 
 void RADIO_SendCssTail(void)
 {
+    /* Sub-audio signalling must not inherit voice inversion. */
+    BK4819_DisableScramble();
+
     if (gEeprom.TAIL_TONE_ELIMINATION) {
         switch (gCurrentVfo->pTX->CodeType) {
         case CODE_TYPE_DIGITAL:
@@ -1391,6 +1417,9 @@ void RADIO_SendCssTail(void)
 void RADIO_SendEndOfTransmission(void)
 {
     BK4819_FilterBandwidth_t Bandwidth = gCurrentVfo->CHANNEL_BANDWIDTH;
+
+    /* Roger/MDC, DTMF and the CSS tail are protocol signalling, not voice. */
+    BK4819_DisableScramble();
 
 #ifdef ENABLE_FEAT_F4HWN_NARROWER
     if (Bandwidth == BK4819_FILTER_BW_NARROW && gSetting_set_nfm == 1) {

@@ -2078,6 +2078,14 @@ static void app_finish_overlay(uint8_t slot)
         PY25Q16_InvalidateCache();
     }
 #endif
+
+    /* SysTick keeps advancing the idle timer while an overlay owns the main
+     * loop, but the overlay cannot service a pending power-save request.
+     * Treat returning from the app as user activity so that a request which
+     * expired inside the overlay cannot put the radio to sleep immediately. */
+    gBatterySaveCountdown_10ms = battery_save_count_10ms;
+    gSchedulePowerSave = false;
+    gPowerSaveCountdownExpired = false;
 }
 
 static bool app_find_named_slot(const char *name, uint8_t name_len, uint8_t *slot_out)

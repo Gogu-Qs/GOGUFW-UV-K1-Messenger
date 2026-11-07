@@ -1,4 +1,4 @@
-# GOGUFW 3.6.0
+# GOGUFW 3.6.2
 
 GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3 based on
 **F4HWN 6.3.0**, with selected compatible F4HWN 7.0 services and fixes. It keeps
@@ -10,7 +10,7 @@ RF Log Lite, named FM memories and a multiboot environment.
 
 | Statistic | Project status |
 | --- | --- |
-| 📦 **Current stable release** | GOGUFW 3.6.0 |
+| 📦 **Current stable release** | GOGUFW 3.6.2 |
 | 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
 | ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
 | ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
@@ -22,7 +22,7 @@ RF Log Lite, named FM memories and a multiboot environment.
 | 💾 **Firmware image** | 120,028 / 120,832 bytes · **99.33%** · 804 bytes free, including the 920-byte multiboot load image |
 | 🧠 **Runtime stack** | 4,096-byte linker reservation · live/current and high-water values reported by `SystemInfo.app` |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Auto Check · Range Check · CALLTX · RF Log Lite · Full Watch · FM names/RSSI |
-| 🔌 **CHIRP support** | Matching 3.6.0 module with 1024 memories, Messenger settings, FM names and all channel policies |
+| 🔌 **CHIRP support** | Matching 3.6.2 module with 1024 memories, Messenger settings, FM names and all channel policies |
 
 ## Compatibility and downloads
 
@@ -30,8 +30,8 @@ GOGUFW is intended only for Quansheng **UV-K1 / UV-K5 V3** radios built around t
 
 The current release contains:
 
-- `GOGUFW-v3.6.0.bin` and `GOGUFW-v3.6.0-multiboot.bin` — normal and multiboot firmware images;
-- `Gogufw_3.6.0_chirp_module.py` — the matching custom CHIRP module;
+- `GOGUFW-v3.6.2.bin` and `GOGUFW-v3.6.2-multiboot.bin` — normal and multiboot firmware images;
+- `Gogufw_3.6.2_chirp_module.py` — the matching custom CHIRP module;
 - `Apps.zip` — the requested Search/FM VFO/FM Memory overlay bundle;
 - `FMVFO.app` and `FMMemory.app` — the two required Broadcast FM overlays;
 - `Search.app` — the matching Frequency/Tone Search overlay.
@@ -45,7 +45,7 @@ The current release contains:
 > services use a separately versioned capability extension.
 
 **Broadcast FM is not a resident screen. Install this release's updated
-`FMVFO.app` and `FMMemory.app` after flashing 3.6.0; installing only one leaves mode
+`FMVFO.app` and `FMMemory.app` after flashing 3.6.2; installing only one leaves mode
 switching incomplete. Install this release's `Search.app` for F+4/F+STAR.**
 
 `FMVFO.app` and `FMMemory.app` changed in 3.6.0 and should be reinstalled
@@ -214,7 +214,7 @@ versioned extension table.
 This replaces the experimental GOGUFW API 4–9 layout: older custom GOGUFW app
 binaries from the old experimental API 4–9 layout are not compatible. Existing
 apps built for GOGUFW 3.3.1–3.3.5's official API-3 prefix remain compatible with
-3.6.0 and do not need to be reinstalled for a firmware-only update. Official
+3.6.2 and do not need to be reinstalled for a firmware-only update. Official
 API-3 apps work when their declared resident capabilities are available; Beam
 remains unsupported.
 
@@ -274,10 +274,10 @@ Hold **MENU while powering on** to open the firmware-slot selector.
 
 ## CHIRP
 
-Use the module that matches the firmware release. For GOGUFW 3.6.0:
+Use the module that matches the firmware release. For GOGUFW 3.6.2:
 
 1. Start CHIRP and choose **File → Load Module**.
-2. Select `Gogufw_3.6.0_chirp_module.py`.
+2. Select `Gogufw_3.6.2_chirp_module.py`.
 3. Download the radio using **Quansheng → UV-K1 / UV-K5 V3 GOGUFW Messenger**.
 4. Edit channels, side-key actions, Messenger/Call settings, FM names,
    `No FSK TX`, `No Roger`, `Scrambler` and `Compander` as required.
@@ -295,7 +295,7 @@ cmake --build --preset Fusion
 ```
 
 The build emits the normal `gogufw.bin` and the canonical multiboot filename
-`f4hwn.gogufw.v3.6.0.bin`. Build the paired FM apps by running `build.sh` in
+`f4hwn.gogufw.v3.6.2.bin`. Build the paired FM apps by running `build.sh` in
 `App/apps/fm` and `App/apps/fmmemory`; they produce `FMVFO.app` and
 `FMMemory.app` respectively. See `BUILD_VSCODE_MAC.md` or
 `BUILD_WITH_VSCODE.md` for environment setup.
