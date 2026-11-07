@@ -30,8 +30,8 @@
 - Existing overlay applications remain compatible and were not updated for
   this firmware-only release. The previous application versions may continue
   to be used.
-- `FMVFO.zip`, `FMMemory.zip` and `Search.zip` are supplied for convenience;
-  each archive contains the corresponding unchanged `.app` file.
+- `Apps.zip` is supplied for convenience and contains the unchanged
+  `FMVFO.app`, `FMMemory.app` and `Search.app` files.
 - Updated the CHIRP module's driver, variant and firmware-comparison identifiers
   to 3.6.2. Its channel/settings schema is unchanged from the 3.6.0 module.
 - Firmware: `GOGUFW-v3.6.2.bin` (single image for direct flashing and the
