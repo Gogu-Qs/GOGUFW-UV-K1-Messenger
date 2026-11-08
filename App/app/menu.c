@@ -549,6 +549,7 @@ void MENU_AcceptSetting(void)
 
         case MENU_STEP:
             gTxVfo->STEP_SETTING = FREQUENCY_GetStepIdxFromSortedIdx(gSubMenuSelection);
+            gTxVfo->StepFrequency = gStepFrequencyTable[gTxVfo->STEP_SETTING];
             if (IS_FREQ_CHANNEL(gTxVfo->CHANNEL_SAVE))
             {
                 gRequestSaveChannel = 1;
@@ -622,16 +623,12 @@ void MENU_AcceptSetting(void)
 #if !defined(ENABLE_FEAT_F4HWN) || defined(ENABLE_GOGUFW_SCRAMBLER)
         case MENU_SCR:
             gTxVfo->SCRAMBLING_TYPE = gSubMenuSelection;
-            #if 0
-                if (gSubMenuSelection > 0 && gSetting_ScrambleEnable)
-                    BK4819_EnableScramble(gSubMenuSelection - 1);
-                else
-                    BK4819_DisableScramble();
-            #endif
-            /* Mode 1 only writes VFO/frequency slots.  Scrambler is a
-             * per-channel byte, so use mode 2 to persist it for MR channels
-             * as well; otherwise it returns to OFF after leaving the channel. */
-            gRequestSaveChannel     = 2;
+
+            /* Scrambler follows the other runtime channel edits.  Applying it
+             * must not save the whole MR record: an explicit Save Channel is
+             * the only operation allowed to persist this and other pending
+             * fields such as step, power and bandwidth. */
+            RADIO_ApplyScrambler(gTxVfo);
             return;
 #endif
 

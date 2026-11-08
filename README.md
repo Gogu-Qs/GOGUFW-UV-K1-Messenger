@@ -1,4 +1,4 @@
-# GOGUFW 3.6.2
+# GOGUFW 3.6.3
 
 GOGUFW is a custom firmware for the Quansheng UV-K1 / UV-K5 V3 based on
 **F4HWN 6.3.0**, with selected compatible F4HWN 7.0 services and fixes. It keeps
@@ -10,7 +10,7 @@ RF Log Lite, named FM memories and a multiboot environment.
 
 | Statistic | Project status |
 | --- | --- |
-| 📦 **Current stable release** | GOGUFW 3.6.2 |
+| 📦 **Current stable release** | GOGUFW 3.6.3 |
 | 👁️ **Repository views** | [![Repository views](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger.svg?style=flat-square&label=views&color=2ea44f)](https://hits.sh/github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/) |
 | ⬇️ **Release downloads** | [![Total release downloads](https://img.shields.io/github/downloads/Gogu-Qs/GOGUFW-UV-K1-Messenger/total?style=flat-square&label=downloads&color=blue)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/releases) |
 | ⭐ **GitHub stars** | [![GitHub stars](https://img.shields.io/github/stars/Gogu-Qs/GOGUFW-UV-K1-Messenger?style=flat-square&label=stars&color=yellow)](https://github.com/Gogu-Qs/GOGUFW-UV-K1-Messenger/stargazers) |
@@ -22,7 +22,7 @@ RF Log Lite, named FM memories and a multiboot environment.
 | 💾 **Firmware image** | 120,028 / 120,832 bytes · **99.33%** · 804 bytes free, including the 920-byte multiboot load image |
 | 🧠 **Runtime stack** | 4,096-byte linker reservation · live/current and high-water values reported by `SystemInfo.app` |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Auto Check · Range Check · CALLTX · RF Log Lite · Full Watch · FM names/RSSI |
-| 🔌 **CHIRP support** | Matching 3.6.2 module with 1024 memories, Messenger settings, FM names and all channel policies |
+| 🔌 **CHIRP support** | Matching 3.6.3 module with 1024 memories, Messenger settings, FM names and all channel policies |
 
 ## Compatibility and downloads
 
@@ -30,8 +30,8 @@ GOGUFW is intended only for Quansheng **UV-K1 / UV-K5 V3** radios built around t
 
 The current release contains:
 
-- `GOGUFW-v3.6.2.bin` and `GOGUFW-v3.6.2-multiboot.bin` — normal and multiboot firmware images;
-- `Gogufw_3.6.2_chirp_module.py` — the matching custom CHIRP module;
+- `GOGUFW-v3.6.3.bin` — firmware image;
+- `Gogufw_3.6.3_chirp_module.py` — the matching custom CHIRP module;
 - `Apps.zip` — the requested Search/FM VFO/FM Memory overlay bundle;
 - `FMVFO.app` and `FMMemory.app` — the two required Broadcast FM overlays;
 - `Search.app` — the matching Frequency/Tone Search overlay.
@@ -45,7 +45,7 @@ The current release contains:
 > services use a separately versioned capability extension.
 
 **Broadcast FM is not a resident screen. Install this release's updated
-`FMVFO.app` and `FMMemory.app` after flashing 3.6.2; installing only one leaves mode
+`FMVFO.app` and `FMMemory.app` after flashing 3.6.3; installing only one leaves mode
 switching incomplete. Install this release's `Search.app` for F+4/F+STAR.**
 
 `FMVFO.app` and `FMMemory.app` changed in 3.6.0 and should be reinstalled
@@ -214,7 +214,7 @@ versioned extension table.
 This replaces the experimental GOGUFW API 4–9 layout: older custom GOGUFW app
 binaries from the old experimental API 4–9 layout are not compatible. Existing
 apps built for GOGUFW 3.3.1–3.3.5's official API-3 prefix remain compatible with
-3.6.2 and do not need to be reinstalled for a firmware-only update. Official
+3.6.3 and do not need to be reinstalled for a firmware-only update. Official
 API-3 apps work when their declared resident capabilities are available; Beam
 remains unsupported.
 
@@ -235,9 +235,12 @@ Open Spectrum with **F + 5**.
 
 - From MR mode it scans valid stored memories and displays the selected channel name and frequency.
 - From VFO mode it scans a continuous frequency range.
-- VFO mode offers 16, 32, 64, 128, 256, 512, 1024 and 2048 samples. Higher
-  values combine several RF samples into each of the 128 display columns to
-  cover a wider span, with a progressively simplified ruler from 512x upward.
+- VFO mode offers 16, 32, 64, 128, 256, 512 and 1024 samples. Up to 128 it
+  keeps Armel's one-measurement-per-column behaviour. Wider modes collect the
+  current sweep in a hidden buffer and publish complete 128-column snapshots,
+  so partial scans and older noise peaks cannot flatten or perforate the graph.
+- Memory Spectrum uses the same manual scale depth and complete-sweep buffering
+  when more than 128 stored channels are scanned.
 - Press **PTT** on a peak to stop and listen.
 - Press **MENU** while listening to inspect or adjust LNA/PGA controls.
 - Press **PTT** again to open the stored MR channel or transfer a VFO peak to the active VFO; this does not transmit.
@@ -274,10 +277,10 @@ Hold **MENU while powering on** to open the firmware-slot selector.
 
 ## CHIRP
 
-Use the module that matches the firmware release. For GOGUFW 3.6.2:
+Use the module that matches the firmware release. For GOGUFW 3.6.3:
 
 1. Start CHIRP and choose **File → Load Module**.
-2. Select `Gogufw_3.6.2_chirp_module.py`.
+2. Select `Gogufw_3.6.3_chirp_module.py`.
 3. Download the radio using **Quansheng → UV-K1 / UV-K5 V3 GOGUFW Messenger**.
 4. Edit channels, side-key actions, Messenger/Call settings, FM names,
    `No FSK TX`, `No Roger`, `Scrambler` and `Compander` as required.
@@ -295,7 +298,7 @@ cmake --build --preset Fusion
 ```
 
 The build emits the normal `gogufw.bin` and the canonical multiboot filename
-`f4hwn.gogufw.v3.6.2.bin`. Build the paired FM apps by running `build.sh` in
+`f4hwn.gogufw.v3.6.3.bin`. Build the paired FM apps by running `build.sh` in
 `App/apps/fm` and `App/apps/fmmemory`; they produce `FMVFO.app` and
 `FMMemory.app` respectively. See `BUILD_VSCODE_MAC.md` or
 `BUILD_WITH_VSCODE.md` for environment setup.

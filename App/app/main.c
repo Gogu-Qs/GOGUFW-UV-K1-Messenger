@@ -741,6 +741,7 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
                 if ((isKeySide1 && idx < STEP_N_ELEM - 1) || (!isKeySide1 && idx > 0)) 
                 {
                     gTxVfo->STEP_SETTING = FREQUENCY_GetStepIdxFromSortedIdx(idx + (isKeySide1 ? 1 : -1));
+                    gTxVfo->StepFrequency = gStepFrequencyTable[gTxVfo->STEP_SETTING];
                     
                     if (IS_FREQ_CHANNEL(gTxVfo->CHANNEL_SAVE)) {
                         gRequestSaveChannel = 1;

@@ -615,7 +615,8 @@ static uint32_t app_rx_freq(void)
         : gRxVfo->pRX->Frequency;
 }
 
-static void app_radio_tune_power(uint32_t frequency, uint8_t power)
+static void app_radio_tune_mode_power(uint32_t frequency, uint8_t power,
+                                      uint8_t modulation)
 {
     /* A private overlay RF target is sovereign for the lifetime of the app.
      * End any resident-channel RX state and cancel a pending dual-watch hop
@@ -628,7 +629,7 @@ static void app_radio_tune_power(uint32_t frequency, uint8_t power)
     gScheduleDualWatch = false;
     RADIO_InitInfo(&app_radio_vfo,
                    FREQ_CHANNEL_FIRST + FREQUENCY_GetBand(frequency), frequency);
-    app_radio_vfo.Modulation = MODULATION_FM;
+    app_radio_vfo.Modulation = modulation;
     app_radio_vfo.CHANNEL_BANDWIDTH = BANDWIDTH_WIDE;
     if (power > APP_RADIO_POWER_HIGH)
         power = APP_RADIO_POWER_HIGH;
@@ -638,23 +639,53 @@ static void app_radio_tune_power(uint32_t frequency, uint8_t power)
     RADIO_SetupRegisters(true);
 }
 
+static void app_radio_tune_power(uint32_t frequency, uint8_t power)
+{
+    app_radio_tune_mode_power(frequency, power, MODULATION_FM);
+}
+
 static void app_radio_tune(uint32_t frequency)
 {
     app_radio_tune_power(frequency, APP_RADIO_POWER_HIGH);
 }
 
+static void app_radio_tune_am(uint32_t frequency)
+{
+    app_radio_tune_mode_power(frequency, APP_RADIO_POWER_HIGH, MODULATION_AM);
+}
+
 static void app_radio_tune_aprs(void)
 {
     uint32_t frequency = 144800u;
-    uint8_t slot;
-    if (app_find_named_slot("APRS TX", 7u, &slot)) {
+    for (uint8_t slot = 0; slot < APP_SLOT_COUNT; slot++) {
+        app_header_t h;
+        if (app_read_validated_header(slot, &h) != APP_OK ||
+            memcmp(h.name, "APRS TX", 7u) != 0 || h.name[7] != '\0')
+            continue;
+
+        /* Armel's official APC7 profile is 117 bytes. GOGUFW extends the
+         * same historical marker to 122 bytes with frequency and power, so
+         * those offsets are valid only for a GOGU APRS TX build. Without
+         * this check the first bytes of the official app's UI block could be
+         * interpreted as a frequency. */
+        bool extended = false;
+        for (uint8_t i = 0; i + 5u <= APP_VERSION_LEN; i++)
+            if (memcmp(h.version + i, "-gogu", 5u) == 0) {
+                extended = true;
+                break;
+            }
+        if (!extended)
+            continue;
+
         uint32_t magic, saved;
         const uint32_t base = APP_SLOT_BASE(slot) + APP_ASSET_OFFSET;
         PY25Q16_ReadBuffer(base, &magic, sizeof(magic));
         PY25Q16_ReadBuffer(base + APRS_PROFILE_FREQ_KHZ, &saved, sizeof(saved));
         if (magic == APRS_PROFILE_MAGIC && saved >= APRS_FREQ_KHZ_MIN &&
-            saved <= APRS_FREQ_KHZ_MAX)
+            saved <= APRS_FREQ_KHZ_MAX) {
             frequency = saved;
+            break;
+        }
     }
     app_radio_tune(frequency * 100u);
 }
@@ -1874,6 +1905,7 @@ static const gogu_api_t gogu_api = {
     .set_text_editor_cursor=app_set_text_editor_cursor,
     .text_editor=app_text_editor_service,
     .voice_tx=app_voice_tx, .key_state=app_key_state,
+    .radio_tune_am=app_radio_tune_am,
 };
 
 /* Preparation and cleanup deliberately live in separate non-inlined calls.

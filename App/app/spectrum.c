@@ -84,16 +84,18 @@ static uint16_t selectedPeakIndex;
 #define SPECTRUM_MR_MANUAL_TRIGGER_RSSI 100
 /* These arrays are needed only while APP_RunSpectrum() owns the foreground.
  * Keeping them in that function's stack gives overlay apps the same bytes back
- * as free runtime stack instead of permanently charging every app 576 bytes. */
+ * as free runtime stack instead of permanently charging every app 832 bytes. */
 typedef struct {
     uint8_t  validChannels[SPECTRUM_MR_BITMAP_SIZE];
     uint16_t rssi[128];
+    uint16_t wideSweepRssi[128];
     uint8_t  peakY[128];
     uint8_t  peakAge[64];
 } SpectrumScratch_t;
 static SpectrumScratch_t *spectrumScratch;
 #define spectrumValidChannels (spectrumScratch->validChannels)
 #define rssiHistory           (spectrumScratch->rssi)
+#define wideSweepRssi         (spectrumScratch->wideSweepRssi)
 #define peakHoldY             (spectrumScratch->peakY)
 #define peakHoldAge           (spectrumScratch->peakAge)
 
@@ -107,10 +109,9 @@ static uint8_t spectrumDisplayModulation;
 static uint8_t spectrumScanModulation;
 static uint8_t spectrumScanListenBw;
 
-#ifdef ENABLE_SCAN_RANGES
 static uint16_t blacklistFreqs[15];
-static uint8_t blacklistFreqsIdx;
-#endif
+static uint8_t blacklistFreqsWrite;
+static uint8_t blacklistFreqsCount;
 
 const char *const bwOptions[] = {"25", "12.5", "6.25"};
 const uint8_t modulationTypeTuneSteps[] = {100, 50, 10};
@@ -174,6 +175,8 @@ static const bool manualSetFlag = true;
 // Every fresh/reset Spectrum session starts with one RX-free reference cycle.
 // MANUAL freezes the resulting scale/trigger; AUTO may adapt afterwards.
 static bool initialCalibrationPending = false;
+// Manual vertical scale is calibrated once per scan geometry, never per sweep.
+static bool spectrumScaleReady = false;
 // Accumulate one sweep's background so AUTO does not mistake a single
 // unusually low bin for the noise floor and keep walking its trigger down.
 static uint32_t sweepRssiSum = 0;
@@ -260,14 +263,18 @@ static void LoadSettings()
 
     // Data[0]: scanStepIndex (7:4), legacy stepsCount (3:2), listenBw (1:0)
     // Data[1]: settings layout version
-    // Data[4]: v2 stepsCount (0..7 => 16..2048 samples)
+    // Data[4]: v2 stepsCount (0..6 => 16..1024 samples)
     settings.scanStepIndex = (Data[0] >> 4) & 0x0F;
     if (settings.scanStepIndex > 14)
         settings.scanStepIndex = S_STEP_25_0kHz;
 
-    if (Data[1] >= 2u && Data[4] <= STEPS_2048)
+    if (Data[1] >= 2u && Data[4] <= 7u)
     {
-        settings.stepsCount = (StepsCount)Data[4];
+        // v3.6.2 briefly exposed 2048 samples as value 7. Preserve that saved
+        // setting at the supported 1024 maximum.
+        settings.stepsCount = (Data[4] > STEPS_1024)
+                                  ? STEPS_1024
+                                  : (StepsCount)Data[4];
     }
     else
     {
@@ -727,11 +734,14 @@ uint32_t GetFEnd()
 #ifdef ENABLE_SCAN_RANGES
     if (gScanRangeStart)
     {
-        return gScanRangeStop;
+        return gScanRangeStart +
+               (uint32_t)(GetStepsCount() - 1u) * GetScanStep();
     }
 #endif
-    return IsCenterMode() ? currentFreq + (GetBW() >> 1)
-                          : currentFreq + GetBW();
+    // N measurements contain N-1 intervals. Derive the right edge from the
+    // actual left-edge scan position so right-to-left sweeps visit exactly
+    // the same frequencies as left-to-right sweeps.
+    return GetFStart() + (uint32_t)(GetStepsCount() - 1u) * GetScanStep();
 }
 
 uint8_t GetBWRegValueForScan(void);
@@ -949,6 +959,13 @@ static void ResetScanStats()
     sweepRssiCount = 0;
 }
 
+static void ResetManualSpectrumScale(void)
+{
+    settings.dbMin = -128;
+    settings.dbMax = -97;
+    spectrumScaleReady = false;
+}
+
 // Resets scan position and stats without touching the radio — safe to call
 // on every sweep restart because scanReg30 and the RF filter path remain
 // valid as long as the scan range hasn't changed.
@@ -957,6 +974,8 @@ static void InitScanPosition()
     ResetScanStats();
     scanInfo.scanStep = GetScanStep();
     scanInfo.measurementsCount = GetStepsCount();
+    if (scanInfo.measurementsCount > ARRAY_SIZE(rssiHistory))
+        memset(wideSweepRssi, 0, sizeof(wideSweepRssi));
     bool startFromLeft = scanStartFromLeft;
 #if SPECTRUM_INTERLACE_LARGE_SWEEPS
     interlacePhase = 0;
@@ -1007,10 +1026,9 @@ static void ResetBlacklist()
         if (rssiHistory[i] == RSSI_MAX_VALUE)
             rssiHistory[i] = 0;
     }
-#ifdef ENABLE_SCAN_RANGES
     memset(blacklistFreqs, 0, sizeof(blacklistFreqs));
-    blacklistFreqsIdx = 0;
-#endif
+    blacklistFreqsWrite = 0;
+    blacklistFreqsCount = 0;
 }
 
 static void RelaunchScan()
@@ -1146,9 +1164,36 @@ static uint8_t GetHistorySlot(uint16_t idx)
     return (uint8_t)idx;
 }
 
+static bool IsWideBufferedSweep(void)
+{
+    return scanInfo.measurementsCount > ARRAY_SIZE(rssiHistory);
+}
+
+static void PublishWideSweep(void)
+{
+    if (!IsWideBufferedSweep())
+        return;
+
+    /* Publish a complete 128-column snapshot at the phase boundary. Zero
+     * means the exact representative sample was blacklisted; retain the last
+     * valid displayed column instead of creating a moving hole. */
+    for (uint8_t slot = 0; slot < ARRAY_SIZE(rssiHistory); slot++)
+        if (wideSweepRssi[slot] != 0u)
+            rssiHistory[slot] = wideSweepRssi[slot];
+}
+
 static void SetRssiHistory(uint16_t idx, uint16_t rssi)
 {
     uint8_t slot = GetHistorySlot(idx);
+
+    if (IsWideBufferedSweep())
+    {
+        /* Wide VFO and Memory scans share a hidden current-sweep buffer. Never
+         * feed the displayed history back into the next sweep. */
+        if (rssi != RSSI_MAX_VALUE && rssi > wideSweepRssi[slot])
+            wideSweepRssi[slot] = rssi;
+        return;
+    }
 
     if (rssi == RSSI_MAX_VALUE)
     {
@@ -1162,19 +1207,18 @@ static void SetRssiHistory(uint16_t idx, uint16_t rssi)
     {
         if (prev == RSSI_MAX_VALUE)
             return;
-        // For large ranges: keep fast attack, soften decay to reduce flicker.
+        // Memory/range scans may still exceed the 128-column history.
         if (rssi >= prev)
             rssiHistory[slot] = rssi;
         else
             rssiHistory[slot] = prev - ((prev - rssi) >> 4);
         return;
     }
-    // Attack/decay: instant rise, fast fall for stable display
-    if (rssi >= prev) {
-        rssiHistory[slot] = rssi;              // Attack: instant
-    } else {
-        rssiHistory[slot] = (prev + rssi) >> 1; // Decay: halve the gap each sweep
-    }
+    // Armel VFO behaviour: instant attack, fast fall for a stable display.
+    if (rssi >= prev)
+        rssiHistory[slot] = rssi;
+    else
+        rssiHistory[slot] = (prev + rssi) >> 1;
 }
 
 static void Measure()
@@ -1203,19 +1247,18 @@ static void RequestAutoTriggerRecalibration()
 
 static void RearmRuntimeState()
 {
-    /* AUTO starts from its runtime scale. In MANUAL both ends of the graph
-     * belong to the user/current view and must survive entry, modulation
-     * changes and RX re-arming unchanged. */
-    if (!manualSetFlag)
-    {
-        settings.dbMin = -128;
-        settings.dbMax = -97;
-    }
+    /* Start from Armel's manual depth; lock the exact floor after the first
+     * complete sweep so the whole graph cannot breathe once per cycle. */
+    ResetManualSpectrumScale();
     memset(rssiHistory, 0, sizeof(rssiHistory));
+    memset(wideSweepRssi, 0, sizeof(wideSweepRssi));
     memset(peakHoldY,   PEAK_HOLD_INIT, sizeof(peakHoldY));
     memset(peakHoldAge, 0,              sizeof(peakHoldAge));
     rssiSmoothed = 0;
     manualDbMaxTimer = 0;
+
+    /* VFO and Memory both begin measuring/displaying immediately. */
+    initialCalibrationPending = false;
     
     RelaunchScan();
 
@@ -1227,7 +1270,6 @@ static void RearmRuntimeState()
 // context (center/range). Persist only fields that are normally saved.
 static void ResetSpectrumToDefaults()
 {
-    initialCalibrationPending = true;
     monitorMode = false;
     menuState = 0;
     lockAGC = false;
@@ -1332,13 +1374,7 @@ static void UpdateScanStep(bool inc)
     }
 
     settings.frequencyChangeStep = GetBW() >> 1;
-    /* Scan steps below 15 kHz use a much narrower BK4819 filter than the
-     * 15/20/25/50/100 kHz steps.  Crossing that boundary moves the measured
-     * noise floor, so retaining the previous dbMin/dbMax makes most of the
-     * trace clamp below the bottom axis.  Treat every step change as new scan
-     * geometry: clear stale samples and calibrate scale/trigger from the first
-     * complete sweep using the newly selected filter. */
-    initialCalibrationPending = true;
+    /* Treat every step change as new Armel-style manual scan geometry. */
     settings.rssiTriggerLevel = RSSI_MAX_VALUE;
     RearmRuntimeState();
     ResetBlacklist();
@@ -1360,6 +1396,7 @@ static void UpdateCurrentFreq(bool inc)
         return;
     }
     ClampVfoScanWindow();
+    ResetManualSpectrumScale();
     RelaunchScan();
     ResetBlacklist();
     redrawScreen = true;
@@ -1444,11 +1481,7 @@ static void ToggleModulation()
     }
     RADIO_SetModulation(settings.modulationType);
 
-    // Re-arm and calibrate for the new demodulation profile. AM, FM and USB
-    // can have different RSSI/noise floors; preserving the manual scale here
-    // clamps ordinary traces below the bottom axis (or draws a horizontal
-    // wall) until the user adjusts it by hand.
-    initialCalibrationPending = true;
+    // Re-arm the Armel-style manual scale for the new modulation profile.
     settings.rssiTriggerLevel = RSSI_MAX_VALUE;
 
     RearmRuntimeState();
@@ -1485,11 +1518,12 @@ static void ToggleBacklight()
 
 static void ToggleStepsCount()
 {
-    settings.stepsCount = (settings.stepsCount == STEPS_2048)
+    settings.stepsCount = (settings.stepsCount == STEPS_1024)
                               ? STEPS_16
                               : (StepsCount)(settings.stepsCount + 1);
     settings.frequencyChangeStep = GetBW() >> 1;
     ClampVfoScanWindow();
+    ResetManualSpectrumScale();
     RelaunchScan();
     ResetBlacklist();
     redrawScreen = true;
@@ -1577,27 +1611,29 @@ static void UpdateFreqInput(KEY_Code_t key)
 
 static void Blacklist()
 {
-#ifdef ENABLE_SCAN_RANGES
-    blacklistFreqs[blacklistFreqsIdx++ % ARRAY_SIZE(blacklistFreqs)] = peak.i;
-#endif
+    blacklistFreqs[blacklistFreqsWrite] = peak.i;
+    blacklistFreqsWrite = (blacklistFreqsWrite + 1u) % ARRAY_SIZE(blacklistFreqs);
+    if (blacklistFreqsCount < ARRAY_SIZE(blacklistFreqs))
+        blacklistFreqsCount++;
 
-    SetRssiHistory(peak.i, RSSI_MAX_VALUE);
+    // A history slot represents several exact frequencies above 128 samples.
+    // Blank it only in 1:1 modes; otherwise a single blacklist action would
+    // hide and skip up to eight adjacent frequencies at 1024 samples.
+    if (scanInfo.measurementsCount <= ARRAY_SIZE(rssiHistory))
+        SetRssiHistory(peak.i, RSSI_MAX_VALUE);
     ResetPeak();
     ToggleRX(false);
     RestoreSpectrumScanRf(true);
     ResetScanStats();
 }
 
-#ifdef ENABLE_SCAN_RANGES
 static bool IsBlacklisted(uint16_t idx)
 {
-    if (blacklistFreqsIdx)
-        for (uint8_t i = 0; i < ARRAY_SIZE(blacklistFreqs); i++)
-            if (blacklistFreqs[i] == idx)
-                return true;
+    for (uint8_t i = 0; i < blacklistFreqsCount; i++)
+        if (blacklistFreqs[i] == idx)
+            return true;
     return false;
 }
-#endif
 
 // Draw things
 
@@ -1623,13 +1659,17 @@ static bool IsRssiHistoryInvalid(uint16_t rssi)
 // occupy more of the display height while strong peaks are not clipped.
 uint8_t Rssi2PX(uint16_t rssi, uint8_t pxMin, uint8_t pxMax)
 {
-    const int DB_MIN = settings.dbMin << 1;
-    const int DB_MAX = settings.dbMax << 1;
+    const int DB_MIN = settings.dbMin * 2;
+    // A corrupt/partially migrated scale must not collapse the divisor or
+    // push the trace outside the graph. Keep at least the normal 10 dB span.
+    const int DB_MAX = (settings.dbMax >= settings.dbMin + 10)
+                           ? settings.dbMax * 2
+                           : DB_MIN + 20;
     const int DB_RANGE = DB_MAX - DB_MIN;
 
     const uint8_t PX_RANGE = pxMax - pxMin;
 
-    int dbm = clamp(Rssi2DBm(rssi) << 1, DB_MIN, DB_MAX);
+    int dbm = clamp(Rssi2DBm(rssi) * 2, DB_MIN, DB_MAX);
 
     // Linear 0..PX_RANGE position
     uint8_t linear = (uint8_t)(((dbm - DB_MIN) * PX_RANGE + DB_RANGE / 2) / DB_RANGE);
@@ -1647,8 +1687,11 @@ uint8_t Rssi2Y(uint16_t rssi)
     // the preceding row keeps the crest visible instead of merging it with
     // the axis/ticks. The top still cannot overdraw the frequency display in
     // gFrameBuffer[0] (pixels 0-7).
-    return SPECTRUM_GRAPH_BOTTOM_Y -
-           Rssi2PX(rssi, 0, SPECTRUM_GRAPH_BOTTOM_Y - DrawingTopY);
+    const uint8_t graphHeight = SPECTRUM_GRAPH_BOTTOM_Y - DrawingTopY;
+    uint8_t height = Rssi2PX(rssi, 0, graphHeight);
+    if (height > graphHeight)
+        height = graphHeight;
+    return SPECTRUM_GRAPH_BOTTOM_Y - height;
 }
 
 // Resolve the RSSI value at fractional sample index (Q8 fixed-point) using
@@ -2095,7 +2138,7 @@ static void DrawTicks()
     // At 512+ samples the frequency-per-pixel interval is large enough that
     // the old modulo tests turn almost every LCD column into a tall tick. Use
     // an increasingly sparse, screen-relative ruler instead: 32 ticks at
-    // 512x, 16 at 1024x and 8 at 2048x.  16x..256x retain the original look.
+    // 512x and 16 at 1024x. 16x..256x retain the original look.
     if (sampleCount >= 512u)
     {
         const uint8_t sparseStride = (uint8_t)(sampleCount / 128u);
@@ -2314,6 +2357,7 @@ static void OnKeyDownFreqInput(KEY_Code_t key)
         {
             ClampVfoScanWindow();
             ResetBlacklist();
+            ResetManualSpectrumScale();
             RelaunchScan();
         }
         else
@@ -2599,9 +2643,7 @@ static void Scan()
     uint8_t slot = GetHistorySlot(scanInfo.i);
 
     if (rssiHistory[slot] != RSSI_MAX_VALUE
-#ifdef ENABLE_SCAN_RANGES
         && !IsBlacklisted(scanInfo.i)
-#endif
     )
     {
         SetFScan(scanInfo.f);
@@ -2671,6 +2713,17 @@ static void FinalizeCompletedSweep()
     if (! (scanInfo.measurementsCount >> 7)) // if (scanInfo.measurementsCount < 128)
         memset(&rssiHistory[scanInfo.measurementsCount], 0,
                sizeof(rssiHistory) - scanInfo.measurementsCount * sizeof(rssiHistory[0]));
+
+    if (!spectrumScaleReady && scanInfo.rssiMin != RSSI_MAX_VALUE)
+    {
+        settings.dbMin = Rssi2DBm(scanInfo.rssiMin);
+        const int highestFloor = settings.dbMax - 10;
+        if (settings.dbMin > highestFloor)
+            settings.dbMin = highestFloor;
+        spectrumScaleReady = true;
+        redrawScreen = true;
+        redrawStatus = true;
+    }
 
     if (initialCalibrationPending)
     {
@@ -2760,6 +2813,10 @@ static void UpdateScan()
         if (!NextScanStepInterlaced())
             return;
 
+        /* All phases are complete: replace the displayed trace atomically.
+         * Keeping the previous full trace during acquisition avoids both
+         * moving gaps and the phase-by-phase flattening of max aggregation. */
+        PublishWideSweep();
         FinalizeCompletedSweep();
         return;
     }
@@ -3120,8 +3177,8 @@ void APP_RunSpectrum()
     BK4819_SetFilterBandwidth(settings.listenBw = BK4819_FILTER_BW_WIDE, false);
 #endif
 
-    // Keep F4HWN runtime scaling; MR mode has already been forced to manual.
-    initialCalibrationPending = true;
+    // VFO and Memory both use Armel's manual path immediately.
+    initialCalibrationPending = false;
     RearmRuntimeState();
 
     isInitialized = true;
@@ -3135,5 +3192,11 @@ void APP_RunSpectrum()
     }
 
     BACKLIGHT_TurnOn();
+    /* Spectrum is modal while the scheduler still sees FOREGROUND, so its
+     * inactivity countdown can expire without the main loop servicing it.
+     * Treat returning from Spectrum as user activity, just like overlay exit. */
+    gBatterySaveCountdown_10ms = battery_save_count_10ms;
+    gSchedulePowerSave = false;
+    gPowerSaveCountdownExpired = false;
     spectrumScratch = NULL;
 }

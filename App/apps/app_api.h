@@ -386,7 +386,7 @@ _Static_assert(offsetof(app_api_t, sys_edition) == 276u &&
  * official API levels remain free to append fields after byte 408. */
 #define APP_GOGU_API_MAGIC 0x55474F47u /* "GOGU" little-endian */
 #define APP_GOGU_API_MAJOR 1u
-#define APP_GOGU_API_LEVEL 4u
+#define APP_GOGU_API_LEVEL 5u
 #define APP_GOGU_API_QUERY 0xFFFFu
 
 typedef struct gogu_api {
@@ -458,9 +458,13 @@ typedef struct gogu_api {
      * State-changing actions redraw the complete resident status bar. */
     uint8_t (*key_state)(uint8_t action);
 
+    /* API level 5: non-persistent AM receive target at frequency (x10 Hz).
+     * The selected resident VFO is restored when the overlay returns. */
+    void (*radio_tune_am)(uint32_t frequency);
+
 } gogu_api_t;
 
-_Static_assert(sizeof(gogu_api_t) == 104u,
+_Static_assert(sizeof(gogu_api_t) == 108u,
                "GOGUFW extension ABI changed");
 
 static inline const gogu_api_t *APP_GoguApi(const app_api_t *api)

@@ -133,7 +133,6 @@ typedef enum StepsCount
     STEPS_256,
     STEPS_512,
     STEPS_1024,
-    STEPS_2048,
 } StepsCount;
 
 typedef enum ScanStep

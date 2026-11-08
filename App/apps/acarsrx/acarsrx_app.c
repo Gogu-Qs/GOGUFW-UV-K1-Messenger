@@ -603,8 +603,8 @@ void app_main(const app_api_t *api){
 
     g.A=api;
     const gogu_api_t *G=APP_GoguApi(api);
-    if(!G) return;
-    G->radio_tune(13172500u);   /* fixed 131.725 MHz ACARS receive target */
+    if(!G||G->level<5u||!G->radio_tune_am) return;
+    G->radio_tune_am(13172500u); /* fixed 131.725 MHz AM receive target */
     g.history=history;
     g.frame=frame;
     g.dem=&dem;

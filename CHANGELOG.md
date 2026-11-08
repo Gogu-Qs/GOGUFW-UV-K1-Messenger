@@ -46,19 +46,27 @@
 
 ### Spectrum
 
-- Expanded VFO Spectrum from the original 16/32/64/128 sample choices to
-  **16/32/64/128/256/512/1024/2048 samples**. Higher values cover a much wider
-  frequency span without requiring one LCD column for every RF sample; multiple
-  samples are combined into the 128-column graph.
+- Kept Armel's original one-measurement-per-column behaviour through 128
+  samples and retained **256/512/1024** with a separate current-sweep buffer.
+  Wide views publish only complete 128-column snapshots; they no longer show
+  moving one-pixel gaps or accumulate old noise peaks into a flat line.
+- Restored Armel's manual VFO scale initialization and immediate minimum-RSSI
+  tracking. Memory Spectrum calibration no longer expands and freezes the VFO
+  graph range, which had hidden ordinary peaks and made VFO Spectrum look deaf.
+- Applied the same scale depth and current-sweep buffering to Memory Spectrum,
+  and reset the foreground inactivity request when Spectrum exits so the
+  power-save `ZZ` icon cannot flash immediately after returning to the radio.
+- Locked the manual vertical floor after the first complete scan geometry.
+  VFO and Memory traces continue updating without the whole graph dropping and
+  recovering as the per-sweep minimum is rediscovered.
 - Corrected centred VFO-window arithmetic and band-edge clamping for the new
   spans. Changing the sample count, entering a frequency or launching Spectrum
   near a band edge no longer shifts, wraps or truncates the requested range.
 - Kept the established pre-expansion graph/ruler height in both VFO and Memory
   Spectrum. Memory channel labels fit around the unchanged ruler instead of
   pushing the graph upward.
-- Reduced ruler density at 512/1024/2048 samples and clears only the small
-  marker field before drawing the selected-peak triangle. Wide-span rulers no
-  longer turn into a solid comb or obscure the marker.
+- Kept the corrected sweep endpoints, exact blacklist handling and visible
+  graph bounds without changing Armel's VFO history/decay behaviour.
 - Fixed the temporary `M---` value that could remain after listening to a
   signal. The first valid RSSI measurement now refreshes the status line
   immediately.

@@ -1,6 +1,6 @@
 # ACARS RX
 
-GOGUFW build: the private overlay VFO is fixed to **131.725 MHz** at launch.
+GOGUFW build: the private overlay VFO is fixed to **131.725 MHz AM** at launch.
 
 Receive-only VHF ACARS overlay for the Fusion firmware. Its presentation and
 controls follow APRS RX: a compact status bar, the tuned frequency, signal
@@ -8,8 +8,9 @@ level, scrollable payload text and a three-message history.
 
 ## Use
 
-1. Select an AM channel on a local ACARS frequency.
-2. Launch **ACARS RX** from Apps.
+1. Launch **ACARS RX** from Apps. The selected resident channel does not
+   matter; the private overlay receiver is always tuned to 131.725 MHz AM.
+2. Wait for local ACARS traffic.
 3. Use **UP/DOWN** to scroll a long message and browse the last three messages,
    **\*** to switch between the normal and compact views, **1** to enable or
    mute the speaker, **F** to switch between decoded and raw payloads, **2** to
@@ -17,8 +18,7 @@ level, scrollable payload text and a three-message history.
    size and speaker state are saved on exit. To avoid noise bursts while
    waiting, the speaker opens only after a complete ACARS header is recognized.
 
-For Paris, start with **131.525 MHz**, then try **131.725 MHz** and
-**131.825 MHz**. Reception depends on local traffic, antenna and obstructions.
+Reception depends on local traffic, antenna and obstructions.
 
 The normal view uses the regular 18-character font and shows three payload
 rows. The compact view uses the 32-character tiny font and shows four rows, as
