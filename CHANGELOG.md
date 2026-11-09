@@ -1,5 +1,68 @@
 # Changelog
 
+## GOGUFW 3.6.3 — 2026-11-09
+
+### Spectrum
+
+- Kept Armel's original one-measurement-per-column VFO behaviour through 128
+  samples and retained **256/512/1024** with a separate current-sweep buffer.
+  Wide views now publish only complete 128-column snapshots, preventing
+  partial scans, moving one-pixel gaps and accumulated old noise peaks from
+  flattening the graph.
+- Restored Armel's manual VFO scale initialization and immediate minimum-RSSI
+  tracking. The manual vertical floor is calibrated once per scan geometry so
+  VFO and Memory traces keep their depth without the entire graph repeatedly
+  dropping and recovering during each sweep.
+- Applied the same scale depth and complete-sweep buffering to Memory Spectrum.
+- Corrected the supported VFO sample choices to
+  **16/32/64/128/256/512/1024**. A previously saved 2048 setting is safely
+  clamped to 1024.
+- Corrected centred VFO-window arithmetic, sweep endpoints, band-edge clamping,
+  exact blacklist handling and visible graph bounds for the expanded spans.
+- Reset the foreground inactivity request when Spectrum exits so the power-save
+  `ZZ` icon cannot flash immediately after returning to the radio.
+
+### Channel and radio behaviour
+
+- Made Scrambler a runtime channel edit again. Changing it applies immediately
+  to the active VFO with `RADIO_ApplyScrambler()` but no longer saves the whole
+  MR record. Step, power, bandwidth and Scrambler return to the stored
+  CHIRP/EEPROM values after leaving and revisiting the channel unless the user
+  explicitly performs **Save Channel**.
+- Updated the active step frequency immediately when Step is changed from the
+  menu or side-key shortcut, so the main screen reflects the new value without
+  requiring a channel change.
+
+### Overlay applications
+
+- Added GOGU capability API level 5 with a non-persistent AM receive target.
+  ACARS RX 0.2 now opens its private receiver directly at **131.725 MHz AM**
+  without modifying the selected resident channel, then restores the resident
+  radio state on exit.
+- Corrected APRS profile selection so firmware reads the saved APRS frequency
+  and transmit power only from the extended GOGU APRS TX profile. Official
+  APC7 app UI bytes can no longer be mistaken for radio settings. APRS RX uses
+  the shared frequency; APRS TX and APRS Digi use both the frequency and TX
+  power selected in APRS Edit without changing the resident VFO.
+- Existing FM VFO, FM Memory and Search applications are unchanged; the
+  previous versions remain compatible and are supplied together in `Apps.zip`.
+
+### Release files
+
+- Firmware: `GOGUFW-v3.6.3.bin` (one image for direct flashing and the
+  supported multiboot workflow).
+- CHIRP module: `Gogufw_3.6.3_chirp_module.py`.
+- Included applications: `ACARSRX-v0.2-gogu.app`, `APRSEdit-v1.2.app`,
+  `APRSRX-v1.0.app`, `APRSTX-v1.7-gogu.app` and
+  `APRSDIGI-v0.2-gogu.app`.
+- Source code: GitHub-generated ZIP and TAR archives from the exact `v3.6.3`
+  release tag.
+- Final image: **120,604 / 120,832 bytes** (228 bytes free), including the
+  920-byte multiboot load image. Linked code/data uses 119,684 bytes.
+- RAM with the enforced stack reservation: **15,832 / 16,384 bytes** (552 bytes
+  free); the 4,096-byte runtime stack and multiboot RAM-stub isolation checks
+  pass.
+
 ## GOGUFW 3.6.2 — 2026-11-07
 
 ### Scrambler
@@ -46,27 +109,19 @@
 
 ### Spectrum
 
-- Kept Armel's original one-measurement-per-column behaviour through 128
-  samples and retained **256/512/1024** with a separate current-sweep buffer.
-  Wide views publish only complete 128-column snapshots; they no longer show
-  moving one-pixel gaps or accumulate old noise peaks into a flat line.
-- Restored Armel's manual VFO scale initialization and immediate minimum-RSSI
-  tracking. Memory Spectrum calibration no longer expands and freezes the VFO
-  graph range, which had hidden ordinary peaks and made VFO Spectrum look deaf.
-- Applied the same scale depth and current-sweep buffering to Memory Spectrum,
-  and reset the foreground inactivity request when Spectrum exits so the
-  power-save `ZZ` icon cannot flash immediately after returning to the radio.
-- Locked the manual vertical floor after the first complete scan geometry.
-  VFO and Memory traces continue updating without the whole graph dropping and
-  recovering as the per-sweep minimum is rediscovered.
+- Expanded VFO Spectrum from the original 16/32/64/128 sample choices to
+  **16/32/64/128/256/512/1024/2048 samples**. Higher values cover a much wider
+  frequency span without requiring one LCD column for every RF sample; multiple
+  samples are combined into the 128-column graph.
 - Corrected centred VFO-window arithmetic and band-edge clamping for the new
   spans. Changing the sample count, entering a frequency or launching Spectrum
   near a band edge no longer shifts, wraps or truncates the requested range.
 - Kept the established pre-expansion graph/ruler height in both VFO and Memory
   Spectrum. Memory channel labels fit around the unchanged ruler instead of
   pushing the graph upward.
-- Kept the corrected sweep endpoints, exact blacklist handling and visible
-  graph bounds without changing Armel's VFO history/decay behaviour.
+- Reduced ruler density at 512/1024/2048 samples and clears only the small
+  marker field before drawing the selected-peak triangle. Wide-span rulers no
+  longer turn into a solid comb or obscure the marker.
 - Fixed the temporary `M---` value that could remain after listening to a
   signal. The first valid RSSI measurement now refreshes the status line
   immediately.

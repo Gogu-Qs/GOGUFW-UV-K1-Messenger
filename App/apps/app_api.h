@@ -418,9 +418,9 @@ typedef struct gogu_api {
      * is restored automatically when the app returns. */
     void (*radio_tune_power)(uint32_t frequency, uint8_t power);
 
-    /* Shared APRS profile receive target.
-     * Tunes the private app VFO to APRS TX's persistent profile frequency,
-     * falling back to 144.800 MHz if the profile is missing or invalid. */
+    /* Shared APRS profile radio target.
+     * Tunes the private app VFO to APRS TX's persistent profile frequency and
+     * output power, falling back to 144.800 MHz/HIGH if it is invalid. */
     void (*radio_tune_aprs)(void);
 
     /* GOGUFW Broadcast-FM extensions.

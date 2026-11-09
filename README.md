@@ -19,7 +19,7 @@ RF Log Lite, named FM memories and a multiboot environment.
 | 📻 **Supported radios** | Quansheng UV-K1 / UV-K5 V3 |
 | ⚙️ **Hardware** | PY32F071 MCU · BK4829 RF IC |
 | 🛠️ **Build preset** | Fusion · Release · ARM GNU Embedded |
-| 💾 **Firmware image** | 120,028 / 120,832 bytes · **99.33%** · 804 bytes free, including the 920-byte multiboot load image |
+| 💾 **Firmware image** | 120,604 / 120,832 bytes · **99.81%** · 228 bytes free, including the 920-byte multiboot load image |
 | 🧠 **Runtime stack** | 4,096-byte linker reservation · live/current and high-water values reported by `SystemInfo.app` |
 | ✉️ **GOGUFW tools** | Messenger · HEARD · Auto Check · Range Check · CALLTX · RF Log Lite · Full Watch · FM names/RSSI |
 | 🔌 **CHIRP support** | Matching 3.6.3 module with 1024 memories, Messenger settings, FM names and all channel policies |
@@ -33,8 +33,13 @@ The current release contains:
 - `GOGUFW-v3.6.3.bin` — firmware image;
 - `Gogufw_3.6.3_chirp_module.py` — the matching custom CHIRP module;
 - `Apps.zip` — the requested Search/FM VFO/FM Memory overlay bundle;
-- `FMVFO.app` and `FMMemory.app` — the two required Broadcast FM overlays;
-- `Search.app` — the matching Frequency/Tone Search overlay.
+- `ACARSRX-v0.2-gogu.app` — ACARS receiver fixed at 131.725 MHz AM;
+- `APRSEdit-v1.2.app`, `APRSRX-v1.0.app`, `APRSTX-v1.7-gogu.app` and
+  `APRSDIGI-v0.2-gogu.app` — the matching APRS application set. APRS RX uses
+  the frequency saved in APRS Edit; APRS TX and APRS Digi use both its saved
+  frequency and transmit-power setting without changing the resident VFO;
+- GitHub's **Source code (zip)** and **Source code (tar.gz)** archives generated
+  from the exact `v3.6.3` release tag.
 
 > [!CAUTION]
 > GOGUFW 3.3.1 replaced the former experimental GOGUFW API levels 4–9 with
@@ -44,7 +49,7 @@ The current release contains:
 > API-3 apps built for GOGUFW 3.3.1 and later remain compatible. GOGU-only
 > services use a separately versioned capability extension.
 
-**Broadcast FM is not a resident screen. Install this release's updated
+**Broadcast FM is not a resident screen. Install the matching
 `FMVFO.app` and `FMMemory.app` after flashing 3.6.3; installing only one leaves mode
 switching incomplete. Install this release's `Search.app` for F+4/F+STAR.**
 
@@ -210,7 +215,8 @@ GOGUFW provides 48 external-Flash app slots. Empty slots are hidden; hold UP/DOW
 GOGUFW 3.6.0 exposes F4HWN's append-only official ABI 1 / API 4 contract,
 including memory-channel access/staging, app TX power and the GPS-position
 service slot. GOGUFW-only services use `APP_CAP_GOGU_EXT` and a separately
-versioned extension table.
+versioned extension table. GOGUFW 3.6.3 advances that extension to level 5 with
+a private, non-persistent AM receive target used by ACARS RX 0.2.
 This replaces the experimental GOGUFW API 4–9 layout: older custom GOGUFW app
 binaries from the old experimental API 4–9 layout are not compatible. Existing
 apps built for GOGUFW 3.3.1–3.3.5's official API-3 prefix remain compatible with

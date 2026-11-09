@@ -657,6 +657,7 @@ static void app_radio_tune_am(uint32_t frequency)
 static void app_radio_tune_aprs(void)
 {
     uint32_t frequency = 144800u;
+    uint8_t power = APP_RADIO_POWER_HIGH;
     for (uint8_t slot = 0; slot < APP_SLOT_COUNT; slot++) {
         app_header_t h;
         if (app_read_validated_header(slot, &h) != APP_OK ||
@@ -678,16 +679,21 @@ static void app_radio_tune_aprs(void)
             continue;
 
         uint32_t magic, saved;
+        uint8_t savedPower;
         const uint32_t base = APP_SLOT_BASE(slot) + APP_ASSET_OFFSET;
         PY25Q16_ReadBuffer(base, &magic, sizeof(magic));
         PY25Q16_ReadBuffer(base + APRS_PROFILE_FREQ_KHZ, &saved, sizeof(saved));
+        PY25Q16_ReadBuffer(base + APRS_PROFILE_POWER, &savedPower,
+                           sizeof(savedPower));
         if (magic == APRS_PROFILE_MAGIC && saved >= APRS_FREQ_KHZ_MIN &&
-            saved <= APRS_FREQ_KHZ_MAX) {
+            saved <= APRS_FREQ_KHZ_MAX &&
+            savedPower < APP_APRS_POWER_COUNT) {
             frequency = saved;
+            power = savedPower;
             break;
         }
     }
-    app_radio_tune(frequency * 100u);
+    app_radio_tune_power(frequency * 100u, power);
 }
 
 /* ---- v2 config (deferred, flash-backed) ----

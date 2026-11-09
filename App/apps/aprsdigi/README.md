@@ -4,11 +4,12 @@ APRS DIGI is a self-contained Fusion overlay application. It receives Bell 202
 AFSK at 1200 baud with the APRS RX software demodulator and repeats eligible
 AX.25 UI frames with the APRS TX tone generator.
 
-The GOGUFW build opens a private RX/TX VFO on the frequency saved by APRS Edit
-in the shared APRS profile. Version 0.2 also uses the callsign saved by APRS
-Edit when it contains one to six valid characters, with CHIRP boot-message
-line 1 as the fallback. It falls back to 144.800 MHz when the profile frequency
-is missing or invalid, and restores the resident VFO when the overlay exits.
+The GOGUFW build opens a private RX/TX VFO on the frequency and transmit power
+saved by APRS Edit in the shared APRS profile. Version 0.2 also uses the
+callsign saved by APRS Edit when it contains one to six valid characters, with
+CHIRP boot-message line 1 as the fallback. It falls back to 144.800 MHz/HIGH
+when the radio settings are missing or invalid, and restores the resident VFO
+when the overlay exits.
 
 Version 0.2 starts as a `WIDE1-1` fill-in. Key `1` switches between:
 
