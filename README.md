@@ -33,11 +33,10 @@ The current release contains:
 - `GOGUFW-v3.6.3.bin` — firmware image;
 - `Gogufw_3.6.3_chirp_module.py` — the matching custom CHIRP module;
 - `Apps.zip` — the requested Search/FM VFO/FM Memory overlay bundle;
-- `ACARSRX-v0.2-gogu.app` — ACARS receiver fixed at 131.725 MHz AM;
-- `APRSEdit-v1.2.app`, `APRSRX-v1.0.app`, `APRSTX-v1.7-gogu.app` and
-  `APRSDIGI-v0.2-gogu.app` — the matching APRS application set. APRS RX uses
-  the frequency saved in APRS Edit; APRS TX and APRS Digi use both its saved
-  frequency and transmit-power setting without changing the resident VFO;
+- `ACARS-APRS-Apps.zip` — ACARS RX fixed at 131.725 MHz AM plus the matching
+  APRS Edit/RX/TX/Digi application set. APRS RX uses the frequency saved in
+  APRS Edit; APRS TX and APRS Digi use both its saved frequency and
+  transmit-power setting without changing the resident VFO;
 - GitHub's **Source code (zip)** and **Source code (tar.gz)** archives generated
   from the exact `v3.6.3` release tag.
 

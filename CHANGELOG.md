@@ -52,8 +52,8 @@
 - Firmware: `GOGUFW-v3.6.3.bin` (one image for direct flashing and the
   supported multiboot workflow).
 - CHIRP module: `Gogufw_3.6.3_chirp_module.py`.
-- Included applications: `ACARSRX-v0.2-gogu.app`, `APRSEdit-v1.2.app`,
-  `APRSRX-v1.0.app`, `APRSTX-v1.7-gogu.app` and
+- `ACARS-APRS-Apps.zip` contains `ACARSRX-v0.2-gogu.app`,
+  `APRSEdit-v1.2.app`, `APRSRX-v1.0.app`, `APRSTX-v1.7-gogu.app` and
   `APRSDIGI-v0.2-gogu.app`.
 - Source code: GitHub-generated ZIP and TAR archives from the exact `v3.6.3`
   release tag.
