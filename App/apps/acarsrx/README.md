@@ -1,6 +1,9 @@
 # ACARS RX
 
 GOGUFW build: the private overlay VFO is fixed to **131.725 MHz AM** at launch.
+The installed application name is **ACARS RX GOGU**, keeping this custom 0.2
+build distinct from the official Labs 6.3.0 ACARS RX 0.1 catalog entry so UV
+Studio reports the radio loader's valid compatibility result.
 
 Receive-only VHF ACARS overlay for the Fusion firmware. Its presentation and
 controls follow APRS RX: a compact status bar, the tuned frequency, signal

@@ -39,6 +39,9 @@
   ACARS RX 0.2 now opens its private receiver directly at **131.725 MHz AM**
   without modifying the selected resident channel, then restores the resident
   radio state on exit.
+- Gave the custom ACARS build the distinct installed name `ACARS RX GOGU`.
+  UV Studio no longer compares version 0.2 with the unrelated official Labs
+  6.3.0 ACARS RX 0.1 catalog entry and now shows the firmware's `valid` result.
 - Corrected APRS profile selection so firmware reads the saved APRS frequency
   and transmit power only from the extended GOGU APRS TX profile. Official
   APC7 app UI bytes can no longer be mistaken for radio settings. APRS RX uses
